@@ -1,0 +1,5 @@
+.vscode
+compiler
+playground
+tests
+src/test/testmain.cpp
