@@ -3,10 +3,9 @@
 
 /** A range of text. */
 typedef struct Location {
-  const char* ptr;
-  unsigned int sz;
   unsigned short row;
   unsigned short col;
+  unsigned int sz;
 } Location;
 
 #endif

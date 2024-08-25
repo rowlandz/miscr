@@ -22,9 +22,11 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::BLOCK: return "BLOCK";
     case NodeTy::CALL: return "CALL";
     case NodeTy::BOOL: return "BOOL";
+    case NodeTy::TYPEVAR: return "TYPEVAR";
     case NodeTy::i8: return "i8";
     case NodeTy::i32: return "i32";
     case NodeTy::IDENT: return "IDENT";
+    case NodeTy::EIDENT: return "EIDENT";
     case NodeTy::EXPLIST_NIL: return "EXPLIST_NIL";
     case NodeTy::EXPLIST_CONS: return "EXPLIST_CONS";
     case NodeTy::LET: return "LET";
@@ -33,7 +35,6 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::PROC: return "PROC";
     case NodeTy::PARAMLIST_NIL: return "PARAMLIST_NIL";
     case NodeTy::PARAMLIST_CONS: return "PARAMLIST_CONS";
-    case NodeTy::SIGNATURE: return "SIGNATURE";
     case NodeTy::STMTLIST_NIL: return "STMTLIST_NIL";
     case NodeTy::STMTLIST_CONS: return "STMTLIST_CONS";
   }
@@ -41,7 +42,7 @@ const char* NodeTyToString(NodeTy nt) {
 
 void print_parse_tree(NodeManager &m, unsigned int n, std::vector<bool> &indents) {
   Node node = m.get(n);
-  printf("ln%3d, col%3d  ", node.loc.row, node.loc.col);
+  printf("ln%3d, col%3d, sz%3d   ", node.loc.row, node.loc.col, node.loc.sz);
   if (indents.size() > 0) {
     for (auto i = 0; i < indents.size() - 1; i++) {
       printf("%s   ", indents[i] ? "│" : " ");
@@ -53,15 +54,38 @@ void print_parse_tree(NodeManager &m, unsigned int n, std::vector<bool> &indents
   if (node.n1 != NN) {
     if (node.n2 != NN) {
       if (node.n3 != NN) {
-        // three subnodes
-        indents.push_back(true);
-        print_parse_tree(m, node.n1, indents);
-        print_parse_tree(m, node.n2, indents);
-        indents.pop_back(); indents.push_back(false);
-        print_parse_tree(m, node.n3, indents);
-        indents.pop_back();
+        if (node.extra.nodes.n4 != NN) {              // TODO: this could cause problems
+          if (node.extra.nodes.n5 != NN) {
+            // five subnodes
+            indents.push_back(true);
+            print_parse_tree(m, node.n1, indents);
+            print_parse_tree(m, node.n2, indents);
+            print_parse_tree(m, node.n3, indents);
+            print_parse_tree(m, node.extra.nodes.n4, indents);
+            indents.pop_back(); indents.push_back(false);
+            print_parse_tree(m, node.extra.nodes.n5, indents);
+            indents.pop_back();
+          } else {
+            // four subnodes
+            indents.push_back(true);
+            print_parse_tree(m, node.n1, indents);
+            print_parse_tree(m, node.n2, indents);
+            print_parse_tree(m, node.n3, indents);
+            indents.pop_back(); indents.push_back(false);
+            print_parse_tree(m, node.extra.nodes.n4, indents);
+            indents.pop_back();
+          }
+        } else {
+          // three subnodes
+          indents.push_back(true);
+          print_parse_tree(m, node.n1, indents);
+          print_parse_tree(m, node.n2, indents);
+          indents.pop_back(); indents.push_back(false);
+          print_parse_tree(m, node.n3, indents);
+          indents.pop_back();
+        }
       } else {
-        // two subnodestyExp
+        // two subnodes
         indents.push_back(true);
         print_parse_tree(m, node.n1, indents);
         indents.pop_back(); indents.push_back(false);
