@@ -5,23 +5,24 @@
 
 enum struct NodeTy: unsigned short {
 
-  // Type Nodes
+  // expression nodes
 
-  TYPEVAR, BOOL, i8, i32,
-
-  // Expression Nodes
-
-  EIDENT, LIT_INT, LIT_DEC, LIT_STRING,
+  EIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
   ADD, SUB, MUL, DIV, EQ, NE,
   IF, BLOCK, CALL,
 
-  // Statement Nodes
+  // statement nodes
 
   LET, RETURN,
 
-  // Declaration Nodes
+  // declaration nodes
 
   FUNC, PROC,
+
+  // type nodes
+
+  TYPEVAR, BOOL, i8, i32,
+  NUMERIC,
 
   // Other
 
@@ -54,5 +55,11 @@ typedef struct {
   } extra;
   NodeTy ty;
 } Node;
+
+/** Placed in sub-node slots in a node to indicate "no node" */
+#define NN              0xffffffff
+
+/** Place in the extra slot when it's not used. */
+#define NOEXTRA         { .nodes={ NN, NN } }
 
 #endif

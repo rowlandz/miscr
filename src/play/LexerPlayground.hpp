@@ -10,6 +10,7 @@ const char* TokenTyToString(TokenTy ty) {
     case KW_BOOL: return "KW_BOOL";
     case KW_CASE: return "KW_CASE";
     case KW_ELSE: return "KW_ELSE";
+    case KW_FALSE: return "KW_FALSE";
     case KW_FUNC: return "KW_FUNC";
     case KW_IF: return "KW_IF";
     case KW_LET: return "KW_LET";
@@ -17,6 +18,7 @@ const char* TokenTyToString(TokenTy ty) {
     case KW_PROC: return "KW_PROC";
     case KW_RETURN: return "KW_RETURN";
     case KW_THEN: return "KW_THEN";
+    case KW_TRUE: return "KW_TRUE";
     case KW_i8: return "KW_i8";
     case KW_i32: return "KW_i32";
     case OP_EQ: return "OP_EQ";

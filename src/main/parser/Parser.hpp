@@ -9,11 +9,6 @@
 #define EPSILON_ERROR   0xfffffffe
 #define IS_ERROR(x)     ((x) >= 0xfffffffe)
 
-/** Placed in sub-node slots in a node to indicate "no node" */
-#define NN              0xffffffff
-
-#define NOEXTRA         { .nodes={ NN, NN } }
-
 class Parser {
 
 public:
@@ -45,6 +40,12 @@ public:
 
   unsigned int litString() {
     if (p->ty == LIT_STRING) return m.add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::LIT_STRING });
+    else return EPSILON_ERROR;
+  }
+
+  unsigned int litBool() {
+    if (p->ty == KW_FALSE) return m.add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::FALSE });
+    else if (p->ty == KW_TRUE) return m.add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::TRUE });
     else return EPSILON_ERROR;
   }
 
@@ -98,6 +99,8 @@ public:
     n1 = numLit();
     if (n1 != EPSILON_ERROR) return n1;
     n1 = litString();
+    if (n1 != EPSILON_ERROR) return n1;
+    n1 = litBool();
     if (n1 != EPSILON_ERROR) return n1;
     n1 = parensExp();
     if (n1 != EPSILON_ERROR) return n1;

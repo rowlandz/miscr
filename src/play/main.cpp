@@ -2,6 +2,7 @@
 #include <cstring>
 #include "LexerPlayground.hpp"
 #include "ParserPlayground.hpp"
+#include "TyperPlayground.hpp"
 
 char help_message[] =
   "Welcome to the playground!\n"
@@ -9,6 +10,7 @@ char help_message[] =
   "USAGE\n"
   "    ./playground lexer [-v]\n"
   "    ./playground parser (decl|exp|stmt)\n"
+  "    ./playground typer (decl|exp)\n"
   "\n"
   "OPTIONS\n"
   "    -v   verbose output\n"
@@ -28,6 +30,12 @@ int main(int argc, char* argv[]) {
   else if (!strcmp(argv[1], "parser")) {
     if (argc >= 3) {
       return play_with_parser(argv[2]);
+    }
+  }
+
+  else if (!strcmp(argv[1], "typer")) {
+    if (argc >= 3) {
+      return play_with_typer(argv[2]);
     }
   }
 

@@ -225,8 +225,10 @@ private:
         if (!strncmp("func", s, 4)) return KW_FUNC;
         if (!strncmp("proc", s, 4)) return KW_PROC;
         if (!strncmp("then", s, 4)) return KW_THEN;
+        if (!strncmp("true", s, 4)) return KW_TRUE;
         return TOK_IDENT;
       case 5:
+        if (!strncmp("false", s, 5)) return KW_FALSE;
         if (!strncmp("match", s, 5)) return KW_MATCH;
         return TOK_IDENT;
       case 6:
