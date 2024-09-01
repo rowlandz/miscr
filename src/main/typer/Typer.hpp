@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include "common/ScopeStack.hpp"
 #include "common/NodeManager.hpp"
 
 /**
@@ -16,7 +17,7 @@ public:
   NodeManager* m;
  
   /** Maps local variable names to type nodes. */
-  std::map<std::string, unsigned int> localIdents;
+  ScopeStack<unsigned int> localVarTypes;
 
   /** Accumulates type checking errors. */
   std::vector<std::string> errors;
@@ -26,6 +27,7 @@ public:
   unsigned int ty_i8;
   unsigned int ty_i32;
   unsigned int tyc_numeric;
+  unsigned int tyc_decimal;
 
   Typer(NodeManager* m) {
     this->m = m;
@@ -33,6 +35,7 @@ public:
     ty_i8 = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::i8 });
     ty_i32 = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::i32 });
     tyc_numeric = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::NUMERIC });
+    tyc_decimal = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::DECIMAL });
   }
 
   /** Resolves a type until a non-TYPEVAR is reached or a terminal TYPEVAR
@@ -71,7 +74,7 @@ public:
   /** Enforces the constraint that the two types resolve to the same type.
    * The first type must be a type variable.
    * Returns true if unification succeeded. */
-  bool unify(unsigned int _tyVar1, unsigned int _ty2) {
+  void unify(unsigned int _tyVar1, unsigned int _ty2) {
     unsigned int _rtyVar1 = almostResolve(_tyVar1);
     unsigned int _rty1 = resolve(_rtyVar1);
     unsigned int _rty2 = resolve(_ty2);
@@ -79,7 +82,9 @@ public:
     Node rty2 = m->get(_rty2);
 
     if (rty1.ty == rty2.ty) {
-      if (rty1.ty == NodeTy::i8 || rty1.ty == NodeTy::i32 || rty1.ty == NodeTy::BOOL || rty1.ty == NodeTy::NUMERIC) {
+      if (rty1.ty == NodeTy::f32 || rty1.ty == NodeTy::f64 || rty1.ty == NodeTy::i8
+      || rty1.ty == NodeTy::i32 || rty1.ty == NodeTy::BOOL
+      || rty1.ty == NodeTy::NUMERIC || rty1.ty == NodeTy::DECIMAL) {
         // do nothing
       } else if (rty1.ty == NodeTy::TYPEVAR) {
         bind(_rtyVar1, _rty2);
@@ -93,31 +98,55 @@ public:
       bind(_rty2, _rty1);
     } else if (rty1.ty == NodeTy::NUMERIC) {
       switch (rty2.ty) {
+        case NodeTy::f32:
+        case NodeTy::f64:
         case NodeTy::i8:
         case NodeTy::i32:
+        case NodeTy::DECIMAL:
           bind(_rtyVar1, _rty2);
           break;
         default:
           errors.push_back(unificationError(_rty1, _rty2));
-          return false;
       }
     } else if (rty2.ty == NodeTy::NUMERIC) {
       switch (rty1.ty) {
+        case NodeTy::f32:
+        case NodeTy::f64:
         case NodeTy::i8:
         case NodeTy::i32:
+        case NodeTy::DECIMAL:
           if (m->get(_ty2).ty == NodeTy::TYPEVAR) {
             bind(almostResolve(_ty2), _rty1);
           }
           break;
         default:
           errors.push_back(unificationError(_rty1, _rty2));
-          return false;
       }
-    } else {
-      errors.push_back(unificationError(_rty1, _rty2));
-      return false;
+    } else if (rty1.ty == NodeTy::DECIMAL) {
+      switch (rty2.ty) {
+        case NodeTy::f32:
+        case NodeTy::f64:
+          bind(_rtyVar1, _rty2);
+          break;
+        default:
+          errors.push_back(unificationError(_rty1, _rty2));
+      }
+    } else if (rty2.ty == NodeTy::DECIMAL) {
+      switch (rty1.ty) {
+        case NodeTy::f32:
+        case NodeTy::f64:
+          if (m->get(_ty2).ty == NodeTy::TYPEVAR) {
+            bind(almostResolve(_ty2), _rty1);
+          }
+          break;
+        default:
+          errors.push_back(unificationError(_rty1, _rty2));
+      }
     }
-    return true;
+    
+    else {
+      errors.push_back(unificationError(_rty1, _rty2));
+    }
   }
 
   /** Typechecks an expression node at location `_n` in `m`.
@@ -133,9 +162,22 @@ public:
       bind(n.n1, tyn2);
     }
 
+    else if (n.ty == NodeTy::BLOCK) {
+      Node stmtList = m->get(n.n2);
+      while (stmtList.ty == NodeTy::STMTLIST_CONS) {
+        tyStmt(stmtList.n1);
+        stmtList = m->get(stmtList.n2);
+      }
+    }
+
     else if (n.ty == NodeTy::EIDENT) {
       std::string identStr(n.extra.ptr, n.loc.sz);
-      bind(n.n1, localIdents[identStr]);
+      unsigned int varTyNode = localVarTypes.getOrElse(identStr, NN);
+      if (varTyNode != NN) {
+        bind(n.n1, varTyNode);
+      } else {
+        errors.push_back(varNotFoundError(identStr));
+      }
     }
 
     else if (n.ty == NodeTy::EQ || n.ty == NodeTy::NE) {
@@ -158,6 +200,10 @@ public:
       unify(n.n1, tyn3);
     }
 
+    else if (n.ty == NodeTy::LIT_DEC) {
+      bind(n.n1, tyc_decimal);
+    }
+
     else if (n.ty == NodeTy::LIT_INT) {
       bind(n.n1, tyc_numeric);
     }
@@ -170,35 +216,57 @@ public:
     return n.n1;
   }
 
+  /** Typechecks a statement pointed by by `_n`. Any variables introduced via binding
+   * are added to the topmost scope frame. */
+  void tyStmt(unsigned int _n) {
+    Node n = m->get(_n);
+
+    if (n.ty == NodeTy::LET) {
+      Node n1 = m->get(n.n1);
+      unsigned int tyn2 = tyExp(n.n2);
+      std::string identStr(n1.extra.ptr, n1.loc.sz);
+      localVarTypes.add(identStr, tyn2);
+    }
+
+    else {
+      printf("Typer case not supported yet!!\n");
+      exit(1);
+    }
+  }
+
   /** Same as `tyExp` but the return value is `void`. */
   void voidTyExp(unsigned int _n) {
     tyExp(_n);
   }
 
-  void addParamsToLocalIdents(unsigned int _paramList) {
+  void addParamsToLocalVarTypes(unsigned int _paramList) {
     Node paramList = m->get(_paramList);
     while (paramList.ty == NodeTy::PARAMLIST_CONS) {
       Node paramName = m->get(paramList.n1);
       std::string paramStr(paramName.extra.ptr, paramName.loc.sz);
-      localIdents[paramStr] = paramList.n2;
+      localVarTypes.add(paramStr, paramList.n2);
       paramList = m->get(paramList.n3);
     }
   }
 
   void tyFuncOrProc(unsigned int _n) {
     Node n = m->get(_n);
-    localIdents.clear();
-    addParamsToLocalIdents(n.n2);
+    localVarTypes.push();
+    addParamsToLocalVarTypes(n.n2);
     unsigned int bodyType = tyExp(n.extra.nodes.n4);
     unify(bodyType, n.n3);
+    localVarTypes.pop();
   }
 
   std::string tyNodeToString(unsigned int _ty) {
     Node ty = m->get(_ty);
     switch (ty.ty) {
       case NodeTy::BOOL: return std::string("bool");
+      case NodeTy::f32: return std::string("f32");
+      case NodeTy::f64: return std::string("f64");
       case NodeTy::i8: return std::string("i8");
       case NodeTy::i32: return std::string("i32");
+      case NodeTy::DECIMAL: return std::string("decimal");
       case NodeTy::NUMERIC: return std::string("numeric");
       default: printf("Not a type!\n"); exit(1);
     }
@@ -206,6 +274,10 @@ public:
 
   std::string unificationError(unsigned int _ty1, unsigned int _ty2) {
     return std::string("Cannot unify ") + tyNodeToString(_ty1) + " with " + tyNodeToString(_ty2);
+  }
+
+  std::string varNotFoundError(std::string &varName) {
+    return std::string("Variable ") + varName + " is unbound";
   }
 
 };

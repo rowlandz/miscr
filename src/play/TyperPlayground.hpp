@@ -45,6 +45,10 @@ int play_with_typer(char* grammarElement) {
 
     std::vector<bool> indents;
     print_parse_tree(parser.m, parsed, indents);
+    
+    for (auto err : typer.errors) {
+      printf("%s\n", err.c_str());
+    }
   }
 
   return 0;

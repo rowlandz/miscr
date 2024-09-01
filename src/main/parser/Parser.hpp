@@ -196,6 +196,8 @@ public:
   }
 
   unsigned int tyExp() {
+    if (p->ty == KW_f32) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f32 });
+    if (p->ty == KW_f64) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f64 });
     if (p->ty == KW_i8) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i8 });
     if (p->ty == KW_i32) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i32 });
     if (p->ty == KW_BOOL) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::BOOL });

@@ -19,6 +19,8 @@ const char* TokenTyToString(TokenTy ty) {
     case KW_RETURN: return "KW_RETURN";
     case KW_THEN: return "KW_THEN";
     case KW_TRUE: return "KW_TRUE";
+    case KW_f32: return "KW_f32";
+    case KW_f64: return "KW_f64";
     case KW_i8: return "KW_i8";
     case KW_i32: return "KW_i32";
     case OP_EQ: return "OP_EQ";

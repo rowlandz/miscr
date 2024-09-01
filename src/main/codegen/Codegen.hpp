@@ -1,8 +1,8 @@
 #ifndef CODEGEN_CODEGEN
 #define CODEGEN_CODEGEN
 
-#include <map>
 #include <llvm/IR/IRBuilder.h>
+#include "common/ScopeStack.hpp"
 #include "common/NodeManager.hpp"
 
 class Codegen {
@@ -12,9 +12,8 @@ public:
   llvm::Module* mod;
   const NodeManager* nodeManager;
 
-  /** Maps parameter names to their LLVM values for a single function (the one
-   * currently being generated). */
-  std::map<std::string, llvm::Value*> functionParams;
+  /** Maps variable names to their LLVM values */
+  ScopeStack<llvm::Value*> varValues;
 
   Codegen(const NodeManager* nodeManager) {
     b = new llvm::IRBuilder<>(ctx);
@@ -52,11 +51,10 @@ public:
    * names in the LLVM IR. */
   void setFunctionParams(llvm::Function* f, unsigned int _paramList) {
     Node paramList = nodeManager->get(_paramList);
-    functionParams.clear();
     for (llvm::Argument &arg : f->args()) {
       Node paramName = nodeManager->get(paramList.n1);
       std::string paramNameStr(paramName.extra.ptr, paramName.loc.sz);
-      functionParams[paramNameStr] = &arg;
+      varValues.add(paramNameStr, &arg);
       arg.setName(paramNameStr);        // Not strictly necessary, but helpful to have
       paramList = nodeManager->get(paramList.n3);
     }
@@ -75,11 +73,12 @@ public:
       mod
     );
     
+    varValues.push();
     setFunctionParams(f, n.n2);
-
     b->SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
     llvm::Value* retVal = genExp(n.extra.nodes.n4);
     b->CreateRet(retVal);
+    varValues.pop();
     return f;
   }
 
@@ -87,7 +86,7 @@ public:
     Node n = nodeManager->get(_n);
     if (n.ty == NodeTy::EIDENT) {
       std::string identStr(n.extra.ptr, n.loc.sz);
-      llvm::Value* v = functionParams[identStr];
+      llvm::Value* v = varValues.getOrElse(identStr, nullptr);
       if (!v) {
         printf("Could not get argument!!! %s\n", identStr.c_str());
         exit(1);

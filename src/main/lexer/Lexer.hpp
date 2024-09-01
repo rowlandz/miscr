@@ -215,6 +215,8 @@ private:
         if (!strncmp("if", s, 2)) return KW_IF;
         return TOK_IDENT;
       case 3:
+        if (!strncmp("f32", s, 3)) return KW_f32;
+        if (!strncmp("f64", s, 3)) return KW_f64;
         if (!strncmp("i32", s, 3)) return KW_i32;
         if (!strncmp("let", s, 3)) return KW_LET;
         return TOK_IDENT;
