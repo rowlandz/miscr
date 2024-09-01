@@ -84,7 +84,18 @@ public:
 
   llvm::Value* genExp(unsigned int _n) {
     Node n = nodeManager->get(_n);
-    if (n.ty == NodeTy::EIDENT) {
+
+    if (n.ty == NodeTy::BLOCK) {
+      Node stmtList = nodeManager->get(n.n2);
+      llvm::Value* lastStmtVal = nullptr;
+      while (stmtList.ty == NodeTy::STMTLIST_CONS) {
+        lastStmtVal = genStmt(stmtList.n1);
+        stmtList = nodeManager->get(stmtList.n2);
+      }
+      return lastStmtVal;
+    }
+
+    else if (n.ty == NodeTy::EIDENT) {
       std::string identStr(n.extra.ptr, n.loc.sz);
       llvm::Value* v = varValues.getOrElse(identStr, nullptr);
       if (!v) {
@@ -115,6 +126,30 @@ public:
       exit(1);
     }
   }
+
+  llvm::Value* genStmt(unsigned int _n) {
+    Node n = nodeManager->get(_n);
+
+    if (n.ty == NodeTy::LET) {
+      llvm::Value* v = genExp(n.n2);
+      Node n1 = nodeManager->get(n.n1);
+      std::string identStr(n1.extra.ptr, n1.loc.sz);
+      v->setName(identStr);   // Not strictly necessary, but helpful to have
+      varValues.add(identStr, v);
+      return nullptr;
+    }
+
+    else if (isExpNodeTy(n.ty)) {
+      return genExp(_n);
+    }
+
+    else {
+      printf("Unsupported statement!\n");
+      exit(1);
+    }
+
+  }
+
 };
 
 #endif

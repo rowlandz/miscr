@@ -37,6 +37,27 @@ enum struct NodeTy: unsigned short {
   PARAMLIST_NIL, PARAMLIST_CONS,
 };
 
+bool isExpNodeTy(NodeTy ty) {
+  switch (ty) {
+    case NodeTy::EIDENT:
+    case NodeTy::LIT_INT:
+    case NodeTy::LIT_DEC:
+    case NodeTy::LIT_STRING:
+    case NodeTy::TRUE:
+    case NodeTy::FALSE:
+    case NodeTy::ADD:
+    case NodeTy::SUB:
+    case NodeTy::MUL:
+    case NodeTy::DIV:
+    case NodeTy::EQ:
+    case NodeTy::NE:
+    case NodeTy::IF:
+    case NodeTy::BLOCK:
+    case NodeTy::CALL: return true;
+    default: return false;
+  }
+}
+
 const char* NodeTyToString(NodeTy nt) {
   switch (nt) {
     case NodeTy::LIT_INT:          return "LIT_INT";

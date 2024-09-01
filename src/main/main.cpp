@@ -6,10 +6,7 @@
 
 int main() {
 
-  printf("Size of Location: %lu\n", sizeof(Location));
-  printf("Size of Node: %lu\n", sizeof(Node));
-
-  auto tokens = Lexer().run("proc main(x: i32, y: i32): i32 = x + y + 1;");
+  auto tokens = Lexer().run("proc main(x: i32): i32 = { let y = x + 1; x * y; };");
   Parser parser(tokens);
   auto parsed = parser.funcOrProc();
   Codegen codegen(&parser.m);

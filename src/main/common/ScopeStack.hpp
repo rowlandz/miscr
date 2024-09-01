@@ -5,7 +5,7 @@
 #include <vector>
 #include <map>
 
-/** Manages a stack of local variables with `push` and `reset` capabilities. */
+/** Manages information about program variables. */
 template <typename V>
 class ScopeStack {
 public:
