@@ -179,15 +179,16 @@ public:
       localVarTypes.pop();
     }
 
-    else if (n.ty == NodeTy::EIDENT) {
-      std::string identStr(n.extra.ptr, n.loc.sz);
-      unsigned int varTyNode = localVarTypes.getOrElse(identStr, NN);
-      if (varTyNode != NN) {
-        bind(n.n1, varTyNode);
-      } else {
-        errors.push_back(varNotFoundError(identStr));
-      }
-    }
+    // TODO: this is broken
+    // else if (n.ty == NodeTy::EQIDENT) {
+    //   std::string identStr(n.extra.ptr, n.loc.sz);
+    //   unsigned int varTyNode = localVarTypes.getOrElse(identStr, NN);
+    //   if (varTyNode != NN) {
+    //     bind(n.n1, varTyNode);
+    //   } else {
+    //     errors.push_back(varNotFoundError(identStr));
+    //   }
+    // }
 
     else if (n.ty == NodeTy::EQ || n.ty == NodeTy::NE) {
       unsigned int tyn2 = tyExp(n.n2);
@@ -268,8 +269,8 @@ public:
   }
 
   void tyFuncOrProc(unsigned int _n) {
-    Node n = m->get(_n);
     localVarTypes.push();
+    Node n = m->get(_n);
     addParamsToLocalVarTypes(n.n2);
     unsigned int bodyType = tyExp(n.extra.nodes.n4);
     unify(bodyType, n.n3);

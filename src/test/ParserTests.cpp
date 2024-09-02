@@ -61,12 +61,24 @@ namespace ParserTests {
   void declParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {
     auto tokens = Lexer().run(text);
     auto parser = Parser(tokens);
-    auto parsed = parser.funcOrProc();
+    auto parsed = parser.decl();
     auto currentLine = expectedNodes.begin();
     expectMatch(parser.m, parsed, 0, expectedNodes, currentLine);
   }
 
   //////////////////////////////////////////////////////////////////////////////
+
+  TEST(qident) {
+    expParseTreeShouldBe("global::MyModule::myfunc", {
+      "EQIDENT",
+      "    TYPEVAR",
+      "    QIDENT",
+      "        IDENT",
+      "        QIDENT",
+      "            IDENT",
+      "            IDENT",
+    });
+  }
 
   TEST(arithmetic) {
     expParseTreeShouldBe("1 + 1", {
@@ -89,8 +101,9 @@ namespace ParserTests {
       "            LIT_INT",
       "                TYPEVAR",
       "        STMTLIST_CONS",
-      "            EIDENT",
+      "            EQIDENT",
       "                TYPEVAR",
+      "                IDENT",
       "            STMTLIST_NIL",
     });
   }
@@ -106,13 +119,44 @@ namespace ParserTests {
       "        STMTLIST_CONS",
       "            CALL",
       "                TYPEVAR",
-      "                EIDENT",
+      "                EQIDENT",
       "                    TYPEVAR",
+      "                    IDENT",
       "                EXPLIST_CONS",
       "                    LIT_STRING",
       "                        TYPEVAR",
       "                    EXPLIST_NIL",
       "            STMTLIST_NIL",
+    });
+  }
+
+  TEST(empty_module) {
+    declParseTreeShouldBe("module M {}", {
+      "MODULE",
+      "    IDENT",
+      "    DECLLIST_NIL",
+    });
+  }
+
+  TEST(nested_decls) {
+    declParseTreeShouldBe("module M { extern proc f(): unit; namespace N { extern proc g(): unit; } }", {
+      "MODULE",
+      "    IDENT",
+      "    DECLLIST_CONS",
+      "        EXTERN_PROC",
+      "            IDENT",
+      "            PARAMLIST_NIL",
+      "            UNIT",
+      "        DECLLIST_CONS",
+      "            NAMESPACE",
+      "                IDENT",
+      "                DECLLIST_CONS",
+      "                    EXTERN_PROC",
+      "                        IDENT",
+      "                        PARAMLIST_NIL",
+      "                        UNIT",
+      "                    DECLLIST_NIL",
+      "            DECLLIST_NIL",
     });
   }
 

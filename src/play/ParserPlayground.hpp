@@ -13,7 +13,7 @@ int play_with_parser(char* grammarElement) {
   std::string line;
 
   unsigned int(Parser::*chosenParseFunction)();
-  if (!strcmp(grammarElement, "decl")) chosenParseFunction = &Parser::funcOrProc;
+  if (!strcmp(grammarElement, "decl")) chosenParseFunction = &Parser::decl;
   else if (!strcmp(grammarElement, "exp")) chosenParseFunction = &Parser::exp;
   else if (!strcmp(grammarElement, "stmt")) chosenParseFunction = &Parser::stmt;
   else {

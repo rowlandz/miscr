@@ -11,6 +11,7 @@ enum LexerST: unsigned char {
   ST_DIGITS_DOT_DIGITS,
   ST_IDENT,
   ST_EQUAL,
+  ST_COLON,
   ST_STRING,
   ST_STRING_BSLASH,
   ST_FSLASH,
@@ -55,6 +56,7 @@ private:
         else if (c == '"') tok.step(ST_STRING);
         else if (c == '/') tok.step(ST_FSLASH);
         else if (c == '=') tok.step(ST_EQUAL);
+        else if (c == ':') tok.step(ST_COLON);
         else if (c == '+') tok.stepAndCapture(OP_ADD);
         else if (c == '-') tok.stepAndCapture(OP_SUB);
         else if (c == '*') tok.stepAndCapture(OP_MUL);
@@ -62,7 +64,6 @@ private:
         else if (c == ')') tok.stepAndCapture(RPAREN);
         else if (c == '{') tok.stepAndCapture(LBRACE);
         else if (c == '}') tok.stepAndCapture(RBRACE);
-        else if (c == ':') tok.stepAndCapture(COLON);
         else if (c == ',') tok.stepAndCapture(COMMA);
         else if (c == ';') tok.stepAndCapture(SEMICOLON);
         else tok.stepAndDiscard();
@@ -88,6 +89,11 @@ private:
         if (c == '>') tok.stepAndCapture(FATARROW);
         else if (c == '=') tok.stepAndCapture(OP_EQ);
         else tok.capture(EQUAL);
+        break;
+
+      case ST_COLON:
+        if (c == ':') tok.stepAndCapture(COLON_COLON);
+        else tok.capture(COLON);
         break;
 
       case ST_STRING:
@@ -180,6 +186,9 @@ private:
       case ST_EQUAL:
         tok.capture(EQUAL);
         break;
+      case ST_COLON:
+        tok.capture(COLON);
+        break;
       case ST_STRING:
       case ST_STRING_BSLASH:
         tok.capture(LIT_STRING);
@@ -235,8 +244,13 @@ private:
         if (!strncmp("match", s, 5)) return KW_MATCH;
         return TOK_IDENT;
       case 6:
+        if (!strncmp("extern", s, 6)) return KW_EXTERN;
+        if (!strncmp("module", s, 6)) return KW_MODULE;
         if (!strncmp("return", s, 6)) return KW_RETURN;
         if (!strncmp("string", s, 6)) return KW_STRING;
+        return TOK_IDENT;
+      case 9:
+        if (!strncmp("namespace", s, 9)) return KW_NAMESPACE;
         return TOK_IDENT;
       default:
         return TOK_IDENT;

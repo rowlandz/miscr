@@ -54,9 +54,28 @@ public:
     return EPSILON_ERROR;
   }
 
-  unsigned int eident() {
-    if (p->ty == TOK_IDENT) return m.add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::EIDENT });
-    return EPSILON_ERROR;
+  /** Parses a QIDENT or IDENT. A QIDENT means there is at least one qualifier
+   * present, while IDENT means there are no qualifiers. */
+  unsigned int qidentOrIdent() {
+    Token t = *p;
+    unsigned int n1 = ident();
+    if (IS_ERROR(n1)) return n1;
+    if (p->ty == COLON_COLON) {
+      p++;
+      unsigned int n2 = qidentOrIdent();
+      if (IS_ERROR(n2)) return ARRESTING_ERROR;
+      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::QIDENT });
+    } else {
+      return n1;
+    }
+  }
+
+  /** Parses an EQIDENT. The n2 slot could be a `QIDENT` or `IDENT`. */
+  unsigned int eqident() {
+    unsigned int n2 = qidentOrIdent();
+    if (IS_ERROR(n2)) return n2;
+    return m.add({ m.get(n2).loc, newTYPEVAR(), n2, NN, NOEXTRA, NodeTy::EQIDENT });
   }
 
   unsigned int parensExp() {
@@ -77,9 +96,9 @@ public:
     return m.add({ loc, newTYPEVAR(), n, NN, NOEXTRA, NodeTy::BLOCK });
   }
 
-  unsigned int eidentOrFunctionCall() {
+  unsigned int eqidentOrFunctionCall() {
     Token t = *p;
-    unsigned int n2 = eident();
+    unsigned int n2 = eqident();
     if (IS_ERROR(n2)) return n2;
     if (p->ty == LPAREN) {
       p++;
@@ -94,7 +113,7 @@ public:
 
   unsigned int expLv0() {
     unsigned int n1;
-    n1 = eidentOrFunctionCall();
+    n1 = eqidentOrFunctionCall();
     if (n1 != EPSILON_ERROR) return n1;
     n1 = numLit();
     if (n1 != EPSILON_ERROR) return n1;
@@ -302,6 +321,71 @@ public:
     if (p->ty == SEMICOLON) p++; else return ARRESTING_ERROR;
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
     return m.add({ loc, n1, n2, n3, { .nodes={ n4, NN } }, ty });
+  }
+
+  unsigned int externFuncOrProc() {
+    Token t = *p;
+    NodeTy ty;
+    if (p->ty == KW_EXTERN) p++; else return EPSILON_ERROR;
+    if (p->ty == KW_FUNC) { ty = NodeTy::EXTERN_FUNC; p++; }
+    else if (p->ty == KW_PROC) { ty = NodeTy::EXTERN_PROC; p++; }
+    else return ARRESTING_ERROR;
+    unsigned int n1 = ident();
+    if (IS_ERROR(n1)) return ARRESTING_ERROR;
+    if (p->ty == LPAREN) p++; else return EPSILON_ERROR;
+    unsigned int n2 = paramListWotc0();
+    if (IS_ERROR(n2)) return ARRESTING_ERROR;
+    if (p->ty == RPAREN) p++; else return ARRESTING_ERROR;
+    if (p->ty == COLON) p++; else return ARRESTING_ERROR;
+    unsigned int n3 = tyExp();
+    if (IS_ERROR(n3)) return ARRESTING_ERROR;
+    if (p->ty == SEMICOLON) p++; else return ARRESTING_ERROR;
+    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+    return m.add({ loc, n1, n2, n3, NOEXTRA, ty });
+  }
+
+  /** Parses a module or namespace with brace-syntax. */
+  unsigned int moduleOrNamespace() {
+    Token t = *p;
+    NodeTy ty;
+    if (p->ty == KW_MODULE) { ty = NodeTy::MODULE; p++; }
+    else if (p->ty == KW_NAMESPACE) { ty = NodeTy::NAMESPACE; p++; }
+    else return EPSILON_ERROR;
+    unsigned int n1 = ident();
+    if (IS_ERROR(n1)) return ARRESTING_ERROR;
+    if (p->ty == LBRACE) p++; else return ARRESTING_ERROR;
+    unsigned int n2 = decls0();
+    if (IS_ERROR(n2)) return ARRESTING_ERROR;
+    if (p->ty == RBRACE) p++; else return ARRESTING_ERROR;
+    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+    return m.add({ loc, n1, n2, NN, NOEXTRA, ty });
+  }
+
+  /** A declaration is a func, proc, data type, module, or namespace. */
+  unsigned int decl() {
+    unsigned int n1;
+    n1 = externFuncOrProc();
+    if (n1 != EPSILON_ERROR) return n1;
+    n1 = funcOrProc();
+    if (n1 != EPSILON_ERROR) return n1;
+    n1 = moduleOrNamespace();
+    if (n1 != EPSILON_ERROR) return n1;
+    return EPSILON_ERROR;
+  }
+
+  /** Parses zero or more declarations into a DECLLIST. */
+  unsigned int decls0() {
+    Token t = *p;
+    unsigned n1 = decl();
+    if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
+    if (n1 == EPSILON_ERROR) {
+      Location loc = { t.row, t.col, 0 };
+      return m.add({ loc, NN, NN, NN, NOEXTRA, NodeTy::DECLLIST_NIL });
+    }
+    unsigned n2 = decls0();
+    if (IS_ERROR(n2)) return ARRESTING_ERROR;
+    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+    return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::DECLLIST_CONS });
   }
 
   bool hasMoreToParse() {

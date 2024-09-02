@@ -12,7 +12,7 @@ enum struct NodeTy: unsigned short {
 
   // expression nodes
 
-  EIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
+  EQIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
   ADD, SUB, MUL, DIV, EQ, NE,
   IF, BLOCK, CALL,
 
@@ -22,7 +22,7 @@ enum struct NodeTy: unsigned short {
 
   // declaration nodes
 
-  FUNC, PROC,
+  EXTERN_FUNC, EXTERN_PROC, FUNC, PROC, MODULE, NAMESPACE,
 
   // type nodes
 
@@ -31,15 +31,16 @@ enum struct NodeTy: unsigned short {
 
   // Other
 
-  IDENT,
+  QIDENT, IDENT,
   EXPLIST_NIL, EXPLIST_CONS,
   STMTLIST_NIL, STMTLIST_CONS,
   PARAMLIST_NIL, PARAMLIST_CONS,
+  DECLLIST_NIL, DECLLIST_CONS,
 };
 
 bool isExpNodeTy(NodeTy ty) {
   switch (ty) {
-    case NodeTy::EIDENT:
+    case NodeTy::EQIDENT:
     case NodeTy::LIT_INT:
     case NodeTy::LIT_DEC:
     case NodeTy::LIT_STRING:
@@ -85,17 +86,24 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::i32:              return "i32";
     case NodeTy::STRING:           return "STRING";
     case NodeTy::IDENT:            return "IDENT";
-    case NodeTy::EIDENT:           return "EIDENT";
+    case NodeTy::QIDENT:           return "QIDENT";
+    case NodeTy::EQIDENT:          return "EQIDENT";
     case NodeTy::EXPLIST_NIL:      return "EXPLIST_NIL";
     case NodeTy::EXPLIST_CONS:     return "EXPLIST_CONS";
     case NodeTy::LET:              return "LET";
     case NodeTy::RETURN:           return "RETURN";
+    case NodeTy::EXTERN_FUNC:      return "EXTERN_FUNC";
+    case NodeTy::EXTERN_PROC:      return "EXTERN_PROC";
     case NodeTy::FUNC:             return "FUNC";
     case NodeTy::PROC:             return "PROC";
+    case NodeTy::MODULE:           return "MODULE";
+    case NodeTy::NAMESPACE:        return "NAMESPACE";
     case NodeTy::PARAMLIST_NIL:    return "PARAMLIST_NIL";
     case NodeTy::PARAMLIST_CONS:   return "PARAMLIST_CONS";
     case NodeTy::STMTLIST_NIL:     return "STMTLIST_NIL";
     case NodeTy::STMTLIST_CONS:    return "STMTLIST_CONS";
+    case NodeTy::DECLLIST_NIL:     return "DECLLIST_NIL";
+    case NodeTy::DECLLIST_CONS:    return "DECLLIST_CONS";
   }
 }
 
@@ -116,6 +124,7 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "CALL")             return NodeTy::CALL;
   else if (str == "BOOL")             return NodeTy::BOOL;
   else if (str == "TYPEVAR")          return NodeTy::TYPEVAR;
+  else if (str == "UNIT")             return NodeTy::UNIT;
   else if (str == "NUMERIC")          return NodeTy::NUMERIC;
   else if (str == "DECIMAL")          return NodeTy::DECIMAL;
   else if (str == "f32")              return NodeTy::f32;
@@ -124,17 +133,24 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "i32")              return NodeTy::i32;
   else if (str == "STRING")           return NodeTy::STRING;
   else if (str == "IDENT")            return NodeTy::IDENT;
-  else if (str == "EIDENT")           return NodeTy::EIDENT;
+  else if (str == "QIDENT")           return NodeTy::QIDENT;
+  else if (str == "EQIDENT")          return NodeTy::EQIDENT;
   else if (str == "EXPLIST_NIL")      return NodeTy::EXPLIST_NIL;
   else if (str == "EXPLIST_CONS")     return NodeTy::EXPLIST_CONS;
   else if (str == "LET")              return NodeTy::LET;
   else if (str == "RETURN")           return NodeTy::RETURN;
+  else if (str == "EXTERN_FUNC")      return NodeTy::EXTERN_FUNC;
+  else if (str == "EXTERN_PROC")      return NodeTy::EXTERN_PROC;
   else if (str == "FUNC")             return NodeTy::FUNC;
   else if (str == "PROC")             return NodeTy::PROC;
+  else if (str == "MODULE")           return NodeTy::MODULE;
+  else if (str == "NAMESPACE")        return NodeTy::NAMESPACE;
   else if (str == "PARAMLIST_NIL")    return NodeTy::PARAMLIST_NIL;
   else if (str == "PARAMLIST_CONS")   return NodeTy::PARAMLIST_CONS;
   else if (str == "STMTLIST_NIL")     return NodeTy::STMTLIST_NIL;
   else if (str == "STMTLIST_CONS")    return NodeTy::STMTLIST_CONS;
+  else if (str == "DECLLIST_NIL")     return NodeTy::DECLLIST_NIL;
+  else if (str == "DECLLIST_CONS")    return NodeTy::DECLLIST_CONS;
   else { printf("Invalid NodeTy string: %s\n", str.c_str()); exit(1); }
 }
 

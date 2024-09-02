@@ -50,7 +50,7 @@ public:
         resolveExp(n.n3);
         resolveExp(n.extra.nodes.n4);
         break;
-      case NodeTy::EIDENT:
+      case NodeTy::EQIDENT:
       case NodeTy::FALSE:
       case NodeTy::TRUE:
       case NodeTy::LIT_DEC:
