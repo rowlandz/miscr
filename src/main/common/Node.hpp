@@ -26,7 +26,7 @@ enum struct NodeTy: unsigned short {
 
   // type nodes
 
-  TYPEVAR, BOOL, i8, i32, f32, f64,
+  TYPEVAR, UNIT, BOOL, i8, i32, f32, f64, STRING,
   NUMERIC, DECIMAL,
 
   // Other
@@ -74,6 +74,7 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::NE:               return "NE";
     case NodeTy::BLOCK:            return "BLOCK";
     case NodeTy::CALL:             return "CALL";
+    case NodeTy::UNIT:             return "UNIT";
     case NodeTy::BOOL:             return "BOOL";
     case NodeTy::TYPEVAR:          return "TYPEVAR";
     case NodeTy::NUMERIC:          return "NUMERIC";
@@ -82,6 +83,7 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::f64:              return "f64";
     case NodeTy::i8:               return "i8";
     case NodeTy::i32:              return "i32";
+    case NodeTy::STRING:           return "STRING";
     case NodeTy::IDENT:            return "IDENT";
     case NodeTy::EIDENT:           return "EIDENT";
     case NodeTy::EXPLIST_NIL:      return "EXPLIST_NIL";
@@ -120,6 +122,7 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "f64")              return NodeTy::f64;
   else if (str == "i8")               return NodeTy::i8;
   else if (str == "i32")              return NodeTy::i32;
+  else if (str == "STRING")           return NodeTy::STRING;
   else if (str == "IDENT")            return NodeTy::IDENT;
   else if (str == "EIDENT")           return NodeTy::EIDENT;
   else if (str == "EXPLIST_NIL")      return NodeTy::EXPLIST_NIL;

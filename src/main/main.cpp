@@ -6,7 +6,7 @@
 
 int main() {
 
-  auto tokens = Lexer().run("proc main(x: i32): i32 = { let y = x + 1; x * y; };");
+  auto tokens = Lexer().run("proc main(): string = \"Hello there!\";");
   Parser parser(tokens);
   auto parsed = parser.funcOrProc();
   Codegen codegen(&parser.m);

@@ -228,6 +228,7 @@ private:
         if (!strncmp("proc", s, 4)) return KW_PROC;
         if (!strncmp("then", s, 4)) return KW_THEN;
         if (!strncmp("true", s, 4)) return KW_TRUE;
+        if (!strncmp("unit", s, 4)) return KW_UNIT;
         return TOK_IDENT;
       case 5:
         if (!strncmp("false", s, 5)) return KW_FALSE;
@@ -235,6 +236,7 @@ private:
         return TOK_IDENT;
       case 6:
         if (!strncmp("return", s, 6)) return KW_RETURN;
+        if (!strncmp("string", s, 6)) return KW_STRING;
         return TOK_IDENT;
       default:
         return TOK_IDENT;

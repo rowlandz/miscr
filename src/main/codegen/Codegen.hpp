@@ -32,6 +32,10 @@ public:
       case NodeTy::BOOL: return b->getInt1Ty();
       case NodeTy::i8: return b->getInt8Ty();
       case NodeTy::i32: return b->getInt32Ty();
+      case NodeTy::f32: return b->getFloatTy();
+      case NodeTy::f64: return b->getDoubleTy();
+      case NodeTy::STRING: return b->getInt8PtrTy();
+      case NodeTy::UNIT: return b->getVoidTy();
       default: return b->getVoidTy();
     }
   }
@@ -107,6 +111,12 @@ public:
 
     else if (n.ty == NodeTy::LIT_INT) {
       return b->getInt32((int)n.extra.intVal);
+    }
+
+    else if (n.ty == NodeTy::LIT_STRING) {
+      std::string s(n.extra.ptr+1, n.loc.sz-2);
+      llvm::Constant* llvmStr = b->CreateGlobalStringPtr(s);
+      return llvmStr;
     }
 
     else if (n.ty == NodeTy::ADD) {

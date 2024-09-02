@@ -201,6 +201,8 @@ public:
     if (p->ty == KW_i8) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i8 });
     if (p->ty == KW_i32) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i32 });
     if (p->ty == KW_BOOL) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::BOOL });
+    if (p->ty == KW_STRING) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::STRING });
+    if (p->ty == KW_UNIT) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::UNIT });
     return EPSILON_ERROR;
   }
 

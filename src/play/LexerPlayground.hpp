@@ -7,6 +7,7 @@
 const char* TokenTyToString(TokenTy ty) {
   switch (ty) {
     case TOK_IDENT: return "TOK_IDENT";
+    case KW_UNIT: return "KW_UNIT";
     case KW_BOOL: return "KW_BOOL";
     case KW_CASE: return "KW_CASE";
     case KW_ELSE: return "KW_ELSE";
@@ -23,6 +24,7 @@ const char* TokenTyToString(TokenTy ty) {
     case KW_f64: return "KW_f64";
     case KW_i8: return "KW_i8";
     case KW_i32: return "KW_i32";
+    case KW_STRING: return "KW_STRING";
     case OP_EQ: return "OP_EQ";
     case OP_NEQ: return "OP_NEQ";
     case OP_ADD: return "OP_ADD";

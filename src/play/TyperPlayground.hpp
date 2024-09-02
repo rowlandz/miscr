@@ -12,13 +12,13 @@ int play_with_typer(char* grammarElement) {
   std::string line;
 
   unsigned int(Parser::*chosenParseFunction)();
-  void(Typer::*chosenTypeFunction)(unsigned int);
+  void(*chosenTypeFunction)(unsigned int, NodeManager*);
   if (!strcmp(grammarElement, "decl")) {
     chosenParseFunction = &Parser::funcOrProc;
-    chosenTypeFunction = &Typer::tyFuncOrProc;
+    chosenTypeFunction = &Typer::typeFuncOrProc;
   } else if (!strcmp(grammarElement, "exp")) {
     chosenParseFunction = &Parser::exp;
-    chosenTypeFunction = &Typer::voidTyExp;
+    chosenTypeFunction = &Typer::typeExp;
   } else if (!strcmp(grammarElement, "stmt")) {
     chosenParseFunction = &Parser::stmt;
     printf("Can't type a stmt right now!\n");
@@ -40,15 +40,14 @@ int play_with_typer(char* grammarElement) {
       continue;
     }
 
-    Typer typer(&parser.m);
-    (typer.*chosenTypeFunction)(parsed);
+    chosenTypeFunction(parsed, &parser.m);
 
     std::vector<bool> indents;
     print_parse_tree(parser.m, parsed, indents);
     
-    for (auto err : typer.errors) {
-      printf("%s\n", err.c_str());
-    }
+    // for (auto err : typer.errors) {
+    //   printf("%s\n", err.c_str());
+    // }
   }
 
   return 0;
