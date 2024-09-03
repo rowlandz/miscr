@@ -130,8 +130,6 @@ But you cannot do that with a module.
 
 ## Translation Units
 
-
-
 module A {
   func f(x: i32): i32 = x + 1;
 }
@@ -143,3 +141,4 @@ module B {
     func h(x: i32): i32 = x + 3;
   }
 }
+

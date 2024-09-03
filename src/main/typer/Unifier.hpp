@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include "common/Ontology.hpp"
 #include "common/ScopeStack.hpp"
 #include "common/NodeManager.hpp"
 
@@ -16,8 +17,16 @@ public:
 
   NodeManager* m;
  
+  /** Maps decls to their definitions or declarations. */
+  const Ontology* ont;
+
   /** Maps local variable names to type nodes. */
   ScopeStack<unsigned int> localVarTypes;
+
+  /** Holds all scopes that could be used to fully-qualify a relative path.
+   * e.g., `{ "global", "global::MyMod", "global::MyMod::MyMod2" }`
+   */
+  std::vector<std::string> relativePathQualifiers;
 
   /** Accumulates type checking errors. */
   std::vector<std::string> errors;
@@ -31,8 +40,10 @@ public:
   unsigned int tyc_numeric;
   unsigned int tyc_decimal;
 
-  Unifier(NodeManager* m) {
+  Unifier(NodeManager* m, Ontology* ont) {
     this->m = m;
+    this->ont = ont;
+    relativePathQualifiers.push_back(std::string("global"));
     ty_unit = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::UNIT });
     ty_bool = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::BOOL });
     ty_i8 = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::i8 });
@@ -179,16 +190,48 @@ public:
       localVarTypes.pop();
     }
 
-    // TODO: this is broken
-    // else if (n.ty == NodeTy::EQIDENT) {
-    //   std::string identStr(n.extra.ptr, n.loc.sz);
-    //   unsigned int varTyNode = localVarTypes.getOrElse(identStr, NN);
-    //   if (varTyNode != NN) {
-    //     bind(n.n1, varTyNode);
-    //   } else {
-    //     errors.push_back(varNotFoundError(identStr));
-    //   }
-    // }
+    else if (n.ty == NodeTy::CALL) {
+      Node eqident = m->get(n.n2);
+      std::string calleeRelName = relQIdentToString(eqident.n2);
+      bool yayFoundIt = false;
+      for (auto qual = relativePathQualifiers.end()-1; relativePathQualifiers.begin() <= qual; qual--) {
+        auto maybeFuncDecl = ont->functionSpace.find(*qual + calleeRelName);
+        if (maybeFuncDecl == ont->functionSpace.end()) continue;
+        yayFoundIt = true;
+        Node funcDecl = m->get((*maybeFuncDecl).second);
+
+        // Unify each of the arguments with parameter.
+        Node expList = m->get(n.n3);
+        Node paramList = m->get(funcDecl.n2);
+        while (expList.ty == NodeTy::EXPLIST_CONS && paramList.ty == NodeTy::PARAMLIST_CONS) {
+          unsigned int _argInferredTy = tyExp(expList.n1);
+          unify(_argInferredTy, paramList.n2);
+          expList = m->get(expList.n2);
+          paramList = m->get(paramList.n3);
+        }
+        if (expList.ty == NodeTy::EXPLIST_CONS || paramList.ty == NodeTy::PARAMLIST_CONS) {
+          errors.push_back("Arity mismatch for function " + *qual + calleeRelName);
+        }
+
+        // Unify return type
+        bind(n.n1, funcDecl.n3);
+      }
+      if (!yayFoundIt) {
+        errors.push_back("Cannot find function " + calleeRelName);
+      }
+    }
+
+    else if (n.ty == NodeTy::EQIDENT) {
+      Node identNode = m->get(n.n2);
+      if (identNode.ty == NodeTy::IDENT) {
+        std::string identStr(identNode.extra.ptr, identNode.loc.sz);
+        unsigned int varTyNode = localVarTypes.getOrElse(identStr, NN);
+        if (varTyNode != NN) bind(n.n1, varTyNode);
+        else errors.push_back(varNotFoundError(identStr));
+      } else {
+        errors.push_back(std::string("Didn't expect qualified identifier: ") + std::string(identNode.extra.ptr, identNode.loc.sz));
+      }
+    }
 
     else if (n.ty == NodeTy::EQ || n.ty == NodeTy::NE) {
       unsigned int tyn2 = tyExp(n.n2);
@@ -223,7 +266,7 @@ public:
     }
 
     else {
-      printf("Unifier case not supported yet!\n");
+      printf("Unifier case not supported yet!: %s\n", NodeTyToString(n.ty));
       exit(1);
     }
 
@@ -275,6 +318,52 @@ public:
     unsigned int bodyType = tyExp(n.extra.nodes.n4);
     unify(bodyType, n.n3);
     localVarTypes.pop();
+  }
+
+  void tyModuleOrNamespace(unsigned int _n) {
+    Node n = m->get(_n);
+    Node identNode = m->get(n.n1);
+    std::string newScope = relativePathQualifiers.back() + "::" + std::string(identNode.extra.ptr, identNode.loc.sz);
+    relativePathQualifiers.push_back(newScope);
+
+    Node declList = m->get(n.n2);
+    while (declList.ty == NodeTy::DECLLIST_CONS) {
+      tyDecl(declList.n1);
+      declList = m->get(declList.n2);
+    }
+
+    relativePathQualifiers.pop_back();
+  }
+
+  void tyDecl(unsigned int _n) {
+    Node n = m->get(_n);
+
+    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC) {
+      tyFuncOrProc(_n);
+    }
+
+    else if (n.ty == NodeTy::MODULE || n.ty == NodeTy::NAMESPACE) {
+      tyModuleOrNamespace(_n);
+    }
+  }
+
+  /** `_qident` must be the address of a QIDENT or IDENT.
+   * Returns the (un)qualified name as a string prefixed with `::`.
+   * e.g., `::MyMod::myfunc` */
+  std::string relQIdentToString(unsigned int _qident) {
+    std::string ret;
+    Node qident = m->get(_qident);
+    while (qident.ty == NodeTy::QIDENT) {
+      Node part = m->get(qident.n1);
+      ret.append("::");
+      ret.append(std::string(part.extra.ptr, part.loc.sz));
+      qident = m->get(qident.n2);
+    }
+    if (qident.ty == NodeTy::IDENT) {
+      ret.append("::");
+      ret.append(std::string(qident.extra.ptr, qident.loc.sz));
+    }
+    return ret;
   }
 
   std::string tyNodeToString(unsigned int _ty) {

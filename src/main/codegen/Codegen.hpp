@@ -99,15 +99,16 @@ public:
       return lastStmtVal;
     }
 
-    else if (n.ty == NodeTy::EIDENT) {
-      std::string identStr(n.extra.ptr, n.loc.sz);
-      llvm::Value* v = varValues.getOrElse(identStr, nullptr);
-      if (!v) {
-        printf("Could not get argument!!! %s\n", identStr.c_str());
-        exit(1);
-      }
-      return v;
-    }
+    // TODO: broken
+    // else if (n.ty == NodeTy::EIDENT) {
+    //   std::string identStr(n.extra.ptr, n.loc.sz);
+    //   llvm::Value* v = varValues.getOrElse(identStr, nullptr);
+    //   if (!v) {
+    //     printf("Could not get argument!!! %s\n", identStr.c_str());
+    //     exit(1);
+    //   }
+    //   return v;
+    // }
 
     else if (n.ty == NodeTy::LIT_INT) {
       return b->getInt32((int)n.extra.intVal);

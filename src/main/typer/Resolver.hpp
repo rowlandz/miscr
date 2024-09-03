@@ -45,6 +45,9 @@ public:
       case NodeTy::BLOCK:
         resolveStmtList(n.n2);
         break;
+      case NodeTy::CALL:
+        resolveExpList(n.n2);
+        break;
       case NodeTy::IF:
         resolveExp(n.n2);
         resolveExp(n.n3);
@@ -71,6 +74,14 @@ public:
     }
   }
 
+  void resolveExpList(unsigned int _n) {
+    Node expList = m->get(_n);
+    while (expList.ty == NodeTy::EXPLIST_CONS) {
+      resolveExp(expList.n1);
+      expList = m->get(expList.n2);
+    }
+  }
+
   void resolveStmt(unsigned int _n) {
     Node n = m->get(_n);
 
@@ -90,7 +101,25 @@ public:
 
   void resolveDecl(unsigned int _n) {
     Node n = m->get(_n);
-    resolveExp(n.extra.nodes.n4);
+
+    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC) {
+      resolveExp(n.extra.nodes.n4);
+    }
+
+    else if (n.ty == NodeTy::MODULE || n.ty == NodeTy::NAMESPACE) {
+      for (Node declList = m->get(n.n2); declList.ty == NodeTy::DECLLIST_CONS; declList = m->get(declList.n2)) {
+        resolveDecl(declList.n1);
+      }
+    }
+
+    else if (n.ty == NodeTy::EXTERN_FUNC || n.ty == NodeTy::EXTERN_PROC) {
+      // nothing to be done
+    }
+
+    else {
+      printf("Unexpected decl in Resolver!\n");
+      exit(1);
+    }
   }
 };
 

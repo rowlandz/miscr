@@ -14,8 +14,8 @@ int play_with_typer(char* grammarElement) {
   unsigned int(Parser::*chosenParseFunction)();
   void(*chosenTypeFunction)(unsigned int, NodeManager*);
   if (!strcmp(grammarElement, "decl")) {
-    chosenParseFunction = &Parser::funcOrProc;
-    chosenTypeFunction = &Typer::typeFuncOrProc;
+    chosenParseFunction = &Parser::decl;
+    chosenTypeFunction = &Typer::typeDecl;
   } else if (!strcmp(grammarElement, "exp")) {
     chosenParseFunction = &Parser::exp;
     chosenTypeFunction = &Typer::typeExp;
