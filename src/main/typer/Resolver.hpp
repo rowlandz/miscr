@@ -4,7 +4,7 @@
 #include "common/NodeManager.hpp"
 
 /**
- * Second of two type checking phases. Replaces all type variables with
+ * Third of three type checking phases. Replaces all type variables with
  * the types they resolve to.
  */
 class Resolver {
@@ -46,7 +46,7 @@ public:
         resolveStmtList(n.n2);
         break;
       case NodeTy::CALL:
-        resolveExpList(n.n2);
+        resolveExpList(n.n3);
         break;
       case NodeTy::IF:
         resolveExp(n.n2);

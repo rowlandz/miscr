@@ -56,6 +56,7 @@ namespace ParserTests {
     NodeManager m;
     Parser parser(&m, lexer.getTokens());
     auto parsed = parser.exp();
+    if (IS_ERROR(parsed)) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
     auto currentLine = expectedNodes.begin();
     expectMatch(m, parsed, 0, expectedNodes, currentLine);
   }
@@ -66,6 +67,7 @@ namespace ParserTests {
     NodeManager m;
     Parser parser(&m, lexer.getTokens());
     auto parsed = parser.decl();
+    if (IS_ERROR(parsed)) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
     auto currentLine = expectedNodes.begin();
     expectMatch(m, parsed, 0, expectedNodes, currentLine);
   }
@@ -143,7 +145,14 @@ namespace ParserTests {
   }
 
   TEST(nested_decls) {
-    declParseTreeShouldBe("module M { extern proc f(): unit; namespace N { extern proc g(): unit; } }", {
+    declParseTreeShouldBe(
+      "module M {\n"
+      "  extern proc f(): unit;\n"
+      "  namespace N {\n"
+      "    extern proc g(): unit;\n"
+      "  }\n"
+      "}\n"
+    , {
       "MODULE",
       "    IDENT",
       "    DECLLIST_CONS",

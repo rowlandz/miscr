@@ -8,7 +8,7 @@
 #include "common/NodeManager.hpp"
 #include "common/LocatedError.hpp"
 
-/** First of two type checking phases.
+/** Second of three type checking phases.
  * Annotates expressions with types.
  * TODO: Do we want to maintain the tree structure or is it okay to break it here?
  * Currently I'm assuming it's okay to break it.

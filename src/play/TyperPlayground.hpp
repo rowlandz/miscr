@@ -18,10 +18,6 @@ int play_with_typer(char* grammarElement) {
   } else if (!strcmp(grammarElement, "exp")) {
     chosenParseFunction = &Parser::exp;
     chosenTypeFunction = &Typer::typeExp;
-  } else if (!strcmp(grammarElement, "stmt")) {
-    chosenParseFunction = &Parser::stmt;
-    printf("Can't type a stmt right now!\n");
-    exit(1);
   } else {
     std::cout << "I don't know how to typecheck a " << grammarElement << std::endl;
     return 1;

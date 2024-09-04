@@ -24,7 +24,7 @@ public:
   int run() {
     try { code(); }
     catch (const std::exception &e) {
-      printf("\x1B[31m - %s\n   %s\x1B[0m\n", name, e.what());
+      printf("\x1B[31m - %s\n%s\x1B[0m\n", name, e.what());
       return 1;
     } catch (...) {
       printf("\x1B[31m - %s\n   Unknown error occurred\x1B[0m\n", name);

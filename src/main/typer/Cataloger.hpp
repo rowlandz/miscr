@@ -4,16 +4,20 @@
 #include "common/NodeManager.hpp"
 #include "common/Ontology.hpp"
 
-/** Catalogs all decl names into an Ontology. */
+/**
+ * First of three type checking phases.
+ * Catalogs all decl names into an Ontology.
+ */
 class Cataloger {
 public:
 
   const NodeManager* m;
-  Ontology ont;
+  Ontology* ont;
   std::vector<std::string> errors;
 
-  Cataloger(const NodeManager* m) {
+  Cataloger(const NodeManager* m, Ontology* ont) {
     this->m = m;
+    this->ont = ont;
   }
 
   void catalog(const std::string& scope, unsigned int _decl) {
@@ -22,9 +26,9 @@ public:
     if (decl.ty == NodeTy::MODULE) {
       Node declIdent = m->get(decl.n1);
       std::string moduleName = scope + "::" + std::string(declIdent.extra.ptr, declIdent.loc.sz);
-      auto existingEntry = ont.moduleSpace.find(moduleName);
-      if (existingEntry == ont.moduleSpace.end()){
-        ont.moduleSpace[moduleName] = _decl;
+      auto existingEntry = ont->moduleSpace.find(moduleName);
+      if (existingEntry == ont->moduleSpace.end()){
+        ont->moduleSpace[moduleName] = _decl;
       } else {
         moduleNameCollisionError(moduleName);
       }
@@ -46,12 +50,13 @@ public:
       }
     }
 
-    else if (decl.ty == NodeTy::FUNC || decl.ty == NodeTy::PROC) {
+    else if (decl.ty == NodeTy::FUNC || decl.ty == NodeTy::PROC
+         || decl.ty == NodeTy::EXTERN_FUNC || decl.ty == NodeTy::EXTERN_PROC) {
       Node declIdent = m->get(decl.n1);
       std::string funcName = scope + "::" + std::string(declIdent.extra.ptr, declIdent.loc.sz);
-      auto existingEntry = ont.functionSpace.find(funcName);
-      if (existingEntry == ont.functionSpace.end()){
-        ont.functionSpace[funcName] = _decl;
+      auto existingEntry = ont->functionSpace.find(funcName);
+      if (existingEntry == ont->functionSpace.end()){
+        ont->functionSpace[funcName] = _decl;
       } else {
         functionNameCollisionError(funcName);
       }
