@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "common/Location.hpp"
+#include "common/LocationTable.hpp"
 
 #define BOLDRED "\x1B[1;31m"
 #define BOLDBLUE "\x1B[1;34m"
@@ -14,30 +15,29 @@
 class LocatedError {
 public:
   Location location;
-  const char* ptr;
   std::string errorMsg;
 
   LocatedError() {}
 
-  LocatedError(Location location, const char* ptr, std::string errorMsg) {
+  LocatedError(Location location, std::string errorMsg) {
     this->location = location;
-    this->ptr = ptr;
     this->errorMsg = errorMsg;
   }
 
-  std::string render() {
-    const char* beginningOfLine = ptr - location.col + 1;
-    const char* endOfSelection = ptr + location.sz;
+  std::string render(const char* text, const LocationTable* lt) {
+    const char* beginningOfLine = lt->findRow(location.row, text);
+    const char* beginningOfSelection = beginningOfLine + location.col - 1;
+    const char* endOfSelection = beginningOfSelection + location.sz;
 
     std::vector<const char*> newlinePositions;
-    for (const char* p = ptr; p < endOfSelection; p++) {
+    for (const char* p = beginningOfSelection; p < endOfSelection; p++) {
       if (*p == '\n') newlinePositions.push_back(p);
     }
 
     std::string ret = BOLDRED + ("error: " + (BOLDWHITE + errorMsg)) + "\n";
     if (newlinePositions.size() == 0) {
       const char* endOfLine;
-      for (endOfLine = ptr; *endOfLine != '\0' && *endOfLine != '\n'; endOfLine++);
+      for (endOfLine = beginningOfSelection; *endOfLine != '\0' && *endOfLine != '\n'; endOfLine++);
       std::string rowMarker = std::to_string(location.row);
       ret.append(BOLDBLUE + rowMarker + " | " + RESETCOLOR);
       ret.append(std::string(beginningOfLine, endOfLine - beginningOfLine));

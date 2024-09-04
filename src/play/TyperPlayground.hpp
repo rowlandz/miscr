@@ -8,11 +8,10 @@
 #include "printers.hpp"
 
 int play_with_typer(char* grammarElement) {
-  Lexer lexer;
   std::string line;
 
   unsigned int(Parser::*chosenParseFunction)();
-  void(*chosenTypeFunction)(unsigned int, NodeManager*);
+  void (Typer::*chosenTypeFunction)(unsigned int);
   if (!strcmp(grammarElement, "decl")) {
     chosenParseFunction = &Parser::decl;
     chosenTypeFunction = &Typer::typeDecl;
@@ -31,27 +30,31 @@ int play_with_typer(char* grammarElement) {
   while (!std::cin.eof()) {
     std::cout << "\x1B[34m>\x1B[0m " << std::flush;
     std::getline(std::cin, line);
-    if (!lexer.run(line.c_str())) {
-      std::cout << lexer.getError().render() << std::endl;
+
+    Lexer lexer(line.c_str());
+    if (!lexer.run()) {
+      std::cout << lexer.getError().render(line.c_str(), lexer.getLocationTable()) << std::endl;
       continue;
     }
-    auto tokens = lexer.getTokens();
-    Parser parser(tokens);
 
+    NodeManager m;
+    Parser parser(&m, lexer.getTokens());
     unsigned int parsed = (parser.*chosenParseFunction)();
     if (IS_ERROR(parsed)) {
-      std::cout << "Parse error" << std::endl;
+      std::cout << parser.getError().render(line.c_str(), lexer.getLocationTable()) << std::endl;
       continue;
     }
 
-    chosenTypeFunction(parsed, &parser.m);
-
-    std::vector<bool> indents;
-    print_parse_tree(parser.m, parsed, indents);
-    
-    // for (auto err : typer.errors) {
-    //   printf("%s\n", err.c_str());
-    // }
+    Typer typer(&m);
+    (typer.*chosenTypeFunction)(parsed);
+    if (typer.unifier.errors.size() == 0) {
+      std::vector<bool> indents;
+      print_parse_tree(m, parsed, indents);
+    } else {
+      for (auto err : typer.unifier.errors) {
+        std::cout << err.render(line.c_str(), lexer.getLocationTable()) << std::endl;
+      }
+    }
   }
 
   return 0;

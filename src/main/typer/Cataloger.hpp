@@ -4,6 +4,7 @@
 #include "common/NodeManager.hpp"
 #include "common/Ontology.hpp"
 
+/** Catalogs all decl names into an Ontology. */
 class Cataloger {
 public:
 

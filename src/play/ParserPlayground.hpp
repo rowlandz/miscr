@@ -10,7 +10,6 @@
 #include "printers.hpp"
 
 int play_with_parser(char* grammarElement, bool multilineInput) {
-  Lexer lexer;
   std::string usrInput;
   std::string line;
 
@@ -35,20 +34,20 @@ int play_with_parser(char* grammarElement, bool multilineInput) {
       std::getline(std::cin, line);
     }
 
-    if (!lexer.run(usrInput.c_str())) {
-      std::cout << lexer.getError().render() << std::endl;
+    Lexer lexer(usrInput.c_str());
+    if (!lexer.run()) {
+      std::cout << lexer.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
       continue;
     }
 
-    std::vector<Token> tokens = lexer.getTokens();
-    Parser parser(tokens);
-
+    NodeManager m;
+    Parser parser(&m, lexer.getTokens());
     unsigned int parsed = (parser.*chosenParseFunction)();
     if (IS_ERROR(parsed)) {
-      std::cout << parser.getError().render() << std::endl;
+      std::cout << parser.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
     } else {
       std::vector<bool> indents;
-      print_parse_tree(parser.m, parsed, indents);
+      print_parse_tree(m, parsed, indents);
     }
   }
 

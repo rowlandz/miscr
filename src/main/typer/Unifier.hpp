@@ -30,7 +30,7 @@ public:
   std::vector<std::string> relativePathQualifiers;
 
   /** Accumulates type checking errors. */
-  std::vector<std::string> errors;
+  std::vector<LocatedError> errors;
 
   // Nodes are initialized for common types to avoid making multiple nodes.
   unsigned int ty_unit;
@@ -90,7 +90,7 @@ public:
   /** Enforces the constraint that the two types resolve to the same type.
    * The first type must be a type variable.
    * Returns true if unification succeeded. */
-  void unify(unsigned int _tyVar1, unsigned int _ty2) {
+  bool unify(unsigned int _tyVar1, unsigned int _ty2) {
     unsigned int _rtyVar1 = almostResolve(_tyVar1);
     unsigned int _rty1 = resolve(_rtyVar1);
     unsigned int _rty2 = resolve(_ty2);
@@ -123,7 +123,7 @@ public:
           bind(_rtyVar1, _rty2);
           break;
         default:
-          errors.push_back(unificationError(_rty1, _rty2));
+          return false;
       }
     } else if (rty2.ty == NodeTy::NUMERIC) {
       switch (rty1.ty) {
@@ -137,7 +137,7 @@ public:
           }
           break;
         default:
-          errors.push_back(unificationError(_rty1, _rty2));
+          return false;
       }
     } else if (rty1.ty == NodeTy::DECIMAL) {
       switch (rty2.ty) {
@@ -146,7 +146,7 @@ public:
           bind(_rtyVar1, _rty2);
           break;
         default:
-          errors.push_back(unificationError(_rty1, _rty2));
+          return false;
       }
     } else if (rty2.ty == NodeTy::DECIMAL) {
       switch (rty1.ty) {
@@ -157,13 +157,29 @@ public:
           }
           break;
         default:
-          errors.push_back(unificationError(_rty1, _rty2));
+          return false;
       }
+    } else {
+      return false;
     }
-    
-    else {
-      errors.push_back(unificationError(_rty1, _rty2));
+
+    return true;
+  }
+
+  /** Typechecks `_exp` and unifies the inferred type with `_expectedTy`.
+   * If the unification fails, pushes an error.
+   * Returns the inferred type (same as tyExp). */
+  unsigned int expectTyToBe(unsigned int _exp, unsigned int _expectedTy) {
+    unsigned int _inferredTy = tyExp(_exp);
+    if (!unify(_inferredTy, _expectedTy)) {
+      std::string errMsg("I expected the type of this expression to be ");
+      errMsg.append(tyNodeToString(resolve(_expectedTy)));
+      errMsg.append(",\nbut I inferred the type to be ");
+      errMsg.append(tyNodeToString(resolve(_inferredTy)));
+      errMsg.append(".");
+      errors.push_back(LocatedError(m->get(_exp).loc, errMsg));
     }
+    return _inferredTy;
   }
 
   /** Typechecks an expression node at location `_n` in `m`.
@@ -172,10 +188,8 @@ public:
     Node n = m->get(_n);
 
     if (n.ty == NodeTy::ADD || n.ty == NodeTy::SUB || n.ty == NodeTy::MUL || n.ty == NodeTy::DIV) {
-      unsigned int tyn2 = tyExp(n.n2);
-      unsigned int tyn3 = tyExp(n.n3);
-      unify(tyn2, tyc_numeric);
-      unify(tyn3, tyn2);
+      unsigned int tyn2 = expectTyToBe(n.n2, tyc_numeric);
+      unsigned int tyn3 = expectTyToBe(n.n3, tyn2);
       bind(n.n1, tyn2);
     }
 
@@ -205,20 +219,19 @@ public:
         Node expList = m->get(n.n3);
         Node paramList = m->get(funcDecl.n2);
         while (expList.ty == NodeTy::EXPLIST_CONS && paramList.ty == NodeTy::PARAMLIST_CONS) {
-          unsigned int _argInferredTy = tyExp(expList.n1);
-          unify(_argInferredTy, paramList.n2);
+          expectTyToBe(expList.n1, paramList.n2);
           expList = m->get(expList.n2);
           paramList = m->get(paramList.n3);
         }
         if (expList.ty == NodeTy::EXPLIST_CONS || paramList.ty == NodeTy::PARAMLIST_CONS) {
-          errors.push_back("Arity mismatch for function " + *qual + calleeRelName);
+          errors.push_back(LocatedError(paramList.loc, "Arity mismatch for function " + *qual + calleeRelName));
         }
 
         // Unify return type
         bind(n.n1, funcDecl.n3);
       }
       if (!yayFoundIt) {
-        errors.push_back("Cannot find function " + calleeRelName);
+        errors.push_back(LocatedError(eqident.loc, "Cannot find function " + calleeRelName));
       }
     }
 
@@ -228,9 +241,9 @@ public:
         std::string identStr(identNode.extra.ptr, identNode.loc.sz);
         unsigned int varTyNode = localVarTypes.getOrElse(identStr, NN);
         if (varTyNode != NN) bind(n.n1, varTyNode);
-        else errors.push_back(varNotFoundError(identStr));
+        else errors.push_back(LocatedError(n.loc, "Unbound identifier."));
       } else {
-        errors.push_back(std::string("Didn't expect qualified identifier: ") + std::string(identNode.extra.ptr, identNode.loc.sz));
+        errors.push_back(LocatedError(n.loc, "Didn't expect qualified identifier here."));
       }
     }
 
@@ -316,8 +329,7 @@ public:
     localVarTypes.push();
     Node n = m->get(_n);
     addParamsToLocalVarTypes(n.n2);
-    unsigned int bodyType = tyExp(n.extra.nodes.n4);
-    unify(bodyType, n.n3);
+    expectTyToBe(n.extra.nodes.n4, n.n3);
     localVarTypes.pop();
   }
 
@@ -370,14 +382,6 @@ public:
   std::string tyNodeToString(unsigned int _ty) {
     Node ty = m->get(_ty);
     return std::string(NodeTyToString(ty.ty));
-  }
-
-  std::string unificationError(unsigned int _ty1, unsigned int _ty2) {
-    return std::string("Cannot unify ") + tyNodeToString(_ty1) + " with " + tyNodeToString(_ty2);
-  }
-
-  std::string varNotFoundError(std::string &varName) {
-    return std::string("Variable ") + varName + " is unbound";
   }
 
 };

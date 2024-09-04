@@ -32,10 +32,10 @@ enum LexerST: unsigned char {
 class Lexer {
 
 public:
+  Lexer(const char* text) : tok(text, ST_BEGIN) {}
 
   /** Run the lexer. Returns `true` if tokenization was successful. */
-  bool run(const char* text) {
-    tok = Scanner<LexerST>(text, ST_BEGIN);
+  bool run() {
     while (tok.thereAreMoreChars()) {
       if (!one_iteration()) return false;
     }
@@ -45,7 +45,10 @@ public:
   }
 
   /** Returns the lexed tokens after a successful run. */
-  std::vector<Token> getTokens() { return tok.tokens(); }
+  const std::vector<Token>* getTokens() { return tok.tokens(); }
+
+  /** Returns the location table after a successful run. */
+  const LocationTable* getLocationTable() { return tok.locationTable(); }
 
   /** Returns the lexer error after a failed run. */
   LocatedError getError() { return err; }
@@ -77,7 +80,6 @@ private:
         else {
           err = LocatedError(
             tok.currentLocation(),
-            tok.selectionPtr(),
             std::string("Illegal start of token")
           );
           return false;

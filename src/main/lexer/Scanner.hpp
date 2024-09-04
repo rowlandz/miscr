@@ -3,8 +3,9 @@
 
 #include <cstdlib>            // TODO: can we remove this?
 #include <vector>
-#include "common/Location.hpp"
 #include "common/Token.hpp"
+#include "common/Location.hpp"
+#include "common/LocationTable.hpp"
 
 /** Abstracts out the functionality of scanning text and identifying tokens.
  * 
@@ -22,8 +23,7 @@ template<typename S>
 class Scanner {
 
 public:
-  Scanner() {}
-  Scanner(const char* text, S _initialState) {
+  Scanner(const char* text, S _initialState) : _locTable(text) {
     p1 = p2 = text;
     row = 1; col = 1;
     newlines = 0;
@@ -35,7 +35,11 @@ public:
    * to the selection) and sets the state to `newState`.
    * @note the current character should *not* be a newline. */
   void step(S newState) {
-    if (*p2 == '\n') { newlines++; lastNewline = p2; }
+    if (*p2 == '\n') {
+      newlines++;
+      lastNewline = p2;
+      if (((row + newlines) & 0x03) == 0) _locTable.add(row + newlines, p2 + 1);
+    }
     p2++;
     _state = newState;
   }
@@ -88,7 +92,7 @@ public:
   S state() { return _state; }
 
   /** Returns the tokens. */
-  std::vector<Token> tokens() { return _tokens; }
+  const std::vector<Token>* tokens() { return &_tokens; }
 
   /** Returns true if there are unprocessed chars left. */
   bool thereAreMoreChars() { return *p2 != '\0'; }
@@ -105,6 +109,9 @@ public:
   /** Returns the current row and column as a Location of size one. */
   Location currentLocation() { return { row, col, 1 }; }
 
+  /** Returns the location table. */
+  const LocationTable* locationTable() { return &_locTable; }
+
 private:
   const char* p1;                // beginning of selection
   const char* p2;                // cursor position
@@ -115,6 +122,7 @@ private:
   S _state;                      // current state
   S initialState;                // initial state
   std::vector<Token> _tokens;    // token accumulator
+  LocationTable _locTable;       // location table that is built up during lexing.
 };
 
 #endif

@@ -5,27 +5,31 @@
 #include "typer/Unifier.hpp"
 #include "typer/Resolver.hpp"
 
-namespace Typer {
-  
-  void typeExp(unsigned int _n, NodeManager* m) {
-    Ontology ont;
-    Unifier(m, &ont).tyExp(_n);
-    Resolver(m).resolveExp(_n);
+class Typer {
+public:
+  Ontology ont;
+  Cataloger cataloger;
+  Unifier unifier;
+  Resolver resolver;
+
+  Typer(NodeManager* m) : cataloger(m), unifier(m, &ont), resolver(m) {}
+
+  void typeExp(unsigned int _n) {
+    unifier.tyExp(_n);
+    resolver.resolveExp(_n);
   }
 
-  void typeFuncOrProc(unsigned int _n, NodeManager* m) {
-    Ontology ont;
-    Unifier(m, &ont).tyFuncOrProc(_n);
-    Resolver(m).resolveDecl(_n);
+  void typeFuncOrProc(unsigned int _n) {
+    unifier.tyFuncOrProc(_n);
+    resolver.resolveDecl(_n);
   }
 
-  void typeDecl(unsigned int _n, NodeManager* m) {
-    Cataloger c(m);
-    c.catalog(std::string("global"), _n);
-    Unifier(m, &c.ont).tyDecl(_n);
-    Resolver(m).resolveDecl(_n);
+  void typeDecl(unsigned int _n) {
+    cataloger.catalog(std::string("global"), _n);
+    unifier.tyDecl(_n);
+    resolver.resolveDecl(_n);
   }
 
-}
+};
 
 #endif

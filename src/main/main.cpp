@@ -6,10 +6,14 @@
 
 int main() {
 
-  auto tokens = Lexer().run("proc main(): string = \"Hello there!\";");
-  Parser parser(tokens);
-  auto parsed = parser.funcOrProc();
-  Codegen codegen(&parser.m);
+  Lexer lexer("proc main(): string = \"Hello there!\";");
+  lexer.run();
+
+  NodeManager m;
+  Parser parser(&m, lexer.getTokens());
+  unsigned int parsed = parser.decl();
+
+  Codegen codegen(&m);
   codegen.genProc(parsed);
 
   std::string generatedCode;

@@ -18,10 +18,10 @@
 class Parser {
 
 public:
-  NodeManager m;
-  std::vector<Token> tokens;
-  std::vector<Token>::iterator p;
-  std::vector<Token>::iterator end;
+  NodeManager* m;
+  const std::vector<Token>* tokens;
+  std::vector<Token>::const_iterator p;
+  std::vector<Token>::const_iterator end;
 
   /** Set when an error occurs. */
   const char* errTryingToParse = nullptr;
@@ -29,10 +29,11 @@ public:
   /** Set when an error occurs. */
   const char* expectedTokens = nullptr;
 
-  Parser(std::vector<Token> &_tokens) {
+  Parser(NodeManager* m, const std::vector<Token>* _tokens) {
+    this->m = m;
     tokens = _tokens;
-    p = tokens.begin();
-    end = tokens.end();
+    p = tokens->begin();
+    end = tokens->end();
   }
 
   /** Returns the parser error after an unsuccessful parse. */
@@ -50,7 +51,7 @@ public:
       errString.append(expectedTokens);
       errString.append(" next.");
     }
-    return LocatedError(tokenToLocation(p), p->ptr, errString);
+    return LocatedError(tokenToLocation(p), errString);
   }
 
   unsigned int numLit() {
@@ -60,26 +61,26 @@ public:
     buffer[p->sz] = '\0';
     if (p->ty == LIT_INT) {
       long value = atol(buffer);
-      return m.add({ tokenToLocation(p++), newTYPEVAR(), NN, NN, { .intVal=value }, NodeTy::LIT_INT });
+      return m->add({ tokenToLocation(p++), newTYPEVAR(), NN, NN, { .intVal=value }, NodeTy::LIT_INT });
     } else if (p->ty == LIT_DEC) {
       double value = atof(buffer);
-      return m.add({ tokenToLocation(p++), newTYPEVAR(), NN, NN, { .decVal=value }, NodeTy::LIT_DEC });
+      return m->add({ tokenToLocation(p++), newTYPEVAR(), NN, NN, { .decVal=value }, NodeTy::LIT_DEC });
     } else return EPSILON_ERROR;
   }
 
   unsigned int litString() {
-    if (p->ty == LIT_STRING) return m.add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::LIT_STRING });
+    if (p->ty == LIT_STRING) return m->add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::LIT_STRING });
     else return EPSILON_ERROR;
   }
 
   unsigned int litBool() {
-    if (p->ty == KW_FALSE) return m.add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::FALSE });
-    else if (p->ty == KW_TRUE) return m.add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::TRUE });
+    if (p->ty == KW_FALSE) return m->add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::FALSE });
+    else if (p->ty == KW_TRUE) return m->add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::TRUE });
     else return EPSILON_ERROR;
   }
 
   unsigned int ident() {
-    if (p->ty == TOK_IDENT) return m.add({ tokenToLocation(p), NN, NN, NN, { .ptr=(p++)->ptr }, NodeTy::IDENT });
+    if (p->ty == TOK_IDENT) return m->add({ tokenToLocation(p), NN, NN, NN, { .ptr=(p++)->ptr }, NodeTy::IDENT });
     return EPSILON_ERROR;
   }
 
@@ -94,7 +95,7 @@ public:
       unsigned int n2 = qidentOrIdent();
       if (IS_ERROR(n2)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::QIDENT });
+      return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::QIDENT });
     } else {
       return n1;
     }
@@ -104,7 +105,7 @@ public:
   unsigned int eqident() {
     unsigned int n2 = qidentOrIdent();
     if (IS_ERROR(n2)) return n2;
-    return m.add({ m.get(n2).loc, newTYPEVAR(), n2, NN, NOEXTRA, NodeTy::EQIDENT });
+    return m->add({ m->get(n2).loc, newTYPEVAR(), n2, NN, NOEXTRA, NodeTy::EQIDENT });
   }
 
   unsigned int parensExp() {
@@ -122,7 +123,7 @@ public:
     if (IS_ERROR(n)) return ARRESTING_ERROR;
     if (p->ty == RBRACE) p++; else return EPSILON_ERROR;
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, newTYPEVAR(), n, NN, NOEXTRA, NodeTy::BLOCK });
+    return m->add({ loc, newTYPEVAR(), n, NN, NOEXTRA, NodeTy::BLOCK });
   }
 
   unsigned int eqidentOrFunctionCall() {
@@ -134,7 +135,7 @@ public:
       unsigned int n3 = expListWotc0();
       CHOMP_ELSE_ARREST(RPAREN, ")", "function call")
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m.add({ loc, newTYPEVAR(), n2, n3, NOEXTRA, NodeTy::CALL });
+      return m->add({ loc, newTYPEVAR(), n2, n3, NOEXTRA, NodeTy::CALL });
     } else {
       return n2;
     }
@@ -165,7 +166,7 @@ public:
       unsigned int e2 = expLv0();
       if (IS_ERROR(e2)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m.add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
     }
     return e;
   }
@@ -180,7 +181,7 @@ public:
       unsigned int e2 = expLv1();
       if (IS_ERROR(e2)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m.add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
     }
     return e;
   }
@@ -195,7 +196,7 @@ public:
       unsigned int e2 = expLv2();
       if (IS_ERROR(e2)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m.add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
     }
     return e;
   }
@@ -212,7 +213,7 @@ public:
     unsigned int n4 = exp();
     if (IS_ERROR(n4)) return ARRESTING_ERROR;
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, newTYPEVAR(), n2, n3, { .nodes={ n4, NN } }, NodeTy::IF });
+    return m->add({ loc, newTYPEVAR(), n2, n3, { .nodes={ n4, NN } }, NodeTy::IF });
   }
 
   unsigned int exp() {
@@ -229,7 +230,7 @@ public:
     if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
     if (n1 == EPSILON_ERROR) {
       Location loc = { t.row, t.col, 0 };
-      return m.add({ loc, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
+      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
     }
     unsigned int n2;
     if (p->ty == COMMA) {
@@ -237,20 +238,20 @@ public:
       n2 = expListWotc0();
       if (IS_ERROR(n2)) return ARRESTING_ERROR;
     } else {
-      n2 = m.add({ { p->row, p->col, 0 }, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
+      n2 = m->add({ { p->row, p->col, 0 }, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
     }
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
+    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
   }
 
   unsigned int tyExp() {
-    if (p->ty == KW_f32) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f32 });
-    if (p->ty == KW_f64) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f64 });
-    if (p->ty == KW_i8) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i8 });
-    if (p->ty == KW_i32) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i32 });
-    if (p->ty == KW_BOOL) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::BOOL });
-    if (p->ty == KW_STRING) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::STRING });
-    if (p->ty == KW_UNIT) return m.add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::UNIT });
+    if (p->ty == KW_f32) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f32 });
+    if (p->ty == KW_f64) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f64 });
+    if (p->ty == KW_i8) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i8 });
+    if (p->ty == KW_i32) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i32 });
+    if (p->ty == KW_BOOL) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::BOOL });
+    if (p->ty == KW_STRING) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::STRING });
+    if (p->ty == KW_UNIT) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::UNIT });
     return EPSILON_ERROR;
   }
 
@@ -264,7 +265,7 @@ public:
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
     CHOMP_ELSE_ARREST(SEMICOLON, ";", "let statement")
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::LET });
+    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::LET });
   }
 
   unsigned int returnStmt() {
@@ -274,7 +275,7 @@ public:
     if (IS_ERROR(n1)) return ARRESTING_ERROR;
     CHOMP_ELSE_ARREST(SEMICOLON, ";", "return statement")
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, NN, NN, NOEXTRA, NodeTy::RETURN });
+    return m->add({ loc, n1, NN, NN, NOEXTRA, NodeTy::RETURN });
   }
 
   unsigned int stmt() {
@@ -296,12 +297,12 @@ public:
     if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
     if (n1 == EPSILON_ERROR) {
       Location loc = { t.row, t.col, 0 };
-      return m.add({ loc, NN, NN, NN, NOEXTRA, NodeTy::STMTLIST_NIL });
+      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::STMTLIST_NIL });
     }
     unsigned n2 = stmts0();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::STMTLIST_CONS });
+    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::STMTLIST_CONS });
   }
 
   /** Parses parameter list of length zero or higher with optional terminal
@@ -312,7 +313,7 @@ public:
     if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
     if (n1 == EPSILON_ERROR) {
       Location loc = { t.row, t.col, 0 };
-      return m.add({ loc, NN, NN, NN, NOEXTRA, NodeTy::PARAMLIST_NIL });
+      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::PARAMLIST_NIL });
     }
     CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
     unsigned int n2 = tyExp();
@@ -323,10 +324,10 @@ public:
       n3 = paramListWotc0();
     } else {
       Location loc1 = { p->row, p->col, 0 };
-      n3 = m.add({ loc1, NN, NN, NN, NOEXTRA, NodeTy::PARAMLIST_NIL });
+      n3 = m->add({ loc1, NN, NN, NN, NOEXTRA, NodeTy::PARAMLIST_NIL });
     }
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, n3, NOEXTRA, NodeTy::PARAMLIST_CONS });
+    return m->add({ loc, n1, n2, n3, NOEXTRA, NodeTy::PARAMLIST_CONS });
   }
 
   unsigned int funcOrProc() {
@@ -349,7 +350,7 @@ public:
     if (IS_ERROR(n4)) return ARRESTING_ERROR;
     CHOMP_ELSE_ARREST(SEMICOLON, ";", (ty == NodeTy::FUNC ? "function" : "procedure"))
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, n3, { .nodes={ n4, NN } }, ty });
+    return m->add({ loc, n1, n2, n3, { .nodes={ n4, NN } }, ty });
   }
 
   unsigned int externFuncOrProc() {
@@ -370,7 +371,7 @@ public:
     if (IS_ERROR(n3)) return ARRESTING_ERROR;
     CHOMP_ELSE_ARREST(SEMICOLON, ";", "extern declaration")
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, n3, NOEXTRA, ty });
+    return m->add({ loc, n1, n2, n3, NOEXTRA, ty });
   }
 
   /** Parses a module or namespace with brace-syntax. */
@@ -387,7 +388,7 @@ public:
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
     CHOMP_ELSE_ARREST(RBRACE, "}", (ty == NodeTy::MODULE ? "module" : "namespace"))
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, NN, NOEXTRA, ty });
+    return m->add({ loc, n1, n2, NN, NOEXTRA, ty });
   }
 
   /** A declaration is a func, proc, data type, module, or namespace. */
@@ -409,25 +410,25 @@ public:
     if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
     if (n1 == EPSILON_ERROR) {
       Location loc = { t.row, t.col, 0 };
-      return m.add({ loc, NN, NN, NN, NOEXTRA, NodeTy::DECLLIST_NIL });
+      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::DECLLIST_NIL });
     }
     unsigned n2 = decls0();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::DECLLIST_CONS });
+    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::DECLLIST_CONS });
   }
 
   bool hasMoreToParse() {
     return p < end && p->ty != END;
   }
 
-  Location tokenToLocation(std::vector<Token>::iterator tok) {
+  Location tokenToLocation(std::vector<Token>::const_iterator tok) {
     return { tok->row, tok->col, tok->sz };
   }
 
   /** Creates a new `TYPEVAR` node for the typer to fill in later. */
   unsigned int newTYPEVAR() {
-    return m.add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
+    return m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
   }
 
 };

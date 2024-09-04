@@ -4,15 +4,15 @@
 #include <iostream>
 #include "lexer/Lexer.hpp"
 
-void print_tokens(std::vector<Token> &tokens) {
-  for (auto token: tokens) {
+void print_tokens(const std::vector<Token>* tokens) {
+  for (auto token: *tokens) {
     std::cout << TokenTyToString(token.ty) << "  ";
   }
   std::cout << std::endl;
 }
 
-void print_tokens_verbose(std::vector<Token> &tokens) {
-  for (auto token: tokens) {
+void print_tokens_verbose(const std::vector<Token>* tokens) {
+  for (auto token: *tokens) {
     char buffer[token.sz+1];
     strncpy(buffer, token.ptr, token.sz);
     buffer[token.sz] = '\0';
@@ -21,21 +21,21 @@ void print_tokens_verbose(std::vector<Token> &tokens) {
 }
 
 void play_with_lexer(bool verbose) {
-  Lexer lexer;
   std::string line;
 
   while (!std::cin.eof()) {
     std::cout << "\x1B[34m>\x1B[0m " << std::flush;
     std::getline(std::cin, line);
-    if (!lexer.run(line.c_str())) {
-      std::cout << lexer.getError().render() << std::endl;
+
+    Lexer lexer(line.c_str());
+    if (!lexer.run()) {
+      std::cout << lexer.getError().render(line.c_str(), lexer.getLocationTable()) << std::endl;
       continue;
     }
-    auto tokens = lexer.getTokens();
     if (verbose)
-      print_tokens_verbose(tokens);
+      print_tokens_verbose(lexer.getTokens());
     else
-      print_tokens(tokens);
+      print_tokens(lexer.getTokens());
   }
 }
 
