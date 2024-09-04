@@ -10,11 +10,14 @@ namespace TyperTests {
   //////////////////////////////////////////////////////////////////////////////
 
   void expShouldHaveType(const char* expText, NodeTy expectedTy) {
-    auto tokens = Lexer().run(expText);
-    auto parser = Parser(tokens);
+    Lexer lexer(expText);
+    lexer.run();
+    NodeManager m;
+    Parser parser(&m, lexer.getTokens());
     auto parsed = parser.exp();
-    Typer::typeExp(parsed, &parser.m);
-    NodeTy observedTy = parser.m.get(parser.m.get(parsed).n1).ty;
+    Typer typer(&m);
+    typer.typeExp(parsed);
+    NodeTy observedTy = m.get(m.get(parsed).n1).ty;
     if (observedTy != expectedTy) throw std::runtime_error(
       "Expected type " + std::string(NodeTyToString(expectedTy)) +
       " but " + NodeTyToString(observedTy) + " was inferred."

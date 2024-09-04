@@ -51,19 +51,23 @@ namespace ParserTests {
   }
 
   void expParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {
-    auto tokens = Lexer().run(text);
-    auto parser = Parser(tokens);
+    Lexer lexer(text);
+    lexer.run();
+    NodeManager m;
+    Parser parser(&m, lexer.getTokens());
     auto parsed = parser.exp();
     auto currentLine = expectedNodes.begin();
-    expectMatch(parser.m, parsed, 0, expectedNodes, currentLine);
+    expectMatch(m, parsed, 0, expectedNodes, currentLine);
   }
 
   void declParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {
-    auto tokens = Lexer().run(text);
-    auto parser = Parser(tokens);
+    Lexer lexer(text);
+    lexer.run();
+    NodeManager m;
+    Parser parser(&m, lexer.getTokens());
     auto parsed = parser.decl();
     auto currentLine = expectedNodes.begin();
-    expectMatch(parser.m, parsed, 0, expectedNodes, currentLine);
+    expectMatch(m, parsed, 0, expectedNodes, currentLine);
   }
 
   //////////////////////////////////////////////////////////////////////////////

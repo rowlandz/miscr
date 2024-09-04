@@ -63,14 +63,16 @@ namespace LexerTests {
   }
 
   void tokensShouldBe(const char* text, std::vector<TokenTy> expected) {
-    auto observed = Lexer().run(text);
-    auto end = observed.size() < expected.size() ? observed.size() : expected.size();
+    Lexer lexer(text);
+    lexer.run();
+    auto observed = lexer.getTokens();
+    auto end = observed->size() < expected.size() ? observed->size() : expected.size();
     for (int i = 0; i < end; i++) {
-      if (observed[i].ty != expected[i]) {
+      if (observed->at(i).ty != expected[i]) {
         throw std::runtime_error(string_format("First mismatched token was at index %d", i));
       }
     }
-    if (expected.size() != observed.size())
-      throw std::runtime_error(string_format("Expected %d tokens but lexed %d.", expected.size(), observed.size()));
+    if (expected.size() != observed->size())
+      throw std::runtime_error(string_format("Expected %d tokens but lexed %d.", expected.size(), observed->size()));
   }
 }

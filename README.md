@@ -9,6 +9,9 @@ https://mukulrathi.com/create-your-own-programming-language/llvm-ir-cpp-api-tuto
 C++ Core Documentation
 https://llvm.org/doxygen/group__LLVMCCore.html
 
+Minimal Readline replacement:
+https://github.com/antirez/linenoise?tab=BSD-2-Clause-1-ov-file
+
 
 Minimal dependencies:
 * LLVM C++ libraries
