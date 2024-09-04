@@ -1,6 +1,7 @@
 #ifndef LEXER_LEXER
 #define LEXER_LEXER
 
+#include "common/LocatedError.hpp"
 #include "lexer/Scanner.hpp"
 #include <cstring>
 #include <vector>
@@ -31,22 +32,29 @@ enum LexerST: unsigned char {
 class Lexer {
 
 public:
-  std::vector<Token> run(const char* text) {
-    tok = Scanner<LexerST>(text, ST_BEGIN);
 
+  /** Run the lexer. Returns `true` if tokenization was successful. */
+  bool run(const char* text) {
+    tok = Scanner<LexerST>(text, ST_BEGIN);
     while (tok.thereAreMoreChars()) {
-      one_iteration();
+      if (!one_iteration()) return false;
     }
     final_iteration();
     tok.capture(END);
-
-    return tok.tokens();
+    return true;
   }
+
+  /** Returns the lexed tokens after a successful run. */
+  std::vector<Token> getTokens() { return tok.tokens(); }
+
+  /** Returns the lexer error after a failed run. */
+  LocatedError getError() { return err; }
 
 private:
   Scanner<LexerST> tok;
+  LocatedError err;
 
-  inline void one_iteration() {
+  bool one_iteration() {
     char c = tok.currentChar();
     switch (tok.state()) {
       case ST_BEGIN:
@@ -66,7 +74,14 @@ private:
         else if (c == '}') tok.stepAndCapture(RBRACE);
         else if (c == ',') tok.stepAndCapture(COMMA);
         else if (c == ';') tok.stepAndCapture(SEMICOLON);
-        else tok.stepAndDiscard();
+        else {
+          err = LocatedError(
+            tok.currentLocation(),
+            tok.selectionPtr(),
+            std::string("Illegal start of token")
+          );
+          return false;
+        }
         break;
 
       case ST_IDENT:
@@ -168,9 +183,11 @@ private:
         else tok.step(ST_MULTILINE_DOC_COMMENT);
         break;
     }
+
+    return true;
   }
 
-  inline void final_iteration() {
+  void final_iteration() {
     switch (tok.state()) {
       case ST_BEGIN:
         break;

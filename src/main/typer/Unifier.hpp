@@ -6,6 +6,7 @@
 #include "common/Ontology.hpp"
 #include "common/ScopeStack.hpp"
 #include "common/NodeManager.hpp"
+#include "common/LocatedError.hpp"
 
 /** First of two type checking phases.
  * Annotates expressions with types.

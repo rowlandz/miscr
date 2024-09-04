@@ -31,7 +31,11 @@ int play_with_typer(char* grammarElement) {
   while (!std::cin.eof()) {
     std::cout << "\x1B[34m>\x1B[0m " << std::flush;
     std::getline(std::cin, line);
-    auto tokens = lexer.run(line.c_str());
+    if (!lexer.run(line.c_str())) {
+      std::cout << lexer.getError().render() << std::endl;
+      continue;
+    }
+    auto tokens = lexer.getTokens();
     Parser parser(tokens);
 
     unsigned int parsed = (parser.*chosenParseFunction)();

@@ -9,11 +9,12 @@ char help_message[] =
   "\n"
   "USAGE\n"
   "    ./playground lexer [-v]\n"
-  "    ./playground parser (decl|exp|stmt)\n"
+  "    ./playground parser (decl|exp|stmt) [-m]\n"
   "    ./playground typer (decl|exp)\n"
   "\n"
   "OPTIONS\n"
   "    -v   verbose output\n"
+  "    -m   multiline input\n"
   ;
 
 
@@ -28,9 +29,10 @@ int main(int argc, char* argv[]) {
   }
 
   else if (!strcmp(argv[1], "parser")) {
-    if (argc >= 3) {
-      return play_with_parser(argv[2]);
-    }
+    if (argc >= 4 && !strcmp(argv[3], "-m"))
+      return play_with_parser(argv[2], true);
+    else if (argc >= 3)
+      return play_with_parser(argv[2], false);
   }
 
   else if (!strcmp(argv[1], "typer")) {

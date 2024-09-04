@@ -3,6 +3,7 @@
 
 #include <cstdlib>            // TODO: can we remove this?
 #include <vector>
+#include "common/Location.hpp"
 #include "common/Token.hpp"
 
 /** Abstracts out the functionality of scanning text and identifying tokens.
@@ -100,6 +101,9 @@ public:
 
   /** Returns the number of selected chars. */
   u_int16_t selectionSize() { return p2 - p1; }
+
+  /** Returns the current row and column as a Location of size one. */
+  Location currentLocation() { return { row, col, 1 }; }
 
 private:
   const char* p1;                // beginning of selection

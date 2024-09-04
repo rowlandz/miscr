@@ -1,27 +1,56 @@
 #ifndef PARSER_PARSER
 #define PARSER_PARSER
 
+#include <cstring>
 #include <cstdio>
 #include <vector>
 #include "common/NodeManager.hpp"
+#include "common/Token.hpp"
+#include "common/LocatedError.hpp"
 
 #define ARRESTING_ERROR 0xffffffff
 #define EPSILON_ERROR   0xfffffffe
 #define IS_ERROR(x)     ((x) >= 0xfffffffe)
 
+#define CHOMP_ELSE_ARREST(tokenTy, expected, element) if (p->ty == tokenTy) p++; else \
+  { errTryingToParse = element; expectedTokens = expected; return 0xffffffff; }
+
 class Parser {
 
 public:
+  NodeManager m;
   std::vector<Token> tokens;
   std::vector<Token>::iterator p;
   std::vector<Token>::iterator end;
-  NodeManager m;
-  long nextUnusedTypeVarID = 1;
+
+  /** Set when an error occurs. */
+  const char* errTryingToParse = nullptr;
+
+  /** Set when an error occurs. */
+  const char* expectedTokens = nullptr;
 
   Parser(std::vector<Token> &_tokens) {
     tokens = _tokens;
     p = tokens.begin();
     end = tokens.end();
+  }
+
+  /** Returns the parser error after an unsuccessful parse. */
+  LocatedError getError() {
+    std::string errString;
+    if (errTryingToParse != nullptr) {
+      errString.append("I got stuck parsing ");
+      errString.append(errTryingToParse);
+      errString.append(".");
+    } else {
+      errString.append("I got stuck while parsing.");
+    }
+    if (expectedTokens != nullptr) {
+      errString.append(" I was expecting ");
+      errString.append(expectedTokens);
+      errString.append(" next.");
+    }
+    return LocatedError(tokenToLocation(p), p->ptr, errString);
   }
 
   unsigned int numLit() {
@@ -82,7 +111,7 @@ public:
     if (p->ty == LPAREN) p++; else return EPSILON_ERROR;
     unsigned int e = exp();
     if (IS_ERROR(e)) return ARRESTING_ERROR;
-    if (p->ty == RPAREN) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(RPAREN, ")", "parentheses expression")
     return e;
   }
 
@@ -103,7 +132,7 @@ public:
     if (p->ty == LPAREN) {
       p++;
       unsigned int n3 = expListWotc0();
-      if (p->ty == RPAREN) p++; else return ARRESTING_ERROR;
+      CHOMP_ELSE_ARREST(RPAREN, ")", "function call")
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
       return m.add({ loc, newTYPEVAR(), n2, n3, NOEXTRA, NodeTy::CALL });
     } else {
@@ -176,10 +205,10 @@ public:
     if (p->ty == KW_IF) p++; else return EPSILON_ERROR;
     unsigned int n2 = exp();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    if (p->ty == KW_THEN) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(KW_THEN, "then", "if expression")
     unsigned int n3 = exp();
     if (IS_ERROR(n3)) return ARRESTING_ERROR;
-    if (p->ty == KW_ELSE) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(KW_ELSE, "else", "if expression")
     unsigned int n4 = exp();
     if (IS_ERROR(n4)) return ARRESTING_ERROR;
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
@@ -230,10 +259,10 @@ public:
     if (p->ty == KW_LET) p++; else return EPSILON_ERROR;
     unsigned int n1 = ident();
     if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    if (p->ty == EQUAL) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(EQUAL, "=", "let statement")
     unsigned int n2 = exp();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    if (p->ty == SEMICOLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(SEMICOLON, ";", "let statement")
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
     return m.add({ loc, n1, n2, NN, NOEXTRA, NodeTy::LET });
   }
@@ -243,7 +272,7 @@ public:
     if (p->ty == KW_RETURN) p++; else return EPSILON_ERROR;
     unsigned n1 = exp();
     if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    if (p->ty == SEMICOLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(SEMICOLON, ";", "return statement")
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
     return m.add({ loc, n1, NN, NN, NOEXTRA, NodeTy::RETURN });
   }
@@ -256,7 +285,7 @@ public:
     if (n != EPSILON_ERROR) return n;
     n = exp();
     if (IS_ERROR(n)) return n;
-    if (p->ty == SEMICOLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(SEMICOLON, ";", "expression statement")
     return n;
   }
 
@@ -285,7 +314,7 @@ public:
       Location loc = { t.row, t.col, 0 };
       return m.add({ loc, NN, NN, NN, NOEXTRA, NodeTy::PARAMLIST_NIL });
     }
-    if (p->ty == COLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
     unsigned int n2 = tyExp();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
     unsigned int n3;
@@ -311,14 +340,14 @@ public:
     if (p->ty == LPAREN) p++; else return EPSILON_ERROR;
     unsigned int n2 = paramListWotc0();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    if (p->ty == RPAREN) p++; else return ARRESTING_ERROR;
-    if (p->ty == COLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(RPAREN, ")", (ty == NodeTy::FUNC ? "function" : "procedure"))
+    CHOMP_ELSE_ARREST(COLON, ":", (ty == NodeTy::FUNC ? "function" : "procedure"))
     unsigned int n3 = tyExp();
     if (IS_ERROR(n3)) return ARRESTING_ERROR;
-    if (p->ty == EQUAL) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(EQUAL, "=", (ty == NodeTy::FUNC ? "function" : "procedure"))
     unsigned int n4 = exp();
     if (IS_ERROR(n4)) return ARRESTING_ERROR;
-    if (p->ty == SEMICOLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(SEMICOLON, ";", (ty == NodeTy::FUNC ? "function" : "procedure"))
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
     return m.add({ loc, n1, n2, n3, { .nodes={ n4, NN } }, ty });
   }
@@ -329,17 +358,17 @@ public:
     if (p->ty == KW_EXTERN) p++; else return EPSILON_ERROR;
     if (p->ty == KW_FUNC) { ty = NodeTy::EXTERN_FUNC; p++; }
     else if (p->ty == KW_PROC) { ty = NodeTy::EXTERN_PROC; p++; }
-    else return ARRESTING_ERROR;
+    else return ARRESTING_ERROR;                                     // TODO: error message
     unsigned int n1 = ident();
     if (IS_ERROR(n1)) return ARRESTING_ERROR;
     if (p->ty == LPAREN) p++; else return EPSILON_ERROR;
     unsigned int n2 = paramListWotc0();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    if (p->ty == RPAREN) p++; else return ARRESTING_ERROR;
-    if (p->ty == COLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(RPAREN, ")", "extern declaration")
+    CHOMP_ELSE_ARREST(COLON, ":", "extern declaration")
     unsigned int n3 = tyExp();
     if (IS_ERROR(n3)) return ARRESTING_ERROR;
-    if (p->ty == SEMICOLON) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(SEMICOLON, ";", "extern declaration")
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
     return m.add({ loc, n1, n2, n3, NOEXTRA, ty });
   }
@@ -353,10 +382,10 @@ public:
     else return EPSILON_ERROR;
     unsigned int n1 = ident();
     if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    if (p->ty == LBRACE) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(LBRACE, "{", (ty == NodeTy::MODULE ? "module" : "namespace"))
     unsigned int n2 = decls0();
     if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    if (p->ty == RBRACE) p++; else return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(RBRACE, "}", (ty == NodeTy::MODULE ? "module" : "namespace"))
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
     return m.add({ loc, n1, n2, NN, NOEXTRA, ty });
   }
@@ -398,7 +427,7 @@ public:
 
   /** Creates a new `TYPEVAR` node for the typer to fill in later. */
   unsigned int newTYPEVAR() {
-    return m.add({ { 0, 0, 0 }, NN, NN, NN, { .intVal = nextUnusedTypeVarID++ }, NodeTy::TYPEVAR });
+    return m.add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
   }
 
 };
