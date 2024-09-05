@@ -12,7 +12,20 @@ void print_parse_tree(NodeManager &m, unsigned int n, std::vector<bool> &indents
     }
     printf("%s── ", *(indents.end()-1) ? "├" : "└");
   }
-  printf("%s\n", NodeTyToString(node.ty));
+  printf("%s ", NodeTyToString(node.ty));
+
+  // print optional extra information depending on the node type
+  if (node.ty == NodeTy::IDENT)
+    printf("(%s)", std::string(node.extra.ptr, node.loc.sz).c_str());
+  else if (node.ty == NodeTy::FQIDENT)
+    printf("(%s)", node.extra.ptr);
+  else if (node.ty == NodeTy::LIT_INT)
+    printf("(%ld)", node.extra.intVal);
+  else if (node.ty == NodeTy::LIT_DEC)
+    printf("(%f)", node.extra.decVal);
+  else if (node.ty == NodeTy::LIT_STRING)
+    printf("(%s)", std::string(node.extra.ptr, node.loc.sz).c_str());
+  printf("\n");
 
   if (node.n1 != NN) {
     if (node.n2 != NN) {

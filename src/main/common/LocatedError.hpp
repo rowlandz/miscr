@@ -56,8 +56,7 @@ public:
 
       // first row
       ret.append(rowMarkerWidth - rowMarkers[line].size(), ' ');
-      ret.append(rowMarkers[line]);
-      ret.append(" | ");
+      ret.append(BOLDBLUE + rowMarkers[line] + " | " + RESETCOLOR);
       ret.append(std::string(beginningOfLine, newlinePositions[line] - beginningOfLine));
       ret.append("\n");
       ret.append(rowMarkerWidth + 3 + location.col - 1, ' ');
@@ -69,8 +68,7 @@ public:
       // middle rows
       while (line < newlinePositions.size()) {
         ret.append(rowMarkerWidth - rowMarkers[line].size(), ' ');
-        ret.append(rowMarkers[line]);
-        ret.append(" | ");
+        ret.append(BOLDBLUE + rowMarkers[line] + " | " + RESETCOLOR);
         ret.append(std::string(beginningOfLine, newlinePositions[line] - beginningOfLine));
         ret.append("\n");
         ret.append(rowMarkerWidth + 3, ' ');
@@ -83,8 +81,7 @@ public:
       // last row
       const char* endOfLastRow;
       for (endOfLastRow = beginningOfLine; *endOfLastRow != '\0' && *endOfLastRow != '\n'; endOfLastRow++);
-      ret.append(rowMarkers[line]);
-      ret.append(" | ");
+      ret.append(BOLDBLUE + rowMarkers[line] + " | " + RESETCOLOR);
       ret.append(std::string(beginningOfLine, endOfLastRow - beginningOfLine));
       ret.append("\n");
       ret.append(rowMarkerWidth + 3, ' ');

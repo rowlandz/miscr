@@ -4,6 +4,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include "common/ScopeStack.hpp"
 #include "common/NodeManager.hpp"
+#include "common/Ontology.hpp"
 
 class Codegen {
 public:
@@ -11,14 +12,16 @@ public:
   llvm::IRBuilder<>* b;
   llvm::Module* mod;
   const NodeManager* nodeManager;
+  const Ontology* ont;
 
   /** Maps variable names to their LLVM values */
   ScopeStack<llvm::Value*> varValues;
 
-  Codegen(const NodeManager* nodeManager) {
+  Codegen(const NodeManager* nodeManager, const Ontology* ont) {
     b = new llvm::IRBuilder<>(ctx);
     mod = new llvm::Module("MyModule", ctx);
     this->nodeManager = nodeManager;
+    this->ont = ont;
   }
 
   ~Codegen() {
@@ -51,9 +54,9 @@ public:
     return llvm::FunctionType::get(retTy, paramTys, false);
   }
 
-  /** Sets the `functionParams` class variable. Also sets argument
-   * names in the LLVM IR. */
-  void setFunctionParams(llvm::Function* f, unsigned int _paramList) {
+  /** Adds the parameters in `_paramList` to the topmost scope in the scope stack.
+   * Also sets argument names in the LLVM IR. */
+  void addParamsToScope(llvm::Function* f, unsigned int _paramList) {
     Node paramList = nodeManager->get(_paramList);
     for (llvm::Argument &arg : f->args()) {
       Node paramName = nodeManager->get(paramList.n1);
@@ -62,28 +65,6 @@ public:
       arg.setName(paramNameStr);        // Not strictly necessary, but helpful to have
       paramList = nodeManager->get(paramList.n3);
     }
-  }
-
-  llvm::Function* genProc(unsigned int _n) {
-    Node n = nodeManager->get(_n);
-    Node nameNode = nodeManager->get(n.n1);
-    
-    std::string funcName(nameNode.extra.ptr, nameNode.loc.sz);
-
-    llvm::Function* f = llvm::Function::Create(
-      makeFunctionType(n.n2, n.n3),
-      llvm::Function::ExternalLinkage,
-      funcName,
-      mod
-    );
-    
-    varValues.push();
-    setFunctionParams(f, n.n2);
-    b->SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
-    llvm::Value* retVal = genExp(n.extra.nodes.n4);
-    b->CreateRet(retVal);
-    varValues.pop();
-    return f;
   }
 
   llvm::Value* genExp(unsigned int _n) {
@@ -99,16 +80,30 @@ public:
       return lastStmtVal;
     }
 
-    // TODO: broken
-    // else if (n.ty == NodeTy::EIDENT) {
-    //   std::string identStr(n.extra.ptr, n.loc.sz);
-    //   llvm::Value* v = varValues.getOrElse(identStr, nullptr);
-    //   if (!v) {
-    //     printf("Could not get argument!!! %s\n", identStr.c_str());
-    //     exit(1);
-    //   }
-    //   return v;
-    // }
+    else if (n.ty == NodeTy::CALL) {
+      Node efqident = nodeManager->get(n.n2);
+      const char* funcName = efqident.extra.ptr;
+      llvm::Function* callee = mod->getFunction(funcName);
+
+      std::vector<llvm::Value*> args;
+      Node expList = nodeManager->get(n.n3);
+      while (expList.ty == NodeTy::EXPLIST_CONS) {
+        args.push_back(genExp(expList.n1));
+        expList = nodeManager->get(expList.n2);
+      }
+      return b->CreateCall(callee, args);
+    }
+
+    else if (n.ty == NodeTy::EQIDENT) {
+      Node identNode = nodeManager->get(n.n2);
+      if (identNode.ty == NodeTy::IDENT) {
+        std::string identStr(identNode.extra.ptr, identNode.loc.sz);
+        return varValues.getOrElse(identStr, nullptr);
+      } else {
+        printf("Fatal error: Didn't expect qualified identifier in Codegen::genExp\n");
+        exit(1);
+      }
+    }
 
     else if (n.ty == NodeTy::LIT_INT) {
       return b->getInt32((int)n.extra.intVal);
@@ -159,6 +154,51 @@ public:
       exit(1);
     }
 
+  }
+
+  /** Codegens a `func`, `proc`, `extern func` or `extern proc`. */
+  llvm::Function* genFunc(unsigned int _n) {
+    Node n = nodeManager->get(_n);
+    
+    std::string funcName(nodeManager->get(n.n1).extra.ptr);
+
+    llvm::Function* f = llvm::Function::Create(
+      makeFunctionType(n.n2, n.n3),
+      llvm::Function::ExternalLinkage,
+      funcName,
+      mod
+    );
+
+    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC) {
+      varValues.push();
+      addParamsToScope(f, n.n2);
+      b->SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
+      llvm::Value* retVal = genExp(n.extra.nodes.n4);
+      b->CreateRet(retVal);
+      varValues.pop();
+    }
+
+    return f;
+  }
+
+  void genModuleOrNamespace(unsigned int _n) {
+    Node n = nodeManager->get(_n);
+    Node declList = nodeManager->get(n.n2);
+    while (declList.ty == NodeTy::DECLLIST_CONS) {
+      genDecl(declList.n1);
+      declList = nodeManager->get(declList.n2);
+    }
+  }
+
+  void genDecl(unsigned int _n) {
+    Node n = nodeManager->get(_n);
+
+    if (n.ty == NodeTy::MODULE || n.ty == NodeTy::NAMESPACE) {
+      genModuleOrNamespace(_n);
+    } else if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC
+           || n.ty == NodeTy::EXTERN_FUNC || n.ty == NodeTy::EXTERN_PROC) {
+      genFunc(_n);
+    }
   }
 
 };

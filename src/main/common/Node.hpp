@@ -12,7 +12,7 @@ enum struct NodeTy: unsigned short {
 
   // expression nodes
 
-  EQIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
+  EQIDENT, EFQIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
   ADD, SUB, MUL, DIV, EQ, NE,
   IF, BLOCK, CALL,
 
@@ -31,7 +31,7 @@ enum struct NodeTy: unsigned short {
 
   // Other
 
-  QIDENT, IDENT,
+  IDENT, QIDENT, FQIDENT,
   EXPLIST_NIL, EXPLIST_CONS,
   STMTLIST_NIL, STMTLIST_CONS,
   PARAMLIST_NIL, PARAMLIST_CONS,
@@ -41,6 +41,7 @@ enum struct NodeTy: unsigned short {
 bool isExpNodeTy(NodeTy ty) {
   switch (ty) {
     case NodeTy::EQIDENT:
+    case NodeTy::EFQIDENT:
     case NodeTy::LIT_INT:
     case NodeTy::LIT_DEC:
     case NodeTy::LIT_STRING:
@@ -87,7 +88,9 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::STRING:           return "STRING";
     case NodeTy::IDENT:            return "IDENT";
     case NodeTy::QIDENT:           return "QIDENT";
+    case NodeTy::FQIDENT:          return "FQIDENT";
     case NodeTy::EQIDENT:          return "EQIDENT";
+    case NodeTy::EFQIDENT:         return "EFQIDENT";
     case NodeTy::EXPLIST_NIL:      return "EXPLIST_NIL";
     case NodeTy::EXPLIST_CONS:     return "EXPLIST_CONS";
     case NodeTy::LET:              return "LET";
@@ -134,7 +137,9 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "STRING")           return NodeTy::STRING;
   else if (str == "IDENT")            return NodeTy::IDENT;
   else if (str == "QIDENT")           return NodeTy::QIDENT;
+  else if (str == "FQIDENT")          return NodeTy::FQIDENT;
   else if (str == "EQIDENT")          return NodeTy::EQIDENT;
+  else if (str == "EFQIDENT")         return NodeTy::EFQIDENT;
   else if (str == "EXPLIST_NIL")      return NodeTy::EXPLIST_NIL;
   else if (str == "EXPLIST_CONS")     return NodeTy::EXPLIST_CONS;
   else if (str == "LET")              return NodeTy::LET;

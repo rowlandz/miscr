@@ -10,6 +10,8 @@
 
 /** Second of three type checking phases.
  * Annotates expressions with types.
+ * Fully-qualifies the names of called functions.
+ * Fully-qualifies the names of all decls in their definitions.
  * TODO: Do we want to maintain the tree structure or is it okay to break it here?
  * Currently I'm assuming it's okay to break it.
  */
@@ -25,6 +27,8 @@ public:
   ScopeStack<unsigned int> localVarTypes;
 
   /** Holds all scopes that could be used to fully-qualify a relative path.
+   * First scope is always "global", then each successive scope is an extension
+   * of the one before it. The last one is the "current scope".
    * e.g., `{ "global", "global::MyMod", "global::MyMod::MyMod2" }`
    */
   std::vector<std::string> relativePathQualifiers;
@@ -210,10 +214,10 @@ public:
       std::string calleeRelName = relQIdentToString(eqident.n2);
       bool yayFoundIt = false;
       for (auto qual = relativePathQualifiers.end()-1; relativePathQualifiers.begin() <= qual; qual--) {
-        auto maybeFuncDecl = ont->functionSpace.find(*qual + calleeRelName);
-        if (maybeFuncDecl == ont->functionSpace.end()) continue;
+        auto maybeFuncDecl = ont->findFunction(*qual + calleeRelName);
+        if (maybeFuncDecl == ont->functionSpaceEnd()) continue;
         yayFoundIt = true;
-        Node funcDecl = m->get((*maybeFuncDecl).second);
+        Node funcDecl = m->get(maybeFuncDecl->second);
 
         // Unify each of the arguments with parameter.
         Node expList = m->get(n.n3);
@@ -229,6 +233,9 @@ public:
 
         // Unify return type
         bind(n.n1, funcDecl.n3);
+
+        // Replace function name with fully qualified name
+        m->set(n.n2, { eqident.loc, NN, NN, NN, { .ptr = maybeFuncDecl->first }, NodeTy::EFQIDENT });
       }
       if (!yayFoundIt) {
         errors.push_back(LocatedError(eqident.loc, "Cannot find function " + calleeRelName));
@@ -325,20 +332,37 @@ public:
     }
   }
 
+  /** Typechecks a func, proc, extern func, or extern proc */
   void tyFuncOrProc(unsigned int _n) {
-    localVarTypes.push();
     Node n = m->get(_n);
-    addParamsToLocalVarTypes(n.n2);
-    expectTyToBe(n.extra.nodes.n4, n.n3);
-    localVarTypes.pop();
+    
+    // fully qualify the function name
+    Node funcNameNode = m->get(n.n1);
+    std::string fqName = relativePathQualifiers.back() + "::" + std::string(funcNameNode.extra.ptr, funcNameNode.loc.sz);
+    auto fqNamePerma = ont->getPermaPointer(fqName);
+    m->set(n.n1, { funcNameNode.loc, NN, NN, NN, { .ptr = fqNamePerma }, NodeTy::FQIDENT });
+
+    // type check the function body
+    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC) {
+      localVarTypes.push();
+      addParamsToLocalVarTypes(n.n2);
+      expectTyToBe(n.extra.nodes.n4, n.n3);
+      localVarTypes.pop();
+    }
   }
 
+  // TODO: namespaces should be a little different
   void tyModuleOrNamespace(unsigned int _n) {
     Node n = m->get(_n);
-    Node identNode = m->get(n.n1);
-    std::string newScope = relativePathQualifiers.back() + "::" + std::string(identNode.extra.ptr, identNode.loc.sz);
-    relativePathQualifiers.push_back(newScope);
 
+    // fully qualify the module name
+    Node modNameNode = m->get(n.n1);
+    std::string fqName = relativePathQualifiers.back() + "::" + std::string(modNameNode.extra.ptr, modNameNode.loc.sz);
+    auto fqNamePerma = ont->getPermaPointer(fqName);
+    m->set(n.n1, { modNameNode.loc, NN, NN, NN, { .ptr = fqNamePerma }, NodeTy::FQIDENT });
+
+    // recursively type check contents
+    relativePathQualifiers.push_back(fqName);
     Node declList = m->get(n.n2);
     while (declList.ty == NodeTy::DECLLIST_CONS) {
       tyDecl(declList.n1);
@@ -351,7 +375,8 @@ public:
   void tyDecl(unsigned int _n) {
     Node n = m->get(_n);
 
-    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC) {
+    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC
+    || n.ty == NodeTy::EXTERN_FUNC || n.ty == NodeTy::EXTERN_PROC) {
       tyFuncOrProc(_n);
     }
 

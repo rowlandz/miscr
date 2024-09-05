@@ -8,6 +8,7 @@
 #include "printers.hpp"
 
 int play_with_typer(char* grammarElement) {
+  std::string usrInput;
   std::string line;
 
   unsigned int(Parser::*chosenParseFunction)();
@@ -23,37 +24,45 @@ int play_with_typer(char* grammarElement) {
     return 1;
   }
 
-  while (!std::cin.eof()) {
-    std::cout << "\x1B[34m>\x1B[0m " << std::flush;
-    std::getline(std::cin, line);
+next_input:
+  if (std::cin.eof()) return 0;
+  usrInput.clear();
+  std::cout << "\x1B[34m>\x1B[0m " << std::flush;
+  std::getline(std::cin, line);
+  usrInput.append(line + "\n");
+  goto check_input;
 
-    Lexer lexer(line.c_str());
-    if (!lexer.run()) {
-      std::cout << lexer.getError().render(line.c_str(), lexer.getLocationTable()) << std::endl;
-      continue;
-    }
+next_line:
+  std::cout << "\x1B[34m|\x1B[0m " << std::flush;
+  std::getline(std::cin, line);
+  usrInput.append(line + "\n");
 
+check_input:
+  Lexer lexer(usrInput.c_str());
+  if (lexer.run()) {
     NodeManager m;
     Parser parser(&m, lexer.getTokens());
     unsigned int parsed = (parser.*chosenParseFunction)();
-    if (IS_ERROR(parsed)) {
-      std::cout << parser.getError().render(line.c_str(), lexer.getLocationTable()) << std::endl;
-      continue;
-    }
-
-    Typer typer(&m);
-    (typer.*chosenTypeFunction)(parsed);
-    if (typer.unifier.errors.size() == 0) {
-      std::vector<bool> indents;
-      print_parse_tree(m, parsed, indents);
-    } else {
-      for (auto err : typer.unifier.errors) {
-        std::cout << err.render(line.c_str(), lexer.getLocationTable()) << std::endl;
+    if (!IS_ERROR(parsed)) {
+      Typer typer(&m);
+      (typer.*chosenTypeFunction)(parsed);
+      if (typer.unifier.errors.size() == 0) {
+        std::vector<bool> indents;
+        print_parse_tree(m, parsed, indents);
+      } else {
+        for (auto err : typer.unifier.errors) {
+          std::cout << err.render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
+        }
       }
-    }
-  }
-
-  return 0;
+      goto next_input;
+    } else if (line.size() == 0) {
+      std::cout << parser.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
+      goto next_input;
+    } else goto next_line;
+  } else if (line.size() == 0) {
+    std::cout << lexer.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
+    goto next_input;
+  } else goto next_line;
 }
 
 #endif

@@ -22,36 +22,37 @@ int play_with_parser(char* grammarElement, bool multilineInput) {
     return 1;
   }
 
-  while (!std::cin.eof()) {
-    std::cout << "\x1B[34m>\x1B[0m " << std::flush;
-    
-    usrInput.clear();
-    std::getline(std::cin, line);
-    while (line.size() > 0) {
-      usrInput.append(line);
-      usrInput.append("\n");
-      std::cout << "\x1B[34m|\x1B[0m " << std::flush;
-      std::getline(std::cin, line);
-    }
+next_input:
+  if (std::cin.eof()) return 0;
+  usrInput.clear();
+  std::cout << "\x1B[34m>\x1B[0m " << std::flush;
+  std::getline(std::cin, line);
+  usrInput.append(line + "\n");
+  goto check_input;
 
-    Lexer lexer(usrInput.c_str());
-    if (!lexer.run()) {
-      std::cout << lexer.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
-      continue;
-    }
+next_line:
+  std::cout << "\x1B[34m|\x1B[0m " << std::flush;
+  std::getline(std::cin, line);
+  usrInput.append(line + "\n");
 
+check_input:
+  Lexer lexer(usrInput.c_str());
+  if (lexer.run()) {
     NodeManager m;
     Parser parser(&m, lexer.getTokens());
     unsigned int parsed = (parser.*chosenParseFunction)();
-    if (IS_ERROR(parsed)) {
-      std::cout << parser.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
-    } else {
+    if (!IS_ERROR(parsed)) {
       std::vector<bool> indents;
       print_parse_tree(m, parsed, indents);
-    }
-  }
-
-  return 0;
+      goto next_input;
+    } else if (line.size() == 0) {
+      std::cout << parser.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
+      goto next_input;
+    } else goto next_line;
+  } else if (line.size() == 0) {
+    std::cout << lexer.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
+    goto next_input;
+  } else goto next_line;
 }
 
 #endif

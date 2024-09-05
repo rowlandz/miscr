@@ -26,9 +26,9 @@ public:
     if (decl.ty == NodeTy::MODULE) {
       Node declIdent = m->get(decl.n1);
       std::string moduleName = scope + "::" + std::string(declIdent.extra.ptr, declIdent.loc.sz);
-      auto existingEntry = ont->moduleSpace.find(moduleName);
-      if (existingEntry == ont->moduleSpace.end()){
-        ont->moduleSpace[moduleName] = _decl;
+      auto existingEntry = ont->findModule(moduleName);
+      if (existingEntry == ont->moduleSpaceEnd()){
+        ont->recordModule(moduleName, _decl);
       } else {
         moduleNameCollisionError(moduleName);
       }
@@ -54,9 +54,9 @@ public:
          || decl.ty == NodeTy::EXTERN_FUNC || decl.ty == NodeTy::EXTERN_PROC) {
       Node declIdent = m->get(decl.n1);
       std::string funcName = scope + "::" + std::string(declIdent.extra.ptr, declIdent.loc.sz);
-      auto existingEntry = ont->functionSpace.find(funcName);
-      if (existingEntry == ont->functionSpace.end()){
-        ont->functionSpace[funcName] = _decl;
+      auto existingEntry = ont->findFunction(funcName);
+      if (existingEntry == ont->functionSpaceEnd()){
+        ont->recordFunction(funcName, _decl);
       } else {
         functionNameCollisionError(funcName);
       }
