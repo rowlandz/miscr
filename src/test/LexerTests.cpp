@@ -37,7 +37,7 @@ namespace LexerTests {
       "/** multiline\n"
       "    doc comment */\n"
       "/* tricky / // * /* /*/\n"
-    , { COMMENT, DOC_COMMENT_L, DOC_COMMENT_R, COMMENT, DOC_COMMENT_R, COMMENT, END }
+    , { DOC_COMMENT_L, DOC_COMMENT_R, DOC_COMMENT_R, END }
     );
   }
 

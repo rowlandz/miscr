@@ -363,11 +363,7 @@ public:
 
     // recursively type check contents
     relativePathQualifiers.push_back(fqName);
-    Node declList = m->get(n.n2);
-    while (declList.ty == NodeTy::DECLLIST_CONS) {
-      tyDecl(declList.n1);
-      declList = m->get(declList.n2);
-    }
+    tyDeclList(n.n2);
 
     relativePathQualifiers.pop_back();
   }
@@ -382,6 +378,14 @@ public:
 
     else if (n.ty == NodeTy::MODULE || n.ty == NodeTy::NAMESPACE) {
       tyModuleOrNamespace(_n);
+    }
+  }
+
+  void tyDeclList(unsigned int _declList) {
+    Node declList = m->get(_declList);
+    while (declList.ty == NodeTy::DECLLIST_CONS) {
+      tyDecl(declList.n1);
+      declList = m->get(declList.n2);
     }
   }
 

@@ -82,7 +82,8 @@ public:
     capture(ty);
   }
 
-  /** Equivalent to `step(_); discard()` */
+  /** Equivalent to `step(_); discard()`. Moves the cursor one char to the
+   * right and clears the selection without capturing a token. */
   void stepAndDiscard() {
     step(initialState);
     discard();

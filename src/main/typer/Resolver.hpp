@@ -107,9 +107,7 @@ public:
     }
 
     else if (n.ty == NodeTy::MODULE || n.ty == NodeTy::NAMESPACE) {
-      for (Node declList = m->get(n.n2); declList.ty == NodeTy::DECLLIST_CONS; declList = m->get(declList.n2)) {
-        resolveDecl(declList.n1);
-      }
+      resolveDeclList(n.n2);
     }
 
     else if (n.ty == NodeTy::EXTERN_FUNC || n.ty == NodeTy::EXTERN_PROC) {
@@ -119,6 +117,14 @@ public:
     else {
       printf("Unexpected decl in Resolver!\n");
       exit(1);
+    }
+  }
+
+  void resolveDeclList(unsigned int _declList) {
+    Node declList = m->get(_declList);
+    while (declList.ty == NodeTy::DECLLIST_CONS) {
+      resolveDecl(declList.n1);
+      declList = m->get(declList.n2);
     }
   }
 };

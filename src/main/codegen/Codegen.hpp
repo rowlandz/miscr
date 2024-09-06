@@ -20,6 +20,7 @@ public:
   Codegen(const NodeManager* nodeManager, const Ontology* ont) {
     b = new llvm::IRBuilder<>(ctx);
     mod = new llvm::Module("MyModule", ctx);
+    mod->setTargetTriple("x86_64-pc-linux-gnu");
     this->nodeManager = nodeManager;
     this->ont = ont;
   }
@@ -92,6 +93,21 @@ public:
         expList = nodeManager->get(expList.n2);
       }
       return b->CreateCall(callee, args);
+    }
+
+    else if (n.ty == NodeTy::EQ) {
+      llvm::Value* v1 = genExp(n.n2);
+      llvm::Value* v2 = genExp(n.n3);
+
+      llvm::Type* operandType = v1->getType();
+      if (operandType->isIntegerTy())
+        return b->CreateICmpEQ(v1, v2);
+      else if (operandType->isFloatingPointTy())
+        return b->CreateFCmpOEQ(v1, v2);
+      else {
+        printf("Fatal error: Didn't expect this type for an EQ expression\n");
+        exit(1);
+      }
     }
 
     else if (n.ty == NodeTy::EQIDENT) {
@@ -183,11 +199,7 @@ public:
 
   void genModuleOrNamespace(unsigned int _n) {
     Node n = nodeManager->get(_n);
-    Node declList = nodeManager->get(n.n2);
-    while (declList.ty == NodeTy::DECLLIST_CONS) {
-      genDecl(declList.n1);
-      declList = nodeManager->get(declList.n2);
-    }
+    genDeclList(n.n2);
   }
 
   void genDecl(unsigned int _n) {
@@ -198,6 +210,14 @@ public:
     } else if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC
            || n.ty == NodeTy::EXTERN_FUNC || n.ty == NodeTy::EXTERN_PROC) {
       genFunc(_n);
+    }
+  }
+
+  void genDeclList(unsigned int _declList) {
+    Node declList = nodeManager->get(_declList);
+    while (declList.ty == NodeTy::DECLLIST_CONS) {
+      genDecl(declList.n1);
+      declList = nodeManager->get(declList.n2);
     }
   }
 

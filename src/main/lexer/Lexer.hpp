@@ -137,19 +137,19 @@ private:
         break;
 
       case ST_FSLASH_STAR_STAR:
-        if (c == '/') tok.stepAndCapture(COMMENT);
+        if (c == '/') tok.stepAndDiscard();   // discard non-doc comments
         else tok.step(ST_MULTILINE_DOC_COMMENT);
         break;
 
       case ST_FSLASH_FSLASH:
         if (c == '<') tok.step(ST_LINE_COMMENT_L);
         else if (c == '>') tok.step(ST_LINE_COMMENT_R);
-        else if (c == '\n') { tok.capture(COMMENT); tok.stepAndDiscard(); }
+        else if (c == '\n') tok.stepAndDiscard();   // discard non-doc comments
         else tok.step(ST_LINE_COMMENT);
         break;
 
       case ST_LINE_COMMENT:
-        if (c == '\n') { tok.capture(COMMENT); tok.stepAndDiscard(); }
+        if (c == '\n') tok.stepAndDiscard();   // discard non-doc comments
         else tok.step(ST_LINE_COMMENT);
         break;
 
@@ -169,7 +169,7 @@ private:
         break;
 
       case ST_MULTILINE_COMMENT_STAR:
-        if (c == '/') tok.stepAndCapture(COMMENT);
+        if (c == '/') tok.stepAndDiscard();   // discard non-doc comments
         else if (c == '*') tok.step(ST_MULTILINE_COMMENT_STAR);
         else tok.step(ST_MULTILINE_COMMENT);
         break;
@@ -221,7 +221,7 @@ private:
       case ST_LINE_COMMENT:
       case ST_MULTILINE_COMMENT:
       case ST_MULTILINE_COMMENT_STAR:
-        tok.capture(COMMENT);
+        // discard non-doc comments
         break;
       case ST_LINE_COMMENT_L:
         tok.capture(DOC_COMMENT_L);

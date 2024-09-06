@@ -1,33 +1,37 @@
-//#include <llvm/IR/IRBuilder.h>
 #include <cstdio>
+#include <llvm/Support/MemoryBuffer.h>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
 #include "typer/Typer.hpp"
 #include "codegen/Codegen.hpp"
 
-int main() {
+int main(int argc, char* argv[]) {
 
-  const char* text =
-    "module Main {\n"
-    "  extern proc puts(s: string): i32;\n"
-    "  func main(): i32 = puts(\"hello\");\n"
-    "}\n"
-    ;
+  if (argc < 2) {
+    llvm::outs() << "Need at least one cmd arg\n";
+    return 1;
+  }
 
-
+  auto Content = llvm::MemoryBuffer::getFile(argv[1], true);
+  assert(Content && "Could not read file");
+  const char* text = (const char*)Content.get()->getBuffer().bytes_begin();
+  
   Lexer lexer(text);
-  lexer.run();
+  if (!lexer.run()) {
+    llvm::outs() << lexer.getError().render(text, lexer.getLocationTable());
+    return 1;
+  }
 
   NodeManager m;
   Parser parser(&m, lexer.getTokens());
-  unsigned int parsed = parser.decl();
-  if (IS_ERROR(parsed)) {
+  unsigned int parsedDeclList = parser.decls0();
+  if (IS_ERROR(parsedDeclList)) {
     printf("%s", parser.getError().render(text, lexer.getLocationTable()).c_str());
     exit(1);
   }
 
   Typer typer(&m);
-  typer.typeDecl(parsed);
+  typer.typeDeclList(parsedDeclList);
   if (typer.unifier.errors.size() > 0) {
     for (auto err : typer.unifier.errors) {
       printf("%s", err.render(text, lexer.getLocationTable()).c_str());
@@ -36,14 +40,17 @@ int main() {
   }
 
   Codegen codegen(&m, &typer.ont);
-  codegen.genDecl(parsed);
+  codegen.genDeclList(parsedDeclList);
+  codegen.mod->setModuleIdentifier(argv[1]);
+  codegen.mod->setSourceFileName(argv[1]);
 
-  std::string generatedCode;
-  llvm::raw_string_ostream os(generatedCode);
-  os << *codegen.mod;
-  os.flush();
-  printf("%s\n", generatedCode.c_str());
+  llvm::outs() << *codegen.mod;
 
-  //printf("This doesn't do anything yet. Use the playground and unit tests instead.\n");
+  std::error_code EC;
+  llvm::raw_fd_ostream outDotLL("output.ll", EC);
+
+  outDotLL << *codegen.mod;
+  outDotLL.flush();
+
   return 0;
 }

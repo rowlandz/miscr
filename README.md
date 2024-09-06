@@ -1,4 +1,4 @@
-# Minimalist Intuitive Safe C Replacement (MISCR)
+# Minimalist Safe C Replacement (MiSCR)
 
 Nice straight-to-the-point tutorial using the LLVM C API:
 https://www.pauladamsmith.com/blog/2015/01/how-to-get-started-with-llvm-c-api.html
@@ -67,7 +67,7 @@ namespace CoolMath;
 
 Omitting the namespace or module declaration is the same as using `namespace global;`
 
-MISCR is _not_ object oriented for the following reasons. A "class" is just
+MiSCR is _not_ object oriented for the following reasons. A "class" is just
 a namespace combined with a data type. Classes have some frustrating
 pain-points that other languages are often forced to work around:
 * Other code cannot add functions to the class even when it makes sense
@@ -77,7 +77,7 @@ pain-points that other languages are often forced to work around:
 * Often unclear whether a function _mutates_ the object or returns a modified _copy_.
   * e.g., `mylist.sort()` versus `mylist.sorted()`
 
-MISCR claims that there is no reason to combine namespaces and data types into this concept of a "class". They just exist as separate things.
+MiSCR claims that there is no reason to combine namespaces and data types into this concept of a "class". They just exist as separate things.
 
 So here's the rule for method-call notation. If there is a namespace or module with the same name as a data type (e.g., `global::Color`), then:
 

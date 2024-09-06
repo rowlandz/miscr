@@ -32,6 +32,12 @@ public:
     resolver.resolveDecl(_n);
   }
 
+  void typeDeclList(unsigned int _declList) {
+    cataloger.catalogDeclList(std::string("global"), _declList);
+    unifier.tyDeclList(_declList);
+    resolver.resolveDeclList(_declList);
+  }
+
 };
 
 #endif
