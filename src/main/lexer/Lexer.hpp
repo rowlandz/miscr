@@ -68,6 +68,7 @@ private:
         else if (c == '/') tok.step(ST_FSLASH);
         else if (c == '=') tok.step(ST_EQUAL);
         else if (c == ':') tok.step(ST_COLON);
+        else if (c == '&') tok.stepAndCapture(AMP);
         else if (c == '+') tok.stepAndCapture(OP_ADD);
         else if (c == '-') tok.stepAndCapture(OP_SUB);
         else if (c == '*') tok.stepAndCapture(OP_MUL);
@@ -75,6 +76,8 @@ private:
         else if (c == ')') tok.stepAndCapture(RPAREN);
         else if (c == '{') tok.stepAndCapture(LBRACE);
         else if (c == '}') tok.stepAndCapture(RBRACE);
+        else if (c == '[') tok.stepAndCapture(LBRACKET);
+        else if (c == ']') tok.stepAndCapture(RBRACKET);
         else if (c == ',') tok.stepAndCapture(COMMA);
         else if (c == ';') tok.stepAndCapture(SEMICOLON);
         else {
@@ -241,6 +244,7 @@ private:
       case 2:
         if (!strncmp("i8", s, 2)) return KW_i8;
         if (!strncmp("if", s, 2)) return KW_IF;
+        if (!strncmp("of", s, 2)) return KW_OF;
         return TOK_IDENT;
       case 3:
         if (!strncmp("f32", s, 3)) return KW_f32;

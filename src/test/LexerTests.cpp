@@ -27,6 +27,12 @@ namespace LexerTests {
     });
   }
 
+  TEST(ampersands_should_all_be_separate) {
+    tokensShouldBe("&   &&   &&&", {
+      AMP, AMP, AMP, AMP, AMP, AMP, END
+    });
+  }
+
   TEST(comments) {
     tokensShouldBe(
       "// single line\n"

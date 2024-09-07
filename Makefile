@@ -14,8 +14,8 @@ clean:
 compiler: src/main/main.cpp $(shell find src/main -name *.hpp)
 	@./build.sh compiler
 
-playground: src/play/*.cpp src/play/*.hpp
+playground: $(shell find src/main -name *.hpp) src/play/*.cpp src/play/*.hpp
 	@./build.sh playground
 
-tests: src/test/*.cpp src/test/*.hpp
+tests: $(shell find src/main -name *.hpp) src/test/*.cpp src/test/*.hpp
 	@./build.sh tests

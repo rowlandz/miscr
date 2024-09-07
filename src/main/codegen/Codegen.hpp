@@ -71,7 +71,14 @@ public:
   llvm::Value* genExp(unsigned int _n) {
     Node n = nodeManager->get(_n);
 
-    if (n.ty == NodeTy::BLOCK) {
+    // TODO: continue working on this
+    if (n.ty == NodeTy::ARRAY_CONSTR_INIT) {
+      llvm::Type* innerType = genType(nodeManager->get(n.n1).n1);
+      llvm::Value* arraySize = genExp(n.n2);
+      return b->CreateAlloca(innerType, arraySize);
+    }
+
+    else if (n.ty == NodeTy::BLOCK) {
       Node stmtList = nodeManager->get(n.n2);
       llvm::Value* lastStmtVal = nullptr;
       while (stmtList.ty == NodeTy::STMTLIST_CONS) {

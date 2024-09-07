@@ -15,14 +15,17 @@ public:
     this->m = m;
   }
 
-  // TODO: this is copied from Unifier.hpp
-  /** Resolves a type until a non-TYPEVAR is reached or a terminal TYPEVAR
-   * is reached. `_ty` should refer to a type node. */
+  /** Fully resolve type variables in type `_ty`. For type constructors, this
+   * will modify the nodes that they point to in order to accomplish this. */
   unsigned int resolve(unsigned int _ty) {
     Node ty = m->get(_ty);
     while (ty.ty == NodeTy::TYPEVAR && ty.n1 != NN) {
       _ty = ty.n1;
       ty = m->get(_ty);
+    }
+    if (ty.ty == NodeTy::TY_ARRAY) {
+      ty.n2 = resolve(ty.n2);
+      m->set(_ty, ty);
     }
     return _ty;
   }
@@ -39,6 +42,13 @@ public:
       case NodeTy::DIV:
       case NodeTy::EQ:
       case NodeTy::NE:
+        resolveExp(n.n2);
+        resolveExp(n.n3);
+        break;
+      case NodeTy::ARRAY_CONSTR_LIST:
+        resolveExpList(n.n2);
+        break;
+      case NodeTy::ARRAY_CONSTR_INIT:
         resolveExp(n.n2);
         resolveExp(n.n3);
         break;
@@ -61,7 +71,7 @@ public:
       case NodeTy::LIT_STRING:
         break;
       default:
-        printf("Unifier case not supported yet!\n");
+        printf("Resolver case not supported yet!\n");
         exit(1);
     }
   }

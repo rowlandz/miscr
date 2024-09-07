@@ -114,6 +114,40 @@ namespace ParserTests {
     });
   }
 
+  TEST(array_constructor_list) {
+    expParseTreeShouldBe("[42, x, y+1]", {
+      "ARRAY_CONSTR_LIST",
+      "    TYPEVAR",
+      "    EXPLIST_CONS",
+      "        LIT_INT",
+      "            TYPEVAR",
+      "        EXPLIST_CONS",
+      "            EQIDENT",
+      "                TYPEVAR",
+      "                IDENT",
+      "            EXPLIST_CONS",
+      "                ADD",
+      "                    TYPEVAR",
+      "                    EQIDENT",
+      "                        TYPEVAR",
+      "                        IDENT",
+      "                    LIT_INT",
+      "                        TYPEVAR",
+      "                EXPLIST_NIL",
+    });
+  }
+
+  TEST(array_constructor_init) {
+    expParseTreeShouldBe("[20 of 0]", {
+      "ARRAY_CONSTR_INIT",
+      "    TYPEVAR",
+      "    LIT_INT",
+      "        TYPEVAR",
+      "    LIT_INT",
+      "        TYPEVAR",
+    });
+  }
+
   TEST(main_prints_hello_world) {
     declParseTreeShouldBe("proc main(): i32 = { println(\"Hello World\"); };", {
       "PROC",

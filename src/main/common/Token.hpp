@@ -4,14 +4,14 @@
 enum TokenTy: unsigned char {
   TOK_IDENT,
   KW_BOOL, KW_CASE, KW_ELSE, KW_EXTERN, KW_FALSE, KW_FUNC, KW_IF, KW_LET,
-  KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_PROC, KW_RETURN, KW_STRING, KW_THEN,
+  KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_OF, KW_PROC, KW_RETURN, KW_STRING, KW_THEN,
   KW_TRUE, KW_UNIT,
   KW_i8, KW_i32, KW_f32, KW_f64,
   OP_ADD, OP_SUB, OP_MUL, OP_DIV,
   OP_EQ, OP_NEQ,
   LIT_DEC, LIT_INT, LIT_STRING,
-  LPAREN, RPAREN, LBRACE, RBRACE,
-  COLON_COLON, COLON, COMMA, EQUAL, FATARROW, SEMICOLON,
+  LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
+  AMP, COLON_COLON, COLON, COMMA, EQUAL, FATARROW, SEMICOLON,
   COMMENT, DOC_COMMENT_L, DOC_COMMENT_R,
   END
 };
@@ -31,6 +31,7 @@ const char* TokenTyToString(TokenTy ty) {
     case KW_MATCH:        return "KW_MATCH";
     case KW_MODULE:       return "KW_MODULE";
     case KW_NAMESPACE:    return "KW_NAMESPACE";
+    case KW_OF:           return "KW_OF";
     case KW_PROC:         return "KW_PROC";
     case KW_RETURN:       return "KW_RETURN";
     case KW_THEN:         return "KW_THEN";
@@ -53,6 +54,9 @@ const char* TokenTyToString(TokenTy ty) {
     case RPAREN:          return "RPAREN";
     case LBRACE:          return "LBRACE";
     case RBRACE:          return "RBRACE";
+    case LBRACKET:        return "LBRACKET";
+    case RBRACKET:        return "RBRACKET";
+    case AMP:             return "AMP";
     case COLON_COLON:     return "COLON_COLON";
     case COLON:           return "COLON";
     case COMMA:           return "COMMA";

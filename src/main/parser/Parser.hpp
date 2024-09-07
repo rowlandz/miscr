@@ -54,6 +54,41 @@ public:
     return LocatedError(tokenToLocation(p), errString);
   }
 
+  // ---------- Idents and QIdents ----------
+
+  unsigned int ident() {
+    if (p->ty == TOK_IDENT) return m->add({ tokenToLocation(p), NN, NN, NN, { .ptr=(p++)->ptr }, NodeTy::IDENT });
+    return EPSILON_ERROR;
+  }
+
+  /** Parses a QIDENT or IDENT. A QIDENT means there is at least one qualifier
+   * present, while IDENT means there are no qualifiers. */
+  unsigned int qidentOrIdent() {
+    Token t = *p;
+    unsigned int n1 = ident();
+    if (IS_ERROR(n1)) return n1;
+    if (p->ty == COLON_COLON) {
+      p++;
+      unsigned int n2 = qidentOrIdent();
+      if (IS_ERROR(n2)) return ARRESTING_ERROR;
+      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::QIDENT });
+    } else {
+      return n1;
+    }
+  }
+
+  // ---------- Expression Forms ----------
+
+  unsigned int intLit() {
+    if (p->ty != LIT_INT) return EPSILON_ERROR;
+    std::string intText(p->ptr, p->sz);
+    long value = atol(intText.c_str());
+    Node n = { tokenToLocation(p), newTYPEVAR(), NN, NN, { .intVal=value }, NodeTy::LIT_INT };
+    ++p;
+    return m->add(n);
+  }
+
   unsigned int numLit() {
     if (p->ty != LIT_INT && p->ty != LIT_DEC) return EPSILON_ERROR;
     char buffer[p->sz + 1];
@@ -79,28 +114,6 @@ public:
     else return EPSILON_ERROR;
   }
 
-  unsigned int ident() {
-    if (p->ty == TOK_IDENT) return m->add({ tokenToLocation(p), NN, NN, NN, { .ptr=(p++)->ptr }, NodeTy::IDENT });
-    return EPSILON_ERROR;
-  }
-
-  /** Parses a QIDENT or IDENT. A QIDENT means there is at least one qualifier
-   * present, while IDENT means there are no qualifiers. */
-  unsigned int qidentOrIdent() {
-    Token t = *p;
-    unsigned int n1 = ident();
-    if (IS_ERROR(n1)) return n1;
-    if (p->ty == COLON_COLON) {
-      p++;
-      unsigned int n2 = qidentOrIdent();
-      if (IS_ERROR(n2)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::QIDENT });
-    } else {
-      return n1;
-    }
-  }
-
   /** Parses an EQIDENT. The n2 slot could be a `QIDENT` or `IDENT`. */
   unsigned int eqident() {
     unsigned int n2 = qidentOrIdent();
@@ -124,6 +137,43 @@ public:
     if (p->ty == RBRACE) p++; else return EPSILON_ERROR;
     Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
     return m->add({ loc, newTYPEVAR(), n, NN, NOEXTRA, NodeTy::BLOCK });
+  }
+
+  /** Parses an ARRAY_CONSTR_LIST or ARRAY_CONSTR_INIT */
+  unsigned int arrayConstrExp() {
+    Token t = *p;
+    if (p->ty == LBRACKET) p++; else return EPSILON_ERROR;
+    Token t1 = *p;
+    unsigned int n1 = exp();
+    if (IS_ERROR(n1)) return ARRESTING_ERROR;
+    if (p->ty == KW_OF) {
+      ++p;
+      unsigned int n2 = exp();
+      if (IS_ERROR(n2)) return ARRESTING_ERROR;
+      CHOMP_ELSE_ARREST(RBRACKET, "]", "array constructor")
+      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      return m->add({ loc, newTYPEVAR(), n1, n2, NOEXTRA, NodeTy::ARRAY_CONSTR_INIT });
+    } else if (p->ty == COMMA) {
+      ++p;
+      unsigned int expListTail = expListWotc0();
+      if (IS_ERROR(expListTail)) return ARRESTING_ERROR;
+      Location loc = { t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr) };
+      unsigned int expList = m->add({ loc, n1, expListTail, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
+      CHOMP_ELSE_ARREST(RBRACKET, "]", "array constructor")
+      loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      return m->add({ loc, newTYPEVAR(), expList, NN, NOEXTRA, NodeTy::ARRAY_CONSTR_LIST });
+    } else if (p->ty == RBRACKET) {
+      unsigned int emptyExpList = m->add({ {0,0,0}, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
+      Location loc = { t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr) };
+      unsigned int expList = m->add({ loc, n1, emptyExpList, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
+      CHOMP_ELSE_ARREST(RBRACKET, "]", "array constructor");
+      loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      return m->add({ loc, newTYPEVAR(), expList, NN, NOEXTRA, NodeTy::ARRAY_CONSTR_LIST });
+    } else {
+      errTryingToParse = "array constructor";
+      expectedTokens = "of , ]";
+      return ARRESTING_ERROR;
+    }
   }
 
   unsigned int eqidentOrFunctionCall() {
@@ -152,6 +202,8 @@ public:
     n1 = litBool();
     if (n1 != EPSILON_ERROR) return n1;
     n1 = parensExp();
+    if (n1 != EPSILON_ERROR) return n1;
+    n1 = arrayConstrExp();
     if (n1 != EPSILON_ERROR) return n1;
     return blockExp();
   }
@@ -244,7 +296,9 @@ public:
     return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
   }
 
-  unsigned int tyExp() {
+  // ---------- Type Expression Forms ----------
+
+  unsigned int tyExpLv0() {
     if (p->ty == KW_f32) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f32 });
     if (p->ty == KW_f64) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f64 });
     if (p->ty == KW_i8) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i8 });
@@ -252,8 +306,38 @@ public:
     if (p->ty == KW_BOOL) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::BOOL });
     if (p->ty == KW_STRING) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::STRING });
     if (p->ty == KW_UNIT) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::UNIT });
+    unsigned int n = arrayType();
+    if (n != EPSILON_ERROR) return n;
     return EPSILON_ERROR;
   }
+
+  unsigned int tyExp() {
+    Token t = *p;
+    if (p->ty == AMP) {
+      ++p;
+      unsigned int n1 = tyExp();
+      if (IS_ERROR(n1)) return ARRESTING_ERROR;
+      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      return m->add({ loc, n1, NN, NN, NOEXTRA, NodeTy::TY_REF });
+    } else {
+      return tyExpLv0();
+    }
+  }
+
+  unsigned arrayType() {
+    Token t = *p;
+    if (p->ty == LBRACKET) p++; else return EPSILON_ERROR;
+    unsigned int n1 = intLit();
+    if (IS_ERROR(n1)) return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(KW_OF, "of", "array type")
+    unsigned int n2 = tyExp();
+    if (IS_ERROR(n2)) return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(RBRACKET, "]", "array type")
+    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::TY_ARRAY });
+  }
+
+  // ---------- Statement Forms ----------
 
   unsigned int letStmt() {
     Token t = *p;

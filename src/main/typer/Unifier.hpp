@@ -106,17 +106,20 @@ public:
       || rty1.ty == NodeTy::i32 || rty1.ty == NodeTy::BOOL || rty1.ty == NodeTy::STRING
       || rty1.ty == NodeTy::UNIT
       || rty1.ty == NodeTy::NUMERIC || rty1.ty == NodeTy::DECIMAL) {
-        // do nothing
+        bind(_rtyVar1, _ty2);
       } else if (rty1.ty == NodeTy::TYPEVAR) {
-        bind(_rtyVar1, _rty2);
+        bind(_rtyVar1, _ty2);
+      } else if (rty1.ty == NodeTy::TY_ARRAY) {
+        // TODO: enforce that array sizes must match
+        return unify(rty1.n2, rty2.n2);
       } else {
         printf("Fatal unification error: node is not a type\n");
         exit(1);
       }
     } else if (rty1.ty == NodeTy::TYPEVAR) {
-      bind(_rtyVar1, _rty2);
+      bind(_rtyVar1, _ty2);
     } else if (rty2.ty == NodeTy::TYPEVAR) {
-      bind(_rty2, _rty1);
+      bind(_rty2, _rtyVar1);
     } else if (rty1.ty == NodeTy::NUMERIC) {
       switch (rty2.ty) {
         case NodeTy::f32:
@@ -124,7 +127,7 @@ public:
         case NodeTy::i8:
         case NodeTy::i32:
         case NodeTy::DECIMAL:
-          bind(_rtyVar1, _rty2);
+          bind(_rtyVar1, _ty2);
           break;
         default:
           return false;
@@ -137,7 +140,7 @@ public:
         case NodeTy::i32:
         case NodeTy::DECIMAL:
           if (m->get(_ty2).ty == NodeTy::TYPEVAR) {
-            bind(almostResolve(_ty2), _rty1);
+            bind(almostResolve(_ty2), _rtyVar1);
           }
           break;
         default:
@@ -147,7 +150,7 @@ public:
       switch (rty2.ty) {
         case NodeTy::f32:
         case NodeTy::f64:
-          bind(_rtyVar1, _rty2);
+          bind(_rtyVar1, _ty2);
           break;
         default:
           return false;
@@ -186,6 +189,27 @@ public:
     return _inferredTy;
   }
 
+  /** Calls `expectTyToBe` on every expression in the EXPLIST (the second
+   * argument is always `_tyVar`). */
+  void expectTysToBe(unsigned int _expList, unsigned int _tyVar) {
+    Node expList = m->get(_expList);
+    while (expList.ty == NodeTy::EXPLIST_CONS) {
+      expectTyToBe(expList.n1, _tyVar);
+      expList = m->get(expList.n2);
+    }
+  }
+
+  /** Returns the number of elements in the provided expression list. */
+  long expListSize(unsigned int _expList) {
+    long ret = 0;
+    Node expList = m->get(_expList);
+    while (expList.ty == NodeTy::EXPLIST_CONS) {
+      ++ret;
+      expList = m->get(expList.n2);
+    }
+    return ret;
+  }
+
   /** Typechecks an expression node at location `_n` in `m`.
    * Returns The type node `m->get(_n).n1` of the expression for convenience. */
   unsigned int tyExp(unsigned int _n) {
@@ -195,6 +219,31 @@ public:
       unsigned int tyn2 = expectTyToBe(n.n2, tyc_numeric);
       unsigned int tyn3 = expectTyToBe(n.n3, tyn2);
       bind(n.n1, tyn2);
+    }
+
+    else if (n.ty == NodeTy::ARRAY_CONSTR_LIST) {
+      long arraySize = expListSize(n.n2);
+      unsigned int innerTyVar = m->add({ {0,0,0}, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
+      unsigned int arrSizeNode = m->add({ {0,0,0}, ty_i32, NN, NN, {.intVal=arraySize}, NodeTy::LIT_INT });
+      unsigned int arrayType = m->add({ {0,0,0}, arrSizeNode, innerTyVar, NN, NOEXTRA, NodeTy::TY_ARRAY });
+      expectTysToBe(n.n2, innerTyVar);
+      bind(n.n1, arrayType);
+    }
+
+    else if (n.ty == NodeTy::ARRAY_CONSTR_INIT) {
+      // check that the array size expression is a LIT_INT
+      Node n2 = m->get(n.n2);
+      if (n2.ty != NodeTy::LIT_INT) {
+        std::string errMsg("The size of an array initializer must be an integer literal");
+        errors.push_back(LocatedError(n2.loc, errMsg));
+      }
+
+      unsigned int innerTyVar = m->add({ {0,0,0}, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
+      unsigned int arrayType = m->add({ {0,0,0}, n.n2, innerTyVar, NN, NOEXTRA, NodeTy::TY_ARRAY });
+      expectTyToBe(n.n2, ty_i32);
+      expectTyToBe(n.n3, innerTyVar);
+
+      bind(n.n1, arrayType);
     }
 
     else if (n.ty == NodeTy::BLOCK) {
@@ -412,6 +461,8 @@ public:
     Node ty = m->get(_ty);
     return std::string(NodeTyToString(ty.ty));
   }
+
+
 
 };
 

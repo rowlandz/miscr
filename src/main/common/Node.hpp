@@ -14,6 +14,7 @@ enum struct NodeTy: unsigned short {
 
   EQIDENT, EFQIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
   ADD, SUB, MUL, DIV, EQ, NE,
+  ARRAY_CONSTR_LIST, ARRAY_CONSTR_INIT,
   IF, BLOCK, CALL,
 
   // statement nodes
@@ -27,6 +28,7 @@ enum struct NodeTy: unsigned short {
   // type nodes
 
   TYPEVAR, UNIT, BOOL, i8, i32, f32, f64, STRING,
+  TY_ARRAY, TY_REF,
   NUMERIC, DECIMAL,
 
   // Other
@@ -53,6 +55,8 @@ bool isExpNodeTy(NodeTy ty) {
     case NodeTy::DIV:
     case NodeTy::EQ:
     case NodeTy::NE:
+    case NodeTy::ARRAY_CONSTR_LIST:
+    case NodeTy::ARRAY_CONSTR_INIT:
     case NodeTy::IF:
     case NodeTy::BLOCK:
     case NodeTy::CALL: return true;
@@ -74,6 +78,8 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::DIV:              return "DIV";
     case NodeTy::EQ:               return "EQ";
     case NodeTy::NE:               return "NE";
+    case NodeTy::ARRAY_CONSTR_LIST:   return "ARRAY_CONSTR_LIST";
+    case NodeTy::ARRAY_CONSTR_INIT:   return "ARRAY_CONSTR_INIT";
     case NodeTy::BLOCK:            return "BLOCK";
     case NodeTy::CALL:             return "CALL";
     case NodeTy::UNIT:             return "UNIT";
@@ -86,6 +92,8 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::i8:               return "i8";
     case NodeTy::i32:              return "i32";
     case NodeTy::STRING:           return "STRING";
+    case NodeTy::TY_ARRAY:         return "TY_ARRAY";
+    case NodeTy::TY_REF:           return "TY_REF";
     case NodeTy::IDENT:            return "IDENT";
     case NodeTy::QIDENT:           return "QIDENT";
     case NodeTy::FQIDENT:          return "FQIDENT";
@@ -123,6 +131,8 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "DIV")              return NodeTy::DIV;
   else if (str == "EQ")               return NodeTy::EQ;
   else if (str == "NE")               return NodeTy::NE;
+  else if (str == "ARRAY_CONSTR_LIST")   return NodeTy::ARRAY_CONSTR_LIST;
+  else if (str == "ARRAY_CONSTR_INIT")   return NodeTy::ARRAY_CONSTR_INIT;
   else if (str == "BLOCK")            return NodeTy::BLOCK;
   else if (str == "CALL")             return NodeTy::CALL;
   else if (str == "BOOL")             return NodeTy::BOOL;

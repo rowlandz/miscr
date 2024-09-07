@@ -145,3 +145,10 @@ module B {
   }
 }
 
+# Arrays and References
+
+let arr: [20 of char] = [20 of '\0'];
+let mynums: [5 of i32] = [1, 2, 3, 4, 5];
+
+let p: &[5 of i32] = &mynums;
+
