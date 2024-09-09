@@ -34,6 +34,10 @@ namespace TyperTests {
     expShouldHaveType("\"hello\"", NodeTy::STRING);
   }
 
+  TEST(type_ascription) {
+    expShouldHaveType("42: i32", NodeTy::i32);
+  }
+
   TEST(let_bindings) {
     expShouldHaveType("{ let x = 42; x; }", NodeTy::NUMERIC);
     expShouldHaveType("{ let x = 42; true; }", NodeTy::BOOL);

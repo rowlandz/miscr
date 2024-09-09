@@ -212,13 +212,12 @@ public:
     Token t = *p;
     unsigned int e = expLv0();
     if (IS_ERROR(e)) return e;
-    while (p->ty == OP_MUL || p->ty == OP_DIV) {
-      NodeTy op = (p->ty == OP_MUL) ? NodeTy::MUL : NodeTy::DIV;
+    while (p->ty == COLON) {
       p++;
-      unsigned int e2 = expLv0();
-      if (IS_ERROR(e2)) return ARRESTING_ERROR;
+      unsigned int tyAscrip = tyExp();
+      if (IS_ERROR(tyAscrip)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+      e = m->add({ loc, newTYPEVAR(), e, tyAscrip, NOEXTRA, NodeTy::ASCRIP });
     }
     return e;
   }
@@ -227,8 +226,8 @@ public:
     Token t = *p;
     unsigned int e = expLv1();
     if (IS_ERROR(e)) return e;
-    while (p->ty == OP_ADD || p->ty == OP_SUB) {
-      NodeTy op = (p->ty == OP_ADD) ? NodeTy::ADD : NodeTy::SUB;
+    while (p->ty == OP_MUL || p->ty == OP_DIV) {
+      NodeTy op = (p->ty == OP_MUL) ? NodeTy::MUL : NodeTy::DIV;
       p++;
       unsigned int e2 = expLv1();
       if (IS_ERROR(e2)) return ARRESTING_ERROR;
@@ -242,10 +241,25 @@ public:
     Token t = *p;
     unsigned int e = expLv2();
     if (IS_ERROR(e)) return e;
+    while (p->ty == OP_ADD || p->ty == OP_SUB) {
+      NodeTy op = (p->ty == OP_ADD) ? NodeTy::ADD : NodeTy::SUB;
+      p++;
+      unsigned int e2 = expLv2();
+      if (IS_ERROR(e2)) return ARRESTING_ERROR;
+      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+    }
+    return e;
+  }
+
+  unsigned int expLv4() {
+    Token t = *p;
+    unsigned int e = expLv3();
+    if (IS_ERROR(e)) return e;
     while (p->ty == OP_EQ || p->ty == OP_NEQ) {
       NodeTy op = (p->ty == OP_EQ) ? NodeTy::EQ : NodeTy::NE;
       p++;
-      unsigned int e2 = expLv2();
+      unsigned int e2 = expLv3();
       if (IS_ERROR(e2)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
       e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
@@ -271,7 +285,7 @@ public:
   unsigned int exp() {
     unsigned int n = ifExp();
     if (n != EPSILON_ERROR) return n;
-    return expLv3();
+    return expLv4();
   }
 
   /** Zero or more comma-separated expressions with optional trailing

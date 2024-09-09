@@ -52,6 +52,9 @@ public:
         resolveExp(n.n2);
         resolveExp(n.n3);
         break;
+      case NodeTy::ASCRIP:
+        resolveExp(n.n2);
+        break;
       case NodeTy::BLOCK:
         resolveStmtList(n.n2);
         break;

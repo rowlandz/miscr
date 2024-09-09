@@ -30,6 +30,13 @@ public:
     delete b;
   }
 
+  llvm::ArrayType* genArrayType(unsigned int _arrayTy) {
+    Node arrayTy = nodeManager->get(_arrayTy);
+    llvm::Type* innerType = genType(arrayTy.n2);
+    Node intNode = nodeManager->get(arrayTy.n1);
+    return llvm::ArrayType::get(innerType, intNode.extra.intVal);
+  }
+
   llvm::Type* genType(unsigned int _n) {
     Node n = nodeManager->get(_n);
     switch (n.ty) {
@@ -40,6 +47,7 @@ public:
       case NodeTy::f64: return b->getDoubleTy();
       case NodeTy::STRING: return b->getInt8PtrTy();
       case NodeTy::UNIT: return b->getVoidTy();
+      case NodeTy::TY_ARRAY: return genArrayType(_n);
       default: return b->getVoidTy();
     }
   }
@@ -71,11 +79,27 @@ public:
   llvm::Value* genExp(unsigned int _n) {
     Node n = nodeManager->get(_n);
 
-    // TODO: continue working on this
     if (n.ty == NodeTy::ARRAY_CONSTR_INIT) {
-      llvm::Type* innerType = genType(nodeManager->get(n.n1).n1);
-      llvm::Value* arraySize = genExp(n.n2);
-      return b->CreateAlloca(innerType, arraySize);
+      llvm::ArrayType* arrayType = genArrayType(n.n1);
+      long arraySize = nodeManager->get(n.n2).extra.intVal;
+      llvm::Value* initElement = genExp(n.n3);
+      std::vector<llvm::Constant*> elements(arraySize, (llvm::Constant*)initElement);
+      // std::vector<llvm::Constant*> elements(arraySize, initElement);
+      return llvm::ConstantArray::get(arrayType, elements);
+      // llvm::Type* innerType = genType(nodeManager->get(n.n1).n2);
+      // llvm::Value* arraySizeVal = genExp(n.n2);
+      // llvm::Value* ret = b->CreateAlloca(innerType, arraySizeVal);
+      // llvm::Value* initVal = genExp(n.n3);
+      // uint32_t arraySize = (uint32_t)nodeManager->get(n.n2).extra.intVal;
+      // for (uint32_t i = 0; i < arraySize; ++i) {
+      //   llvm::Value* idxVal = b->getInt32((uint32_t)i);
+      //   llvm::Value* offsetAddr = b->CreateGEP(innerType, ret, idxVal);
+      //   b->CreateStore(initVal, offsetAddr);
+      // }
+    }
+
+    else if (n.ty == NodeTy::ASCRIP) {
+      return genExp(n.n2);
     }
 
     else if (n.ty == NodeTy::BLOCK) {
@@ -129,7 +153,7 @@ public:
     }
 
     else if (n.ty == NodeTy::LIT_INT) {
-      return b->getInt32((int)n.extra.intVal);
+      return llvm::ConstantInt::get(genType(n.n1), n.extra.intVal);
     }
 
     else if (n.ty == NodeTy::LIT_STRING) {

@@ -246,6 +246,11 @@ public:
       bind(n.n1, arrayType);
     }
 
+    else if (n.ty == NodeTy::ASCRIP) {
+      expectTyToBe(n.n2, n.n3);
+      bind(n.n1, n.n3);
+    }
+
     else if (n.ty == NodeTy::BLOCK) {
       localVarTypes.push();
       Node stmtList = m->get(n.n2);

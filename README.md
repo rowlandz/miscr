@@ -147,8 +147,45 @@ module B {
 
 # Arrays and References
 
-let arr: [20 of char] = [20 of '\0'];
-let mynums: [5 of i32] = [1, 2, 3, 4, 5];
+```
+              Ampersand means "read-only reference"
+&i32          read-only reference to an i32
+&x            read-only reference to x
 
-let p: &[5 of i32] = &mynums;
+              Hash means "writable reference"
+#i32
+#x
 
+              Consistent array notation
+[10 of i32]   type of an 10-length array of i32s
+[10 of 0]     a literal array of length 10 filled with zeros
+
+              Postfix "." always means a projection function
+[10 of 0].3   The value of the array at index 3 (having type i32)
+mypos.x       The x field of the struct
+
+              Postfix `!` means plain dereference
+arrRef!       The array pointed to by `arrRef`
+myposRef!     The (whole) struct pointed to by `myposRef`
+
+              Postfix brackets mean address pointer calculation
+arrRef[2]     The address of the index-2 element of the array pointed to by arrRef
+mypos[x]      The address of the x field of the struct referenced by mypos
+
+              Postfix "->" always means projection _through a reference_
+arrRef->3     The value at index 3 of the array referred to by `arrRef`
+myposRef->x   The x field of the struct pointed to by `myposRef`
+
+
+Dereference and address calculation operators are all postfix.
+
+Creating references are all prefix.
+
+
+func foo() {
+  let x: #&BigData = ...;
+  x := &differentBigData;
+  x! := BigData();           // illegal store via read-only reference
+}
+
+```

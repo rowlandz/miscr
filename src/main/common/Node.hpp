@@ -15,7 +15,7 @@ enum struct NodeTy: unsigned short {
   EQIDENT, EFQIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
   ADD, SUB, MUL, DIV, EQ, NE,
   ARRAY_CONSTR_LIST, ARRAY_CONSTR_INIT,
-  IF, BLOCK, CALL,
+  IF, BLOCK, CALL, ASCRIP,
 
   // statement nodes
 
@@ -59,7 +59,9 @@ bool isExpNodeTy(NodeTy ty) {
     case NodeTy::ARRAY_CONSTR_INIT:
     case NodeTy::IF:
     case NodeTy::BLOCK:
-    case NodeTy::CALL: return true;
+    case NodeTy::CALL:
+    case NodeTy::ASCRIP:
+      return true;
     default: return false;
   }
 }
@@ -82,6 +84,7 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::ARRAY_CONSTR_INIT:   return "ARRAY_CONSTR_INIT";
     case NodeTy::BLOCK:            return "BLOCK";
     case NodeTy::CALL:             return "CALL";
+    case NodeTy::ASCRIP:           return "ASCRIP";
     case NodeTy::UNIT:             return "UNIT";
     case NodeTy::BOOL:             return "BOOL";
     case NodeTy::TYPEVAR:          return "TYPEVAR";
@@ -135,6 +138,7 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "ARRAY_CONSTR_INIT")   return NodeTy::ARRAY_CONSTR_INIT;
   else if (str == "BLOCK")            return NodeTy::BLOCK;
   else if (str == "CALL")             return NodeTy::CALL;
+  else if (str == "ASCRIP")           return NodeTy::ASCRIP;
   else if (str == "BOOL")             return NodeTy::BOOL;
   else if (str == "TYPEVAR")          return NodeTy::TYPEVAR;
   else if (str == "UNIT")             return NodeTy::UNIT;
