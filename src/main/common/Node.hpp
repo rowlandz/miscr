@@ -14,6 +14,7 @@ enum struct NodeTy: unsigned short {
 
   EQIDENT, EFQIDENT, LIT_INT, LIT_DEC, LIT_STRING, TRUE, FALSE,
   ADD, SUB, MUL, DIV, EQ, NE,
+  MK_REF, MK_WREF,
   ARRAY_CONSTR_LIST, ARRAY_CONSTR_INIT,
   IF, BLOCK, CALL, ASCRIP,
 
@@ -28,7 +29,7 @@ enum struct NodeTy: unsigned short {
   // type nodes
 
   TYPEVAR, UNIT, BOOL, i8, i32, f32, f64, STRING,
-  TY_ARRAY, TY_REF,
+  TY_ARRAY, TY_REF, TY_WREF,
   NUMERIC, DECIMAL,
 
   // Other
@@ -55,6 +56,8 @@ bool isExpNodeTy(NodeTy ty) {
     case NodeTy::DIV:
     case NodeTy::EQ:
     case NodeTy::NE:
+    case NodeTy::MK_REF:
+    case NodeTy::MK_WREF:
     case NodeTy::ARRAY_CONSTR_LIST:
     case NodeTy::ARRAY_CONSTR_INIT:
     case NodeTy::IF:
@@ -80,6 +83,8 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::DIV:              return "DIV";
     case NodeTy::EQ:               return "EQ";
     case NodeTy::NE:               return "NE";
+    case NodeTy::MK_REF:           return "MK_REF";
+    case NodeTy::MK_WREF:          return "MK_WREF";
     case NodeTy::ARRAY_CONSTR_LIST:   return "ARRAY_CONSTR_LIST";
     case NodeTy::ARRAY_CONSTR_INIT:   return "ARRAY_CONSTR_INIT";
     case NodeTy::BLOCK:            return "BLOCK";
@@ -97,6 +102,7 @@ const char* NodeTyToString(NodeTy nt) {
     case NodeTy::STRING:           return "STRING";
     case NodeTy::TY_ARRAY:         return "TY_ARRAY";
     case NodeTy::TY_REF:           return "TY_REF";
+    case NodeTy::TY_WREF:          return "TY_WREF";
     case NodeTy::IDENT:            return "IDENT";
     case NodeTy::QIDENT:           return "QIDENT";
     case NodeTy::FQIDENT:          return "FQIDENT";
@@ -134,6 +140,8 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "DIV")              return NodeTy::DIV;
   else if (str == "EQ")               return NodeTy::EQ;
   else if (str == "NE")               return NodeTy::NE;
+  else if (str == "MK_REF")           return NodeTy::MK_REF;
+  else if (str == "MK_WREF")          return NodeTy::MK_WREF;
   else if (str == "ARRAY_CONSTR_LIST")   return NodeTy::ARRAY_CONSTR_LIST;
   else if (str == "ARRAY_CONSTR_INIT")   return NodeTy::ARRAY_CONSTR_INIT;
   else if (str == "BLOCK")            return NodeTy::BLOCK;
@@ -149,6 +157,9 @@ NodeTy stringToNodeTy(const std::string& str) {
   else if (str == "i8")               return NodeTy::i8;
   else if (str == "i32")              return NodeTy::i32;
   else if (str == "STRING")           return NodeTy::STRING;
+  else if (str == "TY_ARRAY")         return NodeTy::TY_ARRAY;
+  else if (str == "TY_REF")           return NodeTy::TY_REF;
+  else if (str == "TY_WREF")          return NodeTy::TY_WREF;
   else if (str == "IDENT")            return NodeTy::IDENT;
   else if (str == "QIDENT")           return NodeTy::QIDENT;
   else if (str == "FQIDENT")          return NodeTy::FQIDENT;

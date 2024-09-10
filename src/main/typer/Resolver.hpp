@@ -26,6 +26,9 @@ public:
     if (ty.ty == NodeTy::TY_ARRAY) {
       ty.n2 = resolve(ty.n2);
       m->set(_ty, ty);
+    } else if (ty.ty == NodeTy::TY_REF || ty.ty == NodeTy::TY_WREF) {
+      ty.n1 = resolve(ty.n1);
+      m->set(_ty, ty);
     }
     return _ty;
   }
@@ -65,6 +68,10 @@ public:
         resolveExp(n.n2);
         resolveExp(n.n3);
         resolveExp(n.extra.nodes.n4);
+        break;
+      case NodeTy::MK_REF:
+      case NodeTy::MK_WREF:
+        resolveExp(n.n2);
         break;
       case NodeTy::EQIDENT:
       case NodeTy::FALSE:

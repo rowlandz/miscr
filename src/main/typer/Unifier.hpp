@@ -93,7 +93,11 @@ public:
 
   /** Enforces the constraint that the two types resolve to the same type.
    * The first type must be a type variable.
-   * Returns true if unification succeeded. */
+   * Returns true if unification succeeded.
+   * If the first argument is a refineable type class like numeric or writable ref,
+   * then unification succeeds if it can be refined to the second arg. However, this is
+   * not the case if the arguments are switched.
+   * */
   bool unify(unsigned int _tyVar1, unsigned int _ty2) {
     unsigned int _rtyVar1 = almostResolve(_tyVar1);
     unsigned int _rty1 = resolve(_rtyVar1);
@@ -112,6 +116,8 @@ public:
       } else if (rty1.ty == NodeTy::TY_ARRAY) {
         // TODO: enforce that array sizes must match
         return unify(rty1.n2, rty2.n2);
+      } else if (rty1.ty == NodeTy::TY_REF || rty1.ty == NodeTy::TY_WREF) {
+        return unify(rty1.n1, rty2.n1);
       } else {
         printf("Fatal unification error: node is not a type\n");
         exit(1);
@@ -166,7 +172,15 @@ public:
         default:
           return false;
       }
-    } else {
+    } 
+    
+    else if (rty1.ty == NodeTy::TY_WREF) {
+      if (rty2.ty != NodeTy::TY_REF) return false;
+      if (!unify(rty1.n1, rty2.n1)) return false;
+      bind(_rtyVar1, _ty2);
+    }
+    
+    else {
       return false;
     }
 
@@ -338,6 +352,13 @@ public:
 
     else if (n.ty == NodeTy::LIT_STRING) {
       bind(n.n1, ty_string);
+    }
+
+    else if (n.ty == NodeTy::MK_REF || n.ty == NodeTy::MK_WREF) {
+      unsigned int tyn2 = tyExp(n.n2);
+      NodeTy ty = n.ty == NodeTy::MK_WREF ? NodeTy::TY_WREF : NodeTy::TY_REF;
+      unsigned int refType = m->add({ {0,0,0}, tyn2, NN, NN, NOEXTRA, ty });
+      bind(n.n1, refType);
     }
 
     else {

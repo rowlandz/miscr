@@ -210,7 +210,21 @@ public:
 
   unsigned int expLv1() {
     Token t = *p;
-    unsigned int e = expLv0();
+    if (t.ty == AMP || t.ty == HASH) {
+      p++;
+      unsigned int n2 = expLv1();
+      if (IS_ERROR(n2)) return ARRESTING_ERROR;
+      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      NodeTy nodeTy = t.ty == HASH ? NodeTy::MK_WREF : NodeTy::MK_REF;
+      return m->add({ loc, newTYPEVAR(), n2, NN, NOEXTRA, nodeTy });
+    } else {
+      return expLv0();
+    }
+  }
+
+  unsigned int expLv2() {
+    Token t = *p;
+    unsigned int e = expLv1();
     if (IS_ERROR(e)) return e;
     while (p->ty == COLON) {
       p++;
@@ -222,27 +236,12 @@ public:
     return e;
   }
 
-  unsigned int expLv2() {
-    Token t = *p;
-    unsigned int e = expLv1();
-    if (IS_ERROR(e)) return e;
-    while (p->ty == OP_MUL || p->ty == OP_DIV) {
-      NodeTy op = (p->ty == OP_MUL) ? NodeTy::MUL : NodeTy::DIV;
-      p++;
-      unsigned int e2 = expLv1();
-      if (IS_ERROR(e2)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
-    }
-    return e;
-  }
-
   unsigned int expLv3() {
     Token t = *p;
     unsigned int e = expLv2();
     if (IS_ERROR(e)) return e;
-    while (p->ty == OP_ADD || p->ty == OP_SUB) {
-      NodeTy op = (p->ty == OP_ADD) ? NodeTy::ADD : NodeTy::SUB;
+    while (p->ty == OP_MUL || p->ty == OP_DIV) {
+      NodeTy op = (p->ty == OP_MUL) ? NodeTy::MUL : NodeTy::DIV;
       p++;
       unsigned int e2 = expLv2();
       if (IS_ERROR(e2)) return ARRESTING_ERROR;
@@ -256,10 +255,25 @@ public:
     Token t = *p;
     unsigned int e = expLv3();
     if (IS_ERROR(e)) return e;
+    while (p->ty == OP_ADD || p->ty == OP_SUB) {
+      NodeTy op = (p->ty == OP_ADD) ? NodeTy::ADD : NodeTy::SUB;
+      p++;
+      unsigned int e2 = expLv3();
+      if (IS_ERROR(e2)) return ARRESTING_ERROR;
+      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+    }
+    return e;
+  }
+
+  unsigned int expLv5() {
+    Token t = *p;
+    unsigned int e = expLv4();
+    if (IS_ERROR(e)) return e;
     while (p->ty == OP_EQ || p->ty == OP_NEQ) {
       NodeTy op = (p->ty == OP_EQ) ? NodeTy::EQ : NodeTy::NE;
       p++;
-      unsigned int e2 = expLv3();
+      unsigned int e2 = expLv4();
       if (IS_ERROR(e2)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
       e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
@@ -285,7 +299,7 @@ public:
   unsigned int exp() {
     unsigned int n = ifExp();
     if (n != EPSILON_ERROR) return n;
-    return expLv4();
+    return expLv5();
   }
 
   /** Zero or more comma-separated expressions with optional trailing
@@ -327,12 +341,13 @@ public:
 
   unsigned int tyExp() {
     Token t = *p;
-    if (p->ty == AMP) {
+    if (t.ty == AMP || t.ty == HASH) {
       ++p;
       unsigned int n1 = tyExp();
       if (IS_ERROR(n1)) return ARRESTING_ERROR;
       Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m->add({ loc, n1, NN, NN, NOEXTRA, NodeTy::TY_REF });
+      NodeTy ty = t.ty == HASH ? NodeTy::TY_WREF : NodeTy::TY_REF;
+      return m->add({ loc, n1, NN, NN, NOEXTRA, ty });
     } else {
       return tyExpLv0();
     }

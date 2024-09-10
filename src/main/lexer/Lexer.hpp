@@ -69,6 +69,8 @@ private:
         else if (c == '=') tok.step(ST_EQUAL);
         else if (c == ':') tok.step(ST_COLON);
         else if (c == '&') tok.stepAndCapture(AMP);
+        else if (c == '#') tok.stepAndCapture(HASH);
+        else if (c == '!') tok.stepAndCapture(EXCLAIM);
         else if (c == '+') tok.stepAndCapture(OP_ADD);
         else if (c == '-') tok.stepAndCapture(OP_SUB);
         else if (c == '*') tok.stepAndCapture(OP_MUL);
@@ -79,6 +81,7 @@ private:
         else if (c == '[') tok.stepAndCapture(LBRACKET);
         else if (c == ']') tok.stepAndCapture(RBRACKET);
         else if (c == ',') tok.stepAndCapture(COMMA);
+        else if (c == '.') tok.stepAndCapture(DOT);
         else if (c == ';') tok.stepAndCapture(SEMICOLON);
         else {
           err = LocatedError(
@@ -113,6 +116,7 @@ private:
 
       case ST_COLON:
         if (c == ':') tok.stepAndCapture(COLON_COLON);
+        else if (c == '=') tok.stepAndCapture(COLON_EQUAL);
         else tok.capture(COLON);
         break;
 
