@@ -1,79 +1,47 @@
 #ifndef PRINTERS
 #define PRINTERS
 
-#include "common/Node.hpp"
+#include "common/ASTContext.hpp"
 
-void print_parse_tree(NodeManager &m, unsigned int n, std::vector<bool> &indents) {
-  Node node = m.get(n);
-  printf("ln%3d, col%3d, sz%3d   ", node.loc.row, node.loc.col, node.loc.sz);
+void print_parse_tree(ASTContext& ctx, Addr<AST> n, std::vector<bool>& indents) {
+  if (n.isError()) {
+    printf("Tried to print an error node!\n");
+    exit(1);
+  }
+  AST node = ctx.get(n);
+  if (node.isLocated()) {
+    Location loc = ctx.get(n.UNSAFE_CAST<LocatedAST>()).getLocation();
+    printf("ln%3d, col%3d, sz%3d   ", loc.row, loc.col, loc.sz);
+  }
   if (indents.size() > 0) {
     for (auto i = 0; i < indents.size() - 1; i++) {
       printf("%s   ", indents[i] ? "│" : " ");
     }
     printf("%s── ", *(indents.end()-1) ? "├" : "└");
   }
-  printf("%s ", NodeTyToString(node.ty));
+  printf("%s ", ASTIDToString(node.getID()));
 
   // print optional extra information depending on the node type
-  if (node.ty == NodeTy::IDENT)
-    printf("(%s)", std::string(node.extra.ptr, node.loc.sz).c_str());
-  else if (node.ty == NodeTy::FQIDENT)
-    printf("(%s)", node.extra.ptr);
-  else if (node.ty == NodeTy::LIT_INT)
-    printf("(%ld)", node.extra.intVal);
-  else if (node.ty == NodeTy::LIT_DEC)
-    printf("(%f)", node.extra.decVal);
-  else if (node.ty == NodeTy::LIT_STRING)
-    printf("(%s)", std::string(node.extra.ptr, node.loc.sz).c_str());
+  if (node.getID() == AST::ID::IDENT)
+    printf("(%s)", ctx.get(n.UNSAFE_CAST<Ident>()).asString().c_str());
+  else if (node.getID() == AST::ID::INT_LIT)
+    printf("(%s)", ctx.get(n.UNSAFE_CAST<IntLit>()).asString().c_str());
   printf("\n");
 
-  if (node.n1 != NN) {
-    if (node.n2 != NN) {
-      if (node.n3 != NN) {
-        if (node.extra.nodes.n4 != NN) {              // TODO: this could cause problems
-          if (node.extra.nodes.n5 != NN) {
-            // five subnodes
-            indents.push_back(true);
-            print_parse_tree(m, node.n1, indents);
-            print_parse_tree(m, node.n2, indents);
-            print_parse_tree(m, node.n3, indents);
-            print_parse_tree(m, node.extra.nodes.n4, indents);
-            indents.pop_back(); indents.push_back(false);
-            print_parse_tree(m, node.extra.nodes.n5, indents);
-            indents.pop_back();
-          } else {
-            // four subnodes
-            indents.push_back(true);
-            print_parse_tree(m, node.n1, indents);
-            print_parse_tree(m, node.n2, indents);
-            print_parse_tree(m, node.n3, indents);
-            indents.pop_back(); indents.push_back(false);
-            print_parse_tree(m, node.extra.nodes.n4, indents);
-            indents.pop_back();
-          }
-        } else {
-          // three subnodes
-          indents.push_back(true);
-          print_parse_tree(m, node.n1, indents);
-          print_parse_tree(m, node.n2, indents);
-          indents.pop_back(); indents.push_back(false);
-          print_parse_tree(m, node.n3, indents);
-          indents.pop_back();
-        }
-      } else {
-        // two subnodes
-        indents.push_back(true);
-        print_parse_tree(m, node.n1, indents);
-        indents.pop_back(); indents.push_back(false);
-        print_parse_tree(m, node.n2, indents);
-        indents.pop_back();
-      }
-    } else {
-      // one subnode
-      indents.push_back(false);
-      print_parse_tree(m, node.n1, indents);
-      indents.pop_back();
+  auto subnodes = getSubnodes(ctx, n);
+  if (subnodes.size() == 1) {
+    indents.push_back(false);
+    print_parse_tree(ctx, subnodes[0], indents);
+    indents.pop_back();
+  } else if (subnodes.size() >= 2) {
+    indents.push_back(true);
+    for (auto subnode = subnodes.begin(); subnode < subnodes.end()-1; subnode++) {
+      print_parse_tree(ctx, *subnode, indents);
     }
+    indents.pop_back();
+    indents.push_back(false);
+    print_parse_tree(ctx, subnodes.back(), indents);
+    indents.pop_back();
   }
 }
 

@@ -1,42 +1,46 @@
 #ifndef PARSER_PARSER
 #define PARSER_PARSER
 
-#include <cstring>
-#include <cstdio>
-#include <vector>
-#include "common/NodeManager.hpp"
+#include <cassert>
 #include "common/Token.hpp"
+#include "common/ASTContext.hpp"
 #include "common/LocatedError.hpp"
+#include "common/AST.hpp"
 
-#define ARRESTING_ERROR 0xffffffff
-#define EPSILON_ERROR   0xfffffffe
-#define IS_ERROR(x)     ((x) >= 0xfffffffe)
+#define CHOMP_ELSE_ARREST(tokenTy, expected, element) if (p->ty == tokenTy) \
+  ++p; else { errTryingToParse = element; expectedTokens = expected; \
+  return ARRESTING_ERROR; }
 
-#define CHOMP_ELSE_ARREST(tokenTy, expected, element) if (p->ty == tokenTy) p++; else \
-  { errTryingToParse = element; expectedTokens = expected; return 0xffffffff; }
+/// If the address is an error, return the error.
+#define RETURN_IF_ERROR(a) if (a.isEpsilon()) \
+  { return EPSILON_ERROR; } else if (a.isArrest()) \
+  { return ARRESTING_ERROR; }
+
+/// If the address is an error, return an arresting error.
+#define ARREST_IF_ERROR(a) if (a.isError()) { return ARRESTING_ERROR; }
+
 
 class Parser {
-
-public:
-  NodeManager* m;
+  ASTContext* ctx;
   const std::vector<Token>* tokens;
   std::vector<Token>::const_iterator p;
   std::vector<Token>::const_iterator end;
 
-  /** Set when an error occurs. */
+  /// Set when an error occurs.
   const char* errTryingToParse = nullptr;
 
-  /** Set when an error occurs. */
+  /// Set when an error occurs.
   const char* expectedTokens = nullptr;
 
-  Parser(NodeManager* m, const std::vector<Token>* _tokens) {
-    this->m = m;
+public:
+  Parser(ASTContext* ctx, const std::vector<Token>* _tokens) {
+    this->ctx = ctx;
     tokens = _tokens;
     p = tokens->begin();
     end = tokens->end();
   }
 
-  /** Returns the parser error after an unsuccessful parse. */
+  /// Returns the parser error after an unsuccessful parse.
   LocatedError getError() {
     std::string errString;
     if (errTryingToParse != nullptr) {
@@ -51,499 +55,400 @@ public:
       errString.append(expectedTokens);
       errString.append(" next.");
     }
-    return LocatedError(tokenToLocation(p), errString);
+    return LocatedError(tokToLoc(p), errString);
   }
 
   // ---------- Idents and QIdents ----------
 
-  unsigned int ident() {
-    if (p->ty == TOK_IDENT) return m->add({ tokenToLocation(p), NN, NN, NN, { .ptr=(p++)->ptr }, NodeTy::IDENT });
+  Addr<Ident> ident() {
+    if (p->ty == TOK_IDENT) return ctx->add(Ident(tokToLoc(p), (p++)->ptr));
     return EPSILON_ERROR;
   }
 
-  /** Parses a QIDENT or IDENT. A QIDENT means there is at least one qualifier
-   * present, while IDENT means there are no qualifiers. */
-  unsigned int qidentOrIdent() {
+  /// Parses a name (either IDENT or QIDENT).
+  Addr<Name> name() {
     Token t = *p;
-    unsigned int n1 = ident();
-    if (IS_ERROR(n1)) return n1;
+    Addr<Ident> head = ident();
+    if (head.isError()) return head.upcast<Name>();
     if (p->ty == COLON_COLON) {
       p++;
-      unsigned int n2 = qidentOrIdent();
-      if (IS_ERROR(n2)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::QIDENT });
+      Addr<Name> tail = name();
+      if (tail.isError()) return ARRESTING_ERROR;
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      return ctx->add(QIdent(loc, head, tail)).upcast<Name>();
     } else {
-      return n1;
+      return head.upcast<Name>();
     }
   }
 
-  // ---------- Expression Forms ----------
+  // ---------- Expressions ----------
 
-  unsigned int intLit() {
+  Addr<BoolLit> boolLit() {
+    if (p->ty == KW_FALSE) return ctx->add(BoolLit(tokToLoc(p++), false));
+    if (p->ty == KW_TRUE) return ctx->add(BoolLit(tokToLoc(p++), true));
+    return EPSILON_ERROR;
+  }
+
+  Addr<IntLit> intLit() {
     if (p->ty != LIT_INT) return EPSILON_ERROR;
-    std::string intText(p->ptr, p->sz);
-    long value = atol(intText.c_str());
-    Node n = { tokenToLocation(p), newTYPEVAR(), NN, NN, { .intVal=value }, NodeTy::LIT_INT };
+    auto ret = ctx->add(IntLit(tokToLoc(p), p->ptr));
     ++p;
-    return m->add(n);
+    return ret;
   }
 
-  unsigned int numLit() {
-    if (p->ty != LIT_INT && p->ty != LIT_DEC) return EPSILON_ERROR;
-    char buffer[p->sz + 1];
-    strncpy(buffer, p->ptr, p->sz);
-    buffer[p->sz] = '\0';
-    if (p->ty == LIT_INT) {
-      long value = atol(buffer);
-      return m->add({ tokenToLocation(p++), newTYPEVAR(), NN, NN, { .intVal=value }, NodeTy::LIT_INT });
-    } else if (p->ty == LIT_DEC) {
-      double value = atof(buffer);
-      return m->add({ tokenToLocation(p++), newTYPEVAR(), NN, NN, { .decVal=value }, NodeTy::LIT_DEC });
-    } else return EPSILON_ERROR;
+  Addr<DecimalLit> decimalLit() {
+    if (p->ty != LIT_DEC) return EPSILON_ERROR;
+    auto ret = ctx->add(DecimalLit(tokToLoc(p), p->ptr));
+    ++p;
+    return ret;
   }
 
-  unsigned int litString() {
-    if (p->ty == LIT_STRING) return m->add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::LIT_STRING });
-    else return EPSILON_ERROR;
+  Addr<StringLit> stringLit() {
+    if (p->ty != LIT_STRING) return EPSILON_ERROR;
+    auto ret = ctx->add(StringLit(tokToLoc(p), p->ptr));
+    ++p;
+    return ret;
   }
 
-  unsigned int litBool() {
-    if (p->ty == KW_FALSE) return m->add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::FALSE });
-    else if (p->ty == KW_TRUE) return m->add({ tokenToLocation(p), newTYPEVAR(), NN, NN, { .ptr=(p++)->ptr }, NodeTy::TRUE });
-    else return EPSILON_ERROR;
-  }
-
-  /** Parses an EQIDENT. The n2 slot could be a `QIDENT` or `IDENT`. */
-  unsigned int eqident() {
-    unsigned int n2 = qidentOrIdent();
-    if (IS_ERROR(n2)) return n2;
-    return m->add({ m->get(n2).loc, newTYPEVAR(), n2, NN, NOEXTRA, NodeTy::EQIDENT });
-  }
-
-  unsigned int parensExp() {
-    if (p->ty == LPAREN) p++; else return EPSILON_ERROR;
-    unsigned int e = exp();
-    if (IS_ERROR(e)) return ARRESTING_ERROR;
+  Addr<Exp> parensExp() {
+    if (p->ty == LPAREN) ++p; else return EPSILON_ERROR;
+    Addr<Exp> ret = exp();
+    if (ret.isError()) return ARRESTING_ERROR;
     CHOMP_ELSE_ARREST(RPAREN, ")", "parentheses expression")
-    return e;
+    return ret;
   }
 
-  unsigned int blockExp() {
+  Addr<Exp> nameOrCallExp() {
     Token t = *p;
-    if (p->ty == LBRACE) p++; else return EPSILON_ERROR;
-    unsigned int n = stmts0();
-    if (IS_ERROR(n)) return ARRESTING_ERROR;
-    if (p->ty == RBRACE) p++; else return EPSILON_ERROR;
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, newTYPEVAR(), n, NN, NOEXTRA, NodeTy::BLOCK });
-  }
-
-  /** Parses an ARRAY_CONSTR_LIST or ARRAY_CONSTR_INIT */
-  unsigned int arrayConstrExp() {
-    Token t = *p;
-    if (p->ty == LBRACKET) p++; else return EPSILON_ERROR;
-    Token t1 = *p;
-    unsigned int n1 = exp();
-    if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    if (p->ty == KW_OF) {
-      ++p;
-      unsigned int n2 = exp();
-      if (IS_ERROR(n2)) return ARRESTING_ERROR;
-      CHOMP_ELSE_ARREST(RBRACKET, "]", "array constructor")
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m->add({ loc, newTYPEVAR(), n1, n2, NOEXTRA, NodeTy::ARRAY_CONSTR_INIT });
-    } else if (p->ty == COMMA) {
-      ++p;
-      unsigned int expListTail = expListWotc0();
-      if (IS_ERROR(expListTail)) return ARRESTING_ERROR;
-      Location loc = { t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr) };
-      unsigned int expList = m->add({ loc, n1, expListTail, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
-      CHOMP_ELSE_ARREST(RBRACKET, "]", "array constructor")
-      loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m->add({ loc, newTYPEVAR(), expList, NN, NOEXTRA, NodeTy::ARRAY_CONSTR_LIST });
-    } else if (p->ty == RBRACKET) {
-      unsigned int emptyExpList = m->add({ {0,0,0}, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
-      Location loc = { t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr) };
-      unsigned int expList = m->add({ loc, n1, emptyExpList, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
-      CHOMP_ELSE_ARREST(RBRACKET, "]", "array constructor");
-      loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m->add({ loc, newTYPEVAR(), expList, NN, NOEXTRA, NodeTy::ARRAY_CONSTR_LIST });
-    } else {
-      errTryingToParse = "array constructor";
-      expectedTokens = "of , ]";
-      return ARRESTING_ERROR;
-    }
-  }
-
-  unsigned int eqidentOrFunctionCall() {
-    Token t = *p;
-    unsigned int n2 = eqident();
-    if (IS_ERROR(n2)) return n2;
+    Addr<Name> n = name();
+    RETURN_IF_ERROR(n)
     if (p->ty == LPAREN) {
-      p++;
-      unsigned int n3 = expListWotc0();
+      ++p;
+      Addr<ExpList> argList = expListWotc0();
       CHOMP_ELSE_ARREST(RPAREN, ")", "function call")
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      return m->add({ loc, newTYPEVAR(), n2, n3, NOEXTRA, NodeTy::CALL });
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      return ctx->add(CallExp(loc, n, argList)).upcast<Exp>();
     } else {
-      return n2;
+      return ctx->add(NameExp(ctx->get(n).getLocation(), n)).upcast<Exp>();
     }
   }
 
-  unsigned int expLv0() {
-    unsigned int n1;
-    n1 = eqidentOrFunctionCall();
-    if (n1 != EPSILON_ERROR) return n1;
-    n1 = numLit();
-    if (n1 != EPSILON_ERROR) return n1;
-    n1 = litString();
-    if (n1 != EPSILON_ERROR) return n1;
-    n1 = litBool();
-    if (n1 != EPSILON_ERROR) return n1;
-    n1 = parensExp();
-    if (n1 != EPSILON_ERROR) return n1;
-    n1 = arrayConstrExp();
-    if (n1 != EPSILON_ERROR) return n1;
-    return blockExp();
+  Addr<BlockExp> blockExp() {
+    Token t = *p;
+    if (p->ty == LBRACE) ++p; else return EPSILON_ERROR;
+    Addr<ExpList> statements = stmts0();
+    ARREST_IF_ERROR(statements)
+    CHOMP_ELSE_ARREST(RBRACE, "}", "block expression")
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(BlockExp(loc, statements));
   }
 
-  unsigned int expLv1() {
+  Addr<Exp> expLv0() {
+    Addr<Exp> ret;
+    if ((ret = nameOrCallExp()).notEpsilon()) return ret;
+    if ((ret = boolLit().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = intLit().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = decimalLit().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = stringLit().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = parensExp()).notEpsilon()) return ret;
+    // if ((ret = arrayConstrExp().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = blockExp().upcast<Exp>()).notEpsilon()) return ret;
+    return EPSILON_ERROR;
+  }
+
+  Addr<Exp> expLv1() {
     Token t = *p;
     if (t.ty == AMP || t.ty == HASH) {
-      p++;
-      unsigned int n2 = expLv1();
-      if (IS_ERROR(n2)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      NodeTy nodeTy = t.ty == HASH ? NodeTy::MK_WREF : NodeTy::MK_REF;
-      return m->add({ loc, newTYPEVAR(), n2, NN, NOEXTRA, nodeTy });
+      ++p;
+      Addr<Exp> e = expLv1();
+      ARREST_IF_ERROR(e)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      return t.ty == HASH ?
+             ctx->add(WRefExp(loc, e)).upcast<Exp>() :
+             ctx->add(RefExp(loc, e)).upcast<Exp>();
     } else {
       return expLv0();
     }
   }
 
-  unsigned int expLv2() {
+  Addr<Exp> expLv2() {
     Token t = *p;
-    unsigned int e = expLv1();
-    if (IS_ERROR(e)) return e;
+    Addr<Exp> e = expLv1();
+    RETURN_IF_ERROR(e)
     while (p->ty == COLON) {
-      p++;
-      unsigned int tyAscrip = tyExp();
-      if (IS_ERROR(tyAscrip)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m->add({ loc, newTYPEVAR(), e, tyAscrip, NOEXTRA, NodeTy::ASCRIP });
+      ++p;
+      Addr<TypeExp> tyAscrip = typeExp();
+      ARREST_IF_ERROR(tyAscrip)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      e = ctx->add(AscripExp(loc, e, tyAscrip)).upcast<Exp>();
     }
     return e;
   }
 
-  unsigned int expLv3() {
+  Addr<Exp> expLv3() {
     Token t = *p;
-    unsigned int e = expLv2();
-    if (IS_ERROR(e)) return e;
+    Addr<Exp> lhs = expLv2();
+    RETURN_IF_ERROR(lhs)
     while (p->ty == OP_MUL || p->ty == OP_DIV) {
-      NodeTy op = (p->ty == OP_MUL) ? NodeTy::MUL : NodeTy::DIV;
-      p++;
-      unsigned int e2 = expLv2();
-      if (IS_ERROR(e2)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+      AST::ID op = (p->ty == OP_MUL) ? AST::ID::MUL : AST::ID::DIV;
+      ++p;
+      Addr<Exp> rhs = expLv2();
+      ARREST_IF_ERROR(rhs)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
     }
-    return e;
+    return lhs;
   }
 
-  unsigned int expLv4() {
+  Addr<Exp> expLv4() {
     Token t = *p;
-    unsigned int e = expLv3();
-    if (IS_ERROR(e)) return e;
+    Addr<Exp> lhs = expLv3();
+    RETURN_IF_ERROR(lhs)
     while (p->ty == OP_ADD || p->ty == OP_SUB) {
-      NodeTy op = (p->ty == OP_ADD) ? NodeTy::ADD : NodeTy::SUB;
-      p++;
-      unsigned int e2 = expLv3();
-      if (IS_ERROR(e2)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+      AST::ID op = (p->ty == OP_ADD) ? AST::ID::ADD : AST::ID::SUB;
+      ++p;
+      Addr<Exp> rhs = expLv3();
+      ARREST_IF_ERROR(rhs)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
     }
-    return e;
+    return lhs;
   }
 
-  unsigned int expLv5() {
+  Addr<Exp> expLv5() {
     Token t = *p;
-    unsigned int e = expLv4();
-    if (IS_ERROR(e)) return e;
+    Addr<Exp> lhs = expLv4();
+    RETURN_IF_ERROR(lhs)
     while (p->ty == OP_EQ || p->ty == OP_NEQ) {
-      NodeTy op = (p->ty == OP_EQ) ? NodeTy::EQ : NodeTy::NE;
-      p++;
-      unsigned int e2 = expLv4();
-      if (IS_ERROR(e2)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      e = m->add({ loc, newTYPEVAR(), e, e2, NOEXTRA, op });
+      AST::ID op = (p->ty == OP_EQ) ? AST::ID::EQ : AST::ID::NE;
+      ++p;
+      Addr<Exp> rhs = expLv4();
+      ARREST_IF_ERROR(rhs)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
     }
-    return e;
+    return lhs;
   }
 
-  unsigned int ifExp() {
+  Addr<IfExp> ifExp() {
     Token t = *p;
-    if (p->ty == KW_IF) p++; else return EPSILON_ERROR;
-    unsigned int n2 = exp();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
+    if (p->ty == KW_IF) ++p; else return EPSILON_ERROR;
+    Addr<Exp> condExp = exp();
+    ARREST_IF_ERROR(condExp)
     CHOMP_ELSE_ARREST(KW_THEN, "then", "if expression")
-    unsigned int n3 = exp();
-    if (IS_ERROR(n3)) return ARRESTING_ERROR;
+    Addr<Exp> thenExp = exp();
+    ARREST_IF_ERROR(thenExp)
     CHOMP_ELSE_ARREST(KW_ELSE, "else", "if expression")
-    unsigned int n4 = exp();
-    if (IS_ERROR(n4)) return ARRESTING_ERROR;
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, newTYPEVAR(), n2, n3, { .nodes={ n4, NN } }, NodeTy::IF });
+    Addr<Exp> elseExp = exp();
+    ARREST_IF_ERROR(elseExp)
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(IfExp(loc, condExp, thenExp, elseExp));
   }
 
-  unsigned int exp() {
-    unsigned int n = ifExp();
-    if (n != EPSILON_ERROR) return n;
+  Addr<Exp> exp() {
+    Addr<Exp> ret = ifExp().upcast<Exp>();
+    if (ret.notEpsilon()) return ret;
     return expLv5();
   }
 
-  /** Zero or more comma-separated expressions with optional trailing
-   * comma (wotc). Never epsilon fails. */
-  unsigned int expListWotc0() {
+  /// Zero or more comma-separated expressions with optional trailing comma
+  /// (wotc). Never epsilon fails.
+  Addr<ExpList> expListWotc0() {
     Token t = *p;
-    unsigned int n1 = exp();
-    if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
-    if (n1 == EPSILON_ERROR) {
-      Location loc = { t.row, t.col, 0 };
-      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
-    }
-    unsigned int n2;
+    Addr<Exp> head = exp();
+    if (head.isArrest()) return ARRESTING_ERROR;
+    if (head.isEpsilon()) return ctx->add(ExpList(Location(t.row, t.col, 0)));
+    Addr<ExpList> tail;
     if (p->ty == COMMA) {
-      p++;
-      n2 = expListWotc0();
-      if (IS_ERROR(n2)) return ARRESTING_ERROR;
+      ++p;
+      tail = expListWotc0();
+      ARREST_IF_ERROR(tail)
     } else {
-      n2 = m->add({ { p->row, p->col, 0 }, NN, NN, NN, NOEXTRA, NodeTy::EXPLIST_NIL });
+      tail = ctx->add(ExpList(Location(p->row, p->col, 0)));
     }
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::EXPLIST_CONS });
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(ExpList(loc, head, tail));
   }
 
-  // ---------- Type Expression Forms ----------
+  // ---------- Type Expressions ----------
 
-  unsigned int tyExpLv0() {
-    if (p->ty == KW_f32) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f32 });
-    if (p->ty == KW_f64) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::f64 });
-    if (p->ty == KW_i8) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i8 });
-    if (p->ty == KW_i32) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::i32 });
-    if (p->ty == KW_BOOL) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::BOOL });
-    if (p->ty == KW_STRING) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::STRING });
-    if (p->ty == KW_UNIT) return m->add({ tokenToLocation(p++), NN, NN, NN, NOEXTRA, NodeTy::UNIT });
-    unsigned int n = arrayType();
-    if (n != EPSILON_ERROR) return n;
+  Addr<TypeExp> typeExpLv0() {
+    if (p->ty == KW_f32) return ctx->add(TypeExp::mkF32(tokToLoc(p++)));
+    if (p->ty == KW_f64) return ctx->add(TypeExp::mkF64(tokToLoc(p++)));
+    if (p->ty == KW_i8) return ctx->add(TypeExp::mkI8(tokToLoc(p++)));
+    if (p->ty == KW_i32) return ctx->add(TypeExp::mkI32(tokToLoc(p++)));
+    if (p->ty == KW_BOOL) return ctx->add(TypeExp::mkBool(tokToLoc(p++)));
+    // if (p->ty == KW_STRING) return ctx->add(TypeExp::mkString(tokToLoc(p++)));
+    if (p->ty == KW_UNIT) return ctx->add(TypeExp::mkUnit(tokToLoc(p++)));
+    // Addr<TypeExp> ret = arrayType();
+    // if (ret.notEpsilon()) return ret;
     return EPSILON_ERROR;
   }
 
-  unsigned int tyExp() {
+  Addr<TypeExp> typeExp() {
     Token t = *p;
     if (t.ty == AMP || t.ty == HASH) {
       ++p;
-      unsigned int n1 = tyExp();
-      if (IS_ERROR(n1)) return ARRESTING_ERROR;
-      Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-      NodeTy ty = t.ty == HASH ? NodeTy::TY_WREF : NodeTy::TY_REF;
-      return m->add({ loc, n1, NN, NN, NOEXTRA, ty });
+      Addr<TypeExp> n1 = typeExp();
+      ARREST_IF_ERROR(n1)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      return t.ty == HASH ?
+             ctx->add(WRefTypeExp(loc, n1)).upcast<TypeExp>() :
+             ctx->add(RefTypeExp(loc, n1)).upcast<TypeExp>();
     } else {
-      return tyExpLv0();
+      return typeExpLv0();
     }
   }
 
-  unsigned arrayType() {
-    Token t = *p;
-    if (p->ty == LBRACKET) p++; else return EPSILON_ERROR;
-    unsigned int n1 = intLit();
-    if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(KW_OF, "of", "array type")
-    unsigned int n2 = tyExp();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(RBRACKET, "]", "array type")
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::TY_ARRAY });
-  }
+  // Addr<TypeExp> arrayType() {
+  //   Token t = *p;
+  //   if (p->ty == LBRACKET) ++p; else return EPSILON_ERROR;
+  //   unsigned int n1 = intLit();
+  //   if (IS_ERROR(n1)) return ARRESTING_ERROR;
+  //   CHOMP_ELSE_ARREST(KW_OF, "of", "array type")
+  //   unsigned int n2 = tyExp();
+  //   if (IS_ERROR(n2)) return ARRESTING_ERROR;
+  //   CHOMP_ELSE_ARREST(RBRACKET, "]", "array type")
+  //   Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
+  //   return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::TY_ARRAY });
+  // }
 
-  // ---------- Statement Forms ----------
+  // ---------- Statements ----------
 
-  unsigned int letStmt() {
+  Addr<LetExp> letStmt() {
     Token t = *p;
     if (p->ty == KW_LET) p++; else return EPSILON_ERROR;
-    unsigned int n1 = ident();
-    if (IS_ERROR(n1)) return ARRESTING_ERROR;
+    Addr<Ident> boundIdent = ident();
+    ARREST_IF_ERROR(boundIdent)
     CHOMP_ELSE_ARREST(EQUAL, "=", "let statement")
-    unsigned int n2 = exp();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(SEMICOLON, ";", "let statement")
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::LET });
+    Addr<Exp> definition = exp();
+    ARREST_IF_ERROR(definition)
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(LetExp(loc, boundIdent, definition));
   }
 
-  unsigned int returnStmt() {
+  Addr<ReturnExp> returnStmt() {
     Token t = *p;
-    if (p->ty == KW_RETURN) p++; else return EPSILON_ERROR;
-    unsigned n1 = exp();
-    if (IS_ERROR(n1)) return ARRESTING_ERROR;
+    if (p->ty == KW_RETURN) ++p; else return EPSILON_ERROR;
+    Addr<Exp> returnee = exp();
+    ARREST_IF_ERROR(returnee)
     CHOMP_ELSE_ARREST(SEMICOLON, ";", "return statement")
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, NN, NN, NOEXTRA, NodeTy::RETURN });
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(ReturnExp(loc, returnee));
   }
 
-  unsigned int stmt() {
-    unsigned int n;
-    n = letStmt();
-    if (n != EPSILON_ERROR) return n;
-    n = returnStmt();
-    if (n != EPSILON_ERROR) return n;
-    n = exp();
-    if (IS_ERROR(n)) return n;
-    CHOMP_ELSE_ARREST(SEMICOLON, ";", "expression statement")
-    return n;
+  Addr<Exp> stmt() {
+    Addr<Exp> ret;
+    if ((ret = letStmt().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = returnStmt().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = exp().upcast<Exp>()).notEpsilon()) return ret;
+    return ret;
   }
 
-  /** Zero or more statements in a row. Never epsilon fails. */
-  unsigned int stmts0() {
+  /// Zero or more statements separated by semicolons Never epsilon fails.
+  Addr<ExpList> stmts0() {
     Token t = *p;
-    unsigned n1 = stmt();
-    if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
-    if (n1 == EPSILON_ERROR) {
-      Location loc = { t.row, t.col, 0 };
-      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::STMTLIST_NIL });
-    }
-    unsigned n2 = stmts0();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::STMTLIST_CONS });
-  }
-
-  /** Parses parameter list of length zero or higher with optional terminal
-   * comma (wotc). This parser never returns an epsilon error. */
-  unsigned int paramListWotc0() {
-    Token t = *p;
-    unsigned int n1 = ident();
-    if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
-    if (n1 == EPSILON_ERROR) {
-      Location loc = { t.row, t.col, 0 };
-      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::PARAMLIST_NIL });
-    }
-    CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
-    unsigned int n2 = tyExp();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    unsigned int n3;
-    if (p->ty == COMMA) {
-      p++;
-      n3 = paramListWotc0();
+    Addr<Exp> head = stmt();
+    if (head.isArrest()) return ARRESTING_ERROR;
+    if (head.isEpsilon()) return ctx->add(ExpList(Location(t.row, t.col, 0)));
+    Addr<ExpList> tail;
+    if (p->ty == SEMICOLON) {
+      ++p;
+      tail = stmts0();
+      ARREST_IF_ERROR(tail)
     } else {
-      Location loc1 = { p->row, p->col, 0 };
-      n3 = m->add({ loc1, NN, NN, NN, NOEXTRA, NodeTy::PARAMLIST_NIL });
+      tail = ctx->add(ExpList(Location(p->row, p->col, 0)));
     }
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, n3, NOEXTRA, NodeTy::PARAMLIST_CONS });
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(ExpList(loc, head, tail));
   }
 
-  unsigned int funcOrProc() {
+  // ---------- Declarations ----------
+
+  /// Parses parameter list of length zero or higher with optional terminal
+  /// comma (wotc). This parser never returns an epsilon error.
+  Addr<ParamList> paramListWotc0() {
     Token t = *p;
-    NodeTy ty;
-    if (p->ty == KW_FUNC) { ty = NodeTy::FUNC; p++; }
-    else if (p->ty == KW_PROC) { ty = NodeTy::PROC; p++; }
-    else return EPSILON_ERROR;
-    unsigned int n1 = ident();
-    if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    if (p->ty == LPAREN) p++; else return EPSILON_ERROR;
-    unsigned int n2 = paramListWotc0();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(RPAREN, ")", (ty == NodeTy::FUNC ? "function" : "procedure"))
-    CHOMP_ELSE_ARREST(COLON, ":", (ty == NodeTy::FUNC ? "function" : "procedure"))
-    unsigned int n3 = tyExp();
-    if (IS_ERROR(n3)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(EQUAL, "=", (ty == NodeTy::FUNC ? "function" : "procedure"))
-    unsigned int n4 = exp();
-    if (IS_ERROR(n4)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(SEMICOLON, ";", (ty == NodeTy::FUNC ? "function" : "procedure"))
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, n3, { .nodes={ n4, NN } }, ty });
+    Addr<Ident> paramName = ident();
+    if (paramName.isArrest())
+      return ARRESTING_ERROR;
+    if (paramName.isEpsilon())
+      return ctx->add(ParamList(Location(t.row, t.col, 0)));
+    CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
+    Addr<TypeExp> paramType = typeExp();
+    ARREST_IF_ERROR(paramType)
+    Addr<ParamList> tail;
+    if (p->ty == COMMA) { ++p; tail = paramListWotc0(); }
+    else tail = ctx->add(ParamList(Location(p->row, p->col, 0)));
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(ParamList(loc, paramName, paramType, tail));
   }
 
-  unsigned int externFuncOrProc() {
+  Addr<FunctionDecl> functionDecl() {
     Token t = *p;
-    NodeTy ty;
-    if (p->ty == KW_EXTERN) p++; else return EPSILON_ERROR;
-    if (p->ty == KW_FUNC) { ty = NodeTy::EXTERN_FUNC; p++; }
-    else if (p->ty == KW_PROC) { ty = NodeTy::EXTERN_PROC; p++; }
-    else return ARRESTING_ERROR;                                     // TODO: error message
-    unsigned int n1 = ident();
-    if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    if (p->ty == LPAREN) p++; else return EPSILON_ERROR;
-    unsigned int n2 = paramListWotc0();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(RPAREN, ")", "extern declaration")
-    CHOMP_ELSE_ARREST(COLON, ":", "extern declaration")
-    unsigned int n3 = tyExp();
-    if (IS_ERROR(n3)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(SEMICOLON, ";", "extern declaration")
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, n3, NOEXTRA, ty });
+    if (p->ty == KW_FUNC) ++p; else return EPSILON_ERROR;
+    Addr<Name> name = ident().upcast<Name>();
+    ARREST_IF_ERROR(name)
+    CHOMP_ELSE_ARREST(LPAREN, "(", "function")
+    Addr<ParamList> params = paramListWotc0();
+    if (params.isError()) return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(RPAREN, ")", "function")
+    CHOMP_ELSE_ARREST(COLON, ":", "function")
+    Addr<TypeExp> retType = typeExp();
+    ARREST_IF_ERROR(retType)
+    CHOMP_ELSE_ARREST(EQUAL, "=", "function")
+    Addr<Exp> body = exp();
+    ARREST_IF_ERROR(body)
+    CHOMP_ELSE_ARREST(SEMICOLON, ";", "function")
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(FunctionDecl(loc, name, params, retType, body));
   }
 
   /** Parses a module or namespace with brace-syntax. */
-  unsigned int moduleOrNamespace() {
+  Addr<Decl> moduleOrNamespace() {
     Token t = *p;
-    NodeTy ty;
-    if (p->ty == KW_MODULE) { ty = NodeTy::MODULE; p++; }
-    else if (p->ty == KW_NAMESPACE) { ty = NodeTy::NAMESPACE; p++; }
+    AST::ID ty;
+    if (p->ty == KW_MODULE) { ty = AST::ID::MODULE; ++p; }
+    else if (p->ty == KW_NAMESPACE) { ty = AST::ID::NAMESPACE; ++p; }
     else return EPSILON_ERROR;
-    unsigned int n1 = ident();
-    if (IS_ERROR(n1)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(LBRACE, "{", (ty == NodeTy::MODULE ? "module" : "namespace"))
-    unsigned int n2 = decls0();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    CHOMP_ELSE_ARREST(RBRACE, "}", (ty == NodeTy::MODULE ? "module" : "namespace"))
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, NN, NOEXTRA, ty });
+    const char* whatThisIs = ty == AST::ID::MODULE ? "module" : "namespace";
+    Addr<Name> n1 = ident().upcast<Name>();
+    ARREST_IF_ERROR(n1)
+    CHOMP_ELSE_ARREST(LBRACE, "{", whatThisIs)
+    Addr<DeclList> n2 = decls0();
+    ARREST_IF_ERROR(n2)
+    CHOMP_ELSE_ARREST(RBRACE, "}", whatThisIs)
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ty == AST::ID::MODULE ?
+           ctx->add(ModuleDecl(loc, n1, n2)).upcast<Decl>() :
+           ctx->add(NamespaceDecl(loc, n1, n2)).upcast<Decl>();
   }
 
   /** A declaration is a func, proc, data type, module, or namespace. */
-  unsigned int decl() {
-    unsigned int n1;
-    n1 = externFuncOrProc();
-    if (n1 != EPSILON_ERROR) return n1;
-    n1 = funcOrProc();
-    if (n1 != EPSILON_ERROR) return n1;
-    n1 = moduleOrNamespace();
-    if (n1 != EPSILON_ERROR) return n1;
+  Addr<Decl> decl() {
+    Addr<Decl> ret;
+    if ((ret = functionDecl().upcast<Decl>()).notEpsilon()) return ret;
+    if ((ret = moduleOrNamespace()).notEpsilon()) return ret;
     return EPSILON_ERROR;
   }
 
-  /** Parses zero or more declarations into a DECLLIST. */
-  unsigned int decls0() {
+  /// Parses zero or more declarations into a DECLLIST.
+  Addr<DeclList> decls0() {
     Token t = *p;
-    unsigned n1 = decl();
-    if (n1 == ARRESTING_ERROR) return ARRESTING_ERROR;
-    if (n1 == EPSILON_ERROR) {
-      Location loc = { t.row, t.col, 0 };
-      return m->add({ loc, NN, NN, NN, NOEXTRA, NodeTy::DECLLIST_NIL });
-    }
-    unsigned n2 = decls0();
-    if (IS_ERROR(n2)) return ARRESTING_ERROR;
-    Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-    return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::DECLLIST_CONS });
+    Addr<Decl> head = decl();
+    if (head.isArrest()) return ARRESTING_ERROR;
+    if (head.isEpsilon()) return ctx->add(DeclList(Location(t.row, t.col, 0)));
+    Addr<DeclList> tail = decls0();
+    ARREST_IF_ERROR(tail)
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(DeclList(loc, head, tail));
   }
 
-  bool hasMoreToParse() {
-    return p < end && p->ty != END;
-  }
+  // ----------
 
-  Location tokenToLocation(std::vector<Token>::const_iterator tok) {
-    return { tok->row, tok->col, tok->sz };
+  Location tokToLoc(std::vector<Token>::const_iterator tok) {
+    return Location(tok->row, tok->col, tok->sz);
   }
-
-  /** Creates a new `TYPEVAR` node for the typer to fill in later. */
-  unsigned int newTYPEVAR() {
-    return m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
-  }
-
 };
 
 #endif

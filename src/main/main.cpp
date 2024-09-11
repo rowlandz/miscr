@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <llvm/Support/MemoryBuffer.h>
 #include "lexer/Lexer.hpp"
-#include "parser/Parser.hpp"
+#include "parser/ParserOld.hpp"
 #include "typer/Typer.hpp"
 #include "codegen/Codegen.hpp"
 

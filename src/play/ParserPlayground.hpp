@@ -3,24 +3,20 @@
 
 #include <functional>
 #include <iostream>
-#include "common/Node.hpp"
-#include "common/LocatedError.hpp"
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
 #include "printers.hpp"
 
+Addr<AST> parse_function(Parser& p, const char* whatToParse) {
+  if (!strcmp(whatToParse, "decl")) return p.decl().upcast<AST>();
+  if (!strcmp(whatToParse, "exp")) return p.exp().upcast<AST>();
+  std::cout << "I don't know how to parse a " << whatToParse << std::endl;
+  exit(1);
+}
+
 int play_with_parser(char* grammarElement, bool multilineInput) {
   std::string usrInput;
   std::string line;
-
-  unsigned int(Parser::*chosenParseFunction)();
-  if (!strcmp(grammarElement, "decl")) chosenParseFunction = &Parser::decl;
-  else if (!strcmp(grammarElement, "exp")) chosenParseFunction = &Parser::exp;
-  else if (!strcmp(grammarElement, "stmt")) chosenParseFunction = &Parser::stmt;
-  else {
-    std::cout << "I don't know how to parse a " << grammarElement << std::endl;
-    return 1;
-  }
 
 next_input:
   if (std::cin.eof()) return 0;
@@ -38,10 +34,10 @@ next_line:
 check_input:
   Lexer lexer(usrInput.c_str());
   if (lexer.run()) {
-    NodeManager m;
+    ASTContext m;
     Parser parser(&m, lexer.getTokens());
-    unsigned int parsed = (parser.*chosenParseFunction)();
-    if (!IS_ERROR(parsed)) {
+    Addr<AST> parsed = parse_function(parser, grammarElement);
+    if (!parsed.isError()) {
       std::vector<bool> indents;
       print_parse_tree(m, parsed, indents);
       goto next_input;

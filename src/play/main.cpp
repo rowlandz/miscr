@@ -2,7 +2,7 @@
 #include <cstring>
 #include "LexerPlayground.hpp"
 #include "ParserPlayground.hpp"
-#include "TyperPlayground.hpp"
+// #include "TyperPlayground.hpp"
 
 char help_message[] =
   "Welcome to the playground!\n"
@@ -36,9 +36,10 @@ int main(int argc, char* argv[]) {
   }
 
   else if (!strcmp(argv[1], "typer")) {
-    if (argc >= 3) {
-      return play_with_typer(argv[2]);
-    }
+    std::cout << "Not available right now" << std::endl;
+    // if (argc >= 3) {
+    //   return play_with_typer(argv[2]);
+    // }
   }
 
   else {
