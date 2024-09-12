@@ -115,39 +115,30 @@ namespace ParserTests {
     });
   }
 
-  // TEST(array_constructor_list) {
-  //   expParseTreeShouldBe("[42, x, y+1]", {
-  //     "ARRAY_CONSTR_LIST",
-  //     "    TYPEVAR",
-  //     "    EXPLIST_CONS",
-  //     "        INT_LIT",
-  //     "            TYPEVAR",
-  //     "        EXPLIST_CONS",
-  //     "            EQIDENT",
-  //     "                TYPEVAR",
-  //     "                IDENT",
-  //     "            EXPLIST_CONS",
-  //     "                ADD",
-  //     "                    TYPEVAR",
-  //     "                    EQIDENT",
-  //     "                        TYPEVAR",
-  //     "                        IDENT",
-  //     "                    INT_LIT",
-  //     "                        TYPEVAR",
-  //     "                EXPLIST_NIL",
-  //   });
-  // }
+  TEST(array_list_exp) {
+    expParseTreeShouldBe("[42, x, y+1]", {
+      "ARRAY_LIST",
+      "    EXPLIST_CONS",
+      "        INT_LIT",
+      "        EXPLIST_CONS",
+      "            ENAME",
+      "                IDENT",
+      "            EXPLIST_CONS",
+      "                ADD",
+      "                    ENAME",
+      "                        IDENT",
+      "                    INT_LIT",
+      "                EXPLIST_NIL",
+    });
+  }
 
-  // TEST(array_constructor_init) {
-  //   expParseTreeShouldBe("[20 of 0]", {
-  //     "ARRAY_CONSTR_INIT",
-  //     "    TYPEVAR",
-  //     "    INT_LIT",
-  //     "        TYPEVAR",
-  //     "    INT_LIT",
-  //     "        TYPEVAR",
-  //   });
-  // }
+  TEST(array_init_exp) {
+    expParseTreeShouldBe("[20 of 0]", {
+      "ARRAY_INIT",
+      "    INT_LIT",
+      "    INT_LIT",
+    });
+  }
 
   TEST(main_prints_hello_world) {
     declParseTreeShouldBe("func main(): i32 = { println(\"Hello World\"); };", {
@@ -174,33 +165,33 @@ namespace ParserTests {
     });
   }
 
-  // TEST(nested_decls) {
-  //   declParseTreeShouldBe(
-  //     "module M {\n"
-  //     "  extern func f(): unit;\n"
-  //     "  namespace N {\n"
-  //     "    extern func g(): unit;\n"
-  //     "  }\n"
-  //     "}\n"
-  //   , {
-  //     "MODULE",
-  //     "    IDENT",
-  //     "    DECLLIST_CONS",
-  //     "        EXTERN_PROC",
-  //     "            IDENT",
-  //     "            PARAMLIST_NIL",
-  //     "            UNIT",
-  //     "        DECLLIST_CONS",
-  //     "            NAMESPACE",
-  //     "                IDENT",
-  //     "                DECLLIST_CONS",
-  //     "                    EXTERN_PROC",
-  //     "                        IDENT",
-  //     "                        PARAMLIST_NIL",
-  //     "                        UNIT",
-  //     "                    DECLLIST_NIL",
-  //     "            DECLLIST_NIL",
-  //   });
-  // }
+  TEST(nested_decls) {
+    declParseTreeShouldBe(
+      "module M {\n"
+      "  extern func f(): unit;\n"
+      "  namespace N {\n"
+      "    extern func g(): unit;\n"
+      "  }\n"
+      "}\n"
+    , {
+      "MODULE",
+      "    IDENT",
+      "    DECLLIST_CONS",
+      "        EXTERN_FUNC",
+      "            IDENT",
+      "            PARAMLIST_NIL",
+      "            UNIT_TEXP",
+      "        DECLLIST_CONS",
+      "            NAMESPACE",
+      "                IDENT",
+      "                DECLLIST_CONS",
+      "                    EXTERN_FUNC",
+      "                        IDENT",
+      "                        PARAMLIST_NIL",
+      "                        UNIT_TEXP",
+      "                    DECLLIST_NIL",
+      "            DECLLIST_NIL",
+    });
+  }
 
 }

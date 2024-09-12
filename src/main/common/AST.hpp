@@ -6,13 +6,16 @@
 #include "common/ASTContext.hpp"
 #include "common/Location.hpp"
 
+class IntLit;
+
 /// @brief Base class for all AST elements.
 class AST {
 public:
   enum ID : unsigned short {
     // expressions and statements
-    ADD, ASCRIP, BLOCK, CALL, DEC_LIT, DIV, ENAME, EQ, FALSE, IF, INT_LIT, LET,
-    MUL, NE, REF_EXP, RETURN, STORE, STRING_LIT, SUB, TRUE, WREF_EXP,
+    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, CALL, DEC_LIT, DIV, ENAME, EQ,
+    FALSE, IF, INT_LIT, LET, MUL, NE, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
+    TRUE, WREF_EXP,
 
     // declarations
     EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
@@ -21,8 +24,8 @@ public:
     BOOL, DECIMAL, f32, f64, i8, i32, NUMERIC, REF, TYPEVAR, UNIT, WREF,
 
     // type expressions
-    BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i32_TEXP, REF_TEXP, UNIT_TEXP,
-    WREF_TEXP, 
+    ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i32_TEXP, REF_TEXP,
+    UNIT_TEXP, WREF_TEXP, 
 
     // other
     DECLLIST_CONS, DECLLIST_NIL, EXPLIST_CONS, EXPLIST_NIL, IDENT,
@@ -167,12 +170,24 @@ public:
   Addr<TypeExp> getPointeeType() const { return pointeeType; }
 };
 
+class ArrayTypeExp : public TypeExp {
+  Addr<IntLit> sizeLit;
+  Addr<TypeExp> innerType;
+public:
+  ArrayTypeExp(Location loc, Addr<IntLit> sizeLit, Addr<TypeExp> innerType)
+      : TypeExp(ARRAY_TEXP, loc) {
+    this->sizeLit = sizeLit;
+    this->innerType = innerType;
+  }
+  Addr<IntLit> getSizeLit() const { return sizeLit; }
+  Addr<TypeExp> getInnerType() const { return innerType; }
+};
 
 /// @brief An expression or statement (currently there is no distinction).
 class Exp : public LocatedAST {
 protected:
   Addr<Type> type;
-  Exp(ID id, Location loc) : LocatedAST(id, loc) {}
+  Exp(ID id, Location loc) : LocatedAST(id, loc) { type = Addr<Type>::none(); }
 public:
   Addr<Type> getType() const { return type; };
 };
@@ -413,6 +428,32 @@ public:
   Addr<Exp> getInitializer() const { return initializer; }
 };
 
+/// @brief An array constructor that lists out the array contents.
+/// e.g., `[42, x, y+1]`
+class ArrayListExp : public Exp {
+  Addr<ExpList> content;
+public:
+  ArrayListExp(Location loc, Addr<ExpList> content) : Exp(ARRAY_LIST, loc) {
+    this->content = content;
+  }
+  Addr<ExpList> getContent() const { return content; }
+};
+
+/// @brief An expression that constructs an array by specifying a size and
+/// an element to fill all the spots. e.g., `[10 of 0]`
+class ArrayInitExp : public Exp {
+  Addr<IntLit> sizeLit;
+  Addr<Exp> initializer;
+public:
+  ArrayInitExp(Location loc, Addr<IntLit> sizeLit, Addr<Exp> initializer)
+      : Exp(ARRAY_INIT, loc) {
+    this->sizeLit = sizeLit;
+    this->initializer = initializer;
+  }
+  Addr<IntLit> getSizeLit() const { return sizeLit; }
+  Addr<Exp> getInitializer() const { return initializer; }
+};
+
 /// @brief A declaration.
 class Decl : public LocatedAST {
 protected:
@@ -464,6 +505,7 @@ public:
   Addr<DeclList> getDecls() const { return decls; }
 };
 
+/// @brief A function or extern function (FUNC/EXTERN_FUNC).
 class FunctionDecl : public Decl {
   Addr<ParamList> parameters;
   Addr<TypeExp> returnType;
@@ -475,40 +517,22 @@ public:
     this->returnType = returnType;
     this->body = body;
   }
+  FunctionDecl(Location loc, Addr<Name> name, Addr<ParamList> parameters,
+      Addr<TypeExp> returnType) : Decl(EXTERN_FUNC, loc, name) {
+    this->parameters = parameters;
+    this->returnType = returnType;
+    this->body = Addr<Exp>::none();
+  }
   Addr<ParamList> getParameters() const { return parameters; }
   Addr<TypeExp> getReturnType() const { return returnType; }
   Addr<Exp> getBody() const { return body; }
 };
 
-
-bool isExpAST(AST::ID ty) {
-  switch (ty) {
-    case AST::ID::ENAME:
-    case AST::ID::INT_LIT:
-    case AST::ID::DEC_LIT:
-    case AST::ID::STRING_LIT:
-    case AST::ID::TRUE:
-    case AST::ID::FALSE:
-    case AST::ID::ADD:
-    case AST::ID::SUB:
-    case AST::ID::MUL:
-    case AST::ID::DIV:
-    case AST::ID::EQ:
-    case AST::ID::NE:
-    case AST::ID::REF_EXP:
-    case AST::ID::WREF_EXP:
-    case AST::ID::IF:
-    case AST::ID::BLOCK:
-    case AST::ID::CALL:
-    case AST::ID::ASCRIP:
-      return true;
-    default: return false;
-  }
-}
-
 const char* ASTIDToString(AST::ID nt) {
   switch (nt) {
   case AST::ID::ADD:                return "ADD";
+  case AST::ID::ARRAY_INIT:         return "ARRAY_INIT";
+  case AST::ID::ARRAY_LIST:         return "ARRAY_LIST";
   case AST::ID::ASCRIP:             return "ASCRIP";
   case AST::ID::BLOCK:              return "BLOCK";
   case AST::ID::CALL:               return "CALL";
@@ -547,6 +571,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::UNIT:               return "UNIT";
   case AST::ID::WREF:               return "WREF";
   
+  case AST::ID::ARRAY_TEXP:         return "ARRAY_TEXP";
   case AST::ID::BOOL_TEXP:          return "BOOL_TEXP";
   case AST::ID::f32_TEXP:           return "f32_TEXP";
   case AST::ID::f64_TEXP:           return "f64_TEXP";
@@ -569,6 +594,8 @@ const char* ASTIDToString(AST::ID nt) {
 
 AST::ID stringToASTID(const std::string& str) {
        if (str == "ADD")                 return AST::ID::ADD;
+  else if (str == "ARRAY_INIT")          return AST::ID::ARRAY_INIT;
+  else if (str == "ARRAY_LIST")          return AST::ID::ARRAY_LIST;
   else if (str == "ASCRIP")              return AST::ID::ASCRIP;
   else if (str == "BLOCK")               return AST::ID::BLOCK;
   else if (str == "CALL")                return AST::ID::CALL;
@@ -606,6 +633,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "UNIT")                return AST::ID::UNIT;
   else if (str == "WREF")                return AST::ID::WREF;
   
+  else if (str == "ARRAY_TEXP")          return AST::ID::ARRAY_TEXP;
   else if (str == "BOOL_TEXP")           return AST::ID::BOOL_TEXP;
   else if (str == "f32_TEXP")            return AST::ID::f32_TEXP;
   else if (str == "f64_TEXP")            return AST::ID::f64_TEXP;
@@ -640,6 +668,17 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const BinopExp*>(nodePtr);
     ret.push_back(n->getLHS().upcast<AST>());
     ret.push_back(n->getRHS().upcast<AST>());
+  } else if (id == AST::ID::ARRAY_INIT) {
+    auto n = reinterpret_cast<const ArrayInitExp*>(nodePtr);
+    ret.push_back(n->getSizeLit().upcast<AST>());
+    ret.push_back(n->getInitializer().upcast<AST>());
+  } else if (id == AST::ID::ARRAY_LIST) {
+    auto n = reinterpret_cast<const ArrayListExp*>(nodePtr);
+    ret.push_back(n->getContent().upcast<AST>());
+  } else if (id == AST::ID::ARRAY_TEXP) {
+    auto n = reinterpret_cast<const ArrayTypeExp*>(nodePtr);
+    ret.push_back(n->getSizeLit().upcast<AST>());
+    ret.push_back(n->getInnerType().upcast<AST>());
   } else if (id == AST::ID::ASCRIP) {
     auto n = reinterpret_cast<const AscripExp*>(nodePtr);
     ret.push_back(n->getAscriptee().upcast<AST>());
@@ -662,6 +701,11 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const ExpList*>(nodePtr);
     ret.push_back(n->getHead().upcast<AST>());
     ret.push_back(n->getTail().upcast<AST>());
+  } else if (id == AST::ID::EXTERN_FUNC) {
+    auto n = reinterpret_cast<const FunctionDecl*>(nodePtr);
+    ret.push_back(n->getName().upcast<AST>());
+    ret.push_back(n->getParameters().upcast<AST>());
+    ret.push_back(n->getReturnType().upcast<AST>());
   } else if (id == AST::ID::FUNC) {
     auto n = reinterpret_cast<const FunctionDecl*>(nodePtr);
     ret.push_back(n->getName().upcast<AST>());
@@ -677,18 +721,13 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const LetExp*>(nodePtr);
     ret.push_back(n->getBoundIdent().upcast<AST>());
     ret.push_back(n->getDefinition().upcast<AST>());
-  } else if (id == AST::ID::REF_EXP) {
-    auto n = reinterpret_cast<const RefExp*>(nodePtr);
-    ret.push_back(n->getInitializer().upcast<AST>());
-  } else if (id == AST::ID::WREF_EXP) {
-    auto n = reinterpret_cast<const WRefExp*>(nodePtr);
-    ret.push_back(n->getInitializer().upcast<AST>());
   } else if (id == AST::ID::MODULE) {
     auto n = reinterpret_cast<const ModuleDecl*>(nodePtr);
     ret.push_back(n->getName().upcast<AST>());
     ret.push_back(n->getDecls().upcast<AST>());
   } else if (id == AST::ID::NAMESPACE) {
     auto n = reinterpret_cast<const NamespaceDecl*>(nodePtr);
+    ret.push_back(n->getName().upcast<AST>());
     ret.push_back(n->getDecls().upcast<AST>());
   } else if (id == AST::ID::PARAMLIST_CONS) {
     auto n = reinterpret_cast<const ParamList*>(nodePtr);
@@ -699,6 +738,9 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const QIdent*>(nodePtr);
     ret.push_back(n->getHead().upcast<AST>());
     ret.push_back(n->getTail().upcast<AST>());
+  } else if (id == AST::ID::REF_EXP) {
+    auto n = reinterpret_cast<const RefExp*>(nodePtr);
+    ret.push_back(n->getInitializer().upcast<AST>());
   } else if (id == AST::ID::REF_TEXP) {
     auto n = reinterpret_cast<const RefTypeExp*>(nodePtr);
     ret.push_back(n->getPointeeType().upcast<AST>());
@@ -709,6 +751,9 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const StoreExp*>(nodePtr);
     ret.push_back(n->getLHS().upcast<AST>());
     ret.push_back(n->getRHS().upcast<AST>());
+  } else if (id == AST::ID::WREF_EXP) {
+    auto n = reinterpret_cast<const WRefExp*>(nodePtr);
+    ret.push_back(n->getInitializer().upcast<AST>());
   } else if (id == AST::ID::WREF_TEXP) {
     auto n = reinterpret_cast<const WRefTypeExp*>(nodePtr);
     ret.push_back(n->getPointeeType().upcast<AST>());

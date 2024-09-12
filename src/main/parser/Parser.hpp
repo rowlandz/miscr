@@ -60,6 +60,7 @@ public:
 
   // ---------- Idents and QIdents ----------
 
+  /// @brief Parses a single unqualified identifier. 
   Addr<Ident> ident() {
     if (p->ty == TOK_IDENT) return ctx->add(Ident(tokToLoc(p), (p++)->ptr));
     return EPSILON_ERROR;
@@ -143,6 +144,46 @@ public:
     return ctx->add(BlockExp(loc, statements));
   }
 
+  /// @brief Parses an array list or array init expression. 
+  Addr<Exp> arrayListOrInitExp() {
+    Token t0 = *p;
+    if (p->ty == LBRACKET) ++p; else return EPSILON_ERROR;
+    Token t1 = *p;
+    Addr<Exp> firstExp = exp();
+    ARREST_IF_ERROR(firstExp)
+    if (p->ty == KW_OF && ctx->get(firstExp).getID() == AST::ID::INT_LIT) {
+      Addr<IntLit> sizeLit = firstExp.UNSAFE_CAST<IntLit>();
+      ++p;
+      Addr<Exp> initializer = exp();
+      ARREST_IF_ERROR(initializer)
+      CHOMP_ELSE_ARREST(RBRACKET, "]", "array init expression")
+      Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
+      return ctx->add(ArrayInitExp(loc, sizeLit, initializer)).upcast<Exp>();
+    } else if (p->ty == COMMA) {
+      ++p;
+      Addr<ExpList> contentTail = expListWotc0();
+      ARREST_IF_ERROR(contentTail)
+      Location loc(t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr));
+      Addr<ExpList> content = ctx->add(ExpList(loc, firstExp, contentTail));
+      CHOMP_ELSE_ARREST(RBRACKET, "]", "array list constructor")
+      loc = Location(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
+      return ctx->add(ArrayListExp(loc, content)).upcast<Exp>();
+    } else if (p->ty == RBRACKET) {
+      Addr<ExpList> content = ctx->add(ExpList(Location(p->row, p->col, 0)));
+      ++p;
+      Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
+      return ctx->add(ArrayListExp(loc, content)).upcast<Exp>();
+    } else if (p->ty == KW_OF) {
+      errTryingToParse = "array list expression";
+      expectedTokens = ", ]";
+      return ARRESTING_ERROR;
+    } else {
+      errTryingToParse = "array init or list expression";
+      expectedTokens = "of , ]";
+      return ARRESTING_ERROR;
+    }
+  }
+
   Addr<Exp> expLv0() {
     Addr<Exp> ret;
     if ((ret = nameOrCallExp()).notEpsilon()) return ret;
@@ -151,8 +192,8 @@ public:
     if ((ret = decimalLit().upcast<Exp>()).notEpsilon()) return ret;
     if ((ret = stringLit().upcast<Exp>()).notEpsilon()) return ret;
     if ((ret = parensExp()).notEpsilon()) return ret;
-    // if ((ret = arrayConstrExp().upcast<Exp>()).notEpsilon()) return ret;
     if ((ret = blockExp().upcast<Exp>()).notEpsilon()) return ret;
+    if ((ret = arrayListOrInitExp()).notEpsilon()) return ret;
     return EPSILON_ERROR;
   }
 
@@ -278,10 +319,9 @@ public:
     if (p->ty == KW_i8) return ctx->add(TypeExp::mkI8(tokToLoc(p++)));
     if (p->ty == KW_i32) return ctx->add(TypeExp::mkI32(tokToLoc(p++)));
     if (p->ty == KW_BOOL) return ctx->add(TypeExp::mkBool(tokToLoc(p++)));
-    // if (p->ty == KW_STRING) return ctx->add(TypeExp::mkString(tokToLoc(p++)));
     if (p->ty == KW_UNIT) return ctx->add(TypeExp::mkUnit(tokToLoc(p++)));
-    // Addr<TypeExp> ret = arrayType();
-    // if (ret.notEpsilon()) return ret;
+    Addr<TypeExp> ret;
+    if ((ret = arrayTypeExp().upcast<TypeExp>()).notEpsilon()) return ret;
     return EPSILON_ERROR;
   }
 
@@ -300,18 +340,18 @@ public:
     }
   }
 
-  // Addr<TypeExp> arrayType() {
-  //   Token t = *p;
-  //   if (p->ty == LBRACKET) ++p; else return EPSILON_ERROR;
-  //   unsigned int n1 = intLit();
-  //   if (IS_ERROR(n1)) return ARRESTING_ERROR;
-  //   CHOMP_ELSE_ARREST(KW_OF, "of", "array type")
-  //   unsigned int n2 = tyExp();
-  //   if (IS_ERROR(n2)) return ARRESTING_ERROR;
-  //   CHOMP_ELSE_ARREST(RBRACKET, "]", "array type")
-  //   Location loc = { t.row, t.col, (unsigned int)(p->ptr - t.ptr) };
-  //   return m->add({ loc, n1, n2, NN, NOEXTRA, NodeTy::TY_ARRAY });
-  // }
+  Addr<ArrayTypeExp> arrayTypeExp() {
+    Token t = *p;
+    if (p->ty == LBRACKET) ++p; else return EPSILON_ERROR;
+    Addr<IntLit> sizeLit = intLit();
+    ARREST_IF_ERROR(sizeLit)
+    CHOMP_ELSE_ARREST(KW_OF, "of", "array type expression")
+    Addr<TypeExp> innerType = typeExp();
+    ARREST_IF_ERROR(innerType)
+    CHOMP_ELSE_ARREST(RBRACKET, "]", "array type expression")
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(ArrayTypeExp(loc, sizeLit, innerType));
+  }
 
   // ---------- Statements ----------
 
@@ -404,6 +444,24 @@ public:
     return ctx->add(FunctionDecl(loc, name, params, retType, body));
   }
 
+  Addr<FunctionDecl> externFunctionDecl() {
+    Token t = *p;
+    if (p->ty == KW_EXTERN) ++p; else return EPSILON_ERROR;
+    CHOMP_ELSE_ARREST(KW_FUNC, "func", "extern function")
+    Addr<Name> name = ident().upcast<Name>();
+    ARREST_IF_ERROR(name)
+    CHOMP_ELSE_ARREST(LPAREN, "(", "extern function")
+    Addr<ParamList> params = paramListWotc0();
+    if (params.isError()) return ARRESTING_ERROR;
+    CHOMP_ELSE_ARREST(RPAREN, ")", "extern function")
+    CHOMP_ELSE_ARREST(COLON, ":", "extern function")
+    Addr<TypeExp> retType = typeExp();
+    ARREST_IF_ERROR(retType)
+    CHOMP_ELSE_ARREST(SEMICOLON, ";", "extern function")
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(FunctionDecl(loc, name, params, retType));
+  }
+
   /** Parses a module or namespace with brace-syntax. */
   Addr<Decl> moduleOrNamespace() {
     Token t = *p;
@@ -428,6 +486,7 @@ public:
   Addr<Decl> decl() {
     Addr<Decl> ret;
     if ((ret = functionDecl().upcast<Decl>()).notEpsilon()) return ret;
+    if ((ret = externFunctionDecl().upcast<Decl>()).notEpsilon()) return ret;
     if ((ret = moduleOrNamespace()).notEpsilon()) return ret;
     return EPSILON_ERROR;
   }
