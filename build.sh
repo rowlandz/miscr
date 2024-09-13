@@ -55,7 +55,8 @@ elif [ $1 = "playground" ]; then
   if [ $# -gt 1 ]; then
     printExtraArgumentsMessage "build the playground" $2
   fi
-  parrot clang++ -o $DIR/playground $DIR/src/play/main.cpp -I$DIR/src/main
+  LLVM_CONFIG_ARGS=$(llvm-config-14 --cxxflags --ldflags --system-libs --libs core)
+  parrot clang++ -o $DIR/playground $DIR/src/play/main.cpp -I$DIR/src/main $LLVM_CONFIG_ARGS
 
 
 elif [ $1 = "tests" ]; then

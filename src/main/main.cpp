@@ -1,9 +1,9 @@
 #include <cstdio>
 #include <llvm/Support/MemoryBuffer.h>
 #include "lexer/Lexer.hpp"
-#include "parser/ParserOld.hpp"
-#include "typer/Typer.hpp"
-#include "codegen/Codegen.hpp"
+#include "parser/Parser.hpp"
+// #include "typer/Typer.hpp"
+// #include "codegen/Codegen.hpp"
 
 int main(int argc, char* argv[]) {
 

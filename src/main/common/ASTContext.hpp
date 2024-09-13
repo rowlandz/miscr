@@ -32,7 +32,7 @@ public:
   upcast() { return Addr<U>(addr); }
 
   /// @brief Cast the pointee type to any other type.
-  template<class U> Addr<U> UNSAFE_CAST() { return Addr<U>(addr); }
+  template<class U> Addr<U> UNSAFE_CAST() const { return Addr<U>(addr); }
 };
 
 /// @brief A helper class that can be implicitly cast to any `Addr` type.
@@ -66,6 +66,13 @@ public:
     return *reinterpret_cast<T*>(&ret);
   }
 
+  /// @brief Unsafely casts `addr` to an `T` address and retrieves the data. 
+  template<class T, class U>
+  T GET_UNSAFE(Addr<U> addr) const {
+    ASTMemoryBlock ret = nodes[addr.addr];
+    return *reinterpret_cast<T*>(&ret);
+  }
+
   template<class T>
   const T* getConstPtr(Addr<T> addr) const {
     return reinterpret_cast<const T*>(nodes.begin().base() + addr.addr);
@@ -79,6 +86,11 @@ public:
   template<class T>
   void set(Addr<T> addr, T node) {
     nodes[addr] = node;
+  }
+
+  template<class T, class U>
+  void SET_UNSAFE(Addr<U> addr, T node) {
+    nodes[addr.addr] = *reinterpret_cast<ASTMemoryBlock*>(&node);
   }
 
   template<class T>

@@ -3,7 +3,6 @@
 
 #include "typer/Cataloger.hpp"
 #include "typer/Unifier.hpp"
-#include "typer/Resolver.hpp"
 
 /**
  * The type checker and type inference engine.
@@ -17,25 +16,23 @@ public:
   Ontology ont;
   Cataloger cataloger;
   Unifier unifier;
-  Resolver resolver;
 
-  Typer(NodeManager* m) : cataloger(m, &ont), unifier(m, &ont), resolver(m) {}
+  Typer(ASTContext* m) : cataloger(m, &ont), unifier(m, &ont) {}
 
-  void typeExp(unsigned int _n) {
-    unifier.tyExp(_n);
-    resolver.resolveExp(_n);
+  void typeExp(Addr<Exp> _exp) {
+    unifier.unifyExp(_exp);
   }
 
-  void typeDecl(unsigned int _n) {
-    cataloger.catalog(std::string("global"), _n);
-    unifier.tyDecl(_n);
-    resolver.resolveDecl(_n);
+  void typeDecl(Addr<Decl> _decl) {
+    // cataloger.catalog(std::string("global"), _n);
+    // unifier.tyDecl(_n);
+    assert(false && "unimplemented");
   }
 
   void typeDeclList(unsigned int _declList) {
-    cataloger.catalogDeclList(std::string("global"), _declList);
-    unifier.tyDeclList(_declList);
-    resolver.resolveDeclList(_declList);
+    // cataloger.catalogDeclList(std::string("global"), _declList);
+    // unifier.tyDeclList(_declList);
+    assert(false && "unimplemented");
   }
 
 };

@@ -1,495 +1,262 @@
-#ifndef TYPER_UNIFIER
-#define TYPER_UNIFIER
+#ifndef TYPER_UNIFIERNEW
+#define TYPER_UNIFIERNEW
 
-#include <string>
-#include <map>
+#include <cassert>
+#include "llvm/ADT/DenseMap.h"
+#include "common/ASTContext.hpp"
 #include "common/Ontology.hpp"
 #include "common/ScopeStack.hpp"
-#include "common/NodeManager.hpp"
 #include "common/LocatedError.hpp"
 
-/** Second of three type checking phases.
- * Annotates expressions with types.
- * Fully-qualifies the names of called functions.
- * Fully-qualifies the names of all decls in their definitions.
- * TODO: Do we want to maintain the tree structure or is it okay to break it here?
- * Currently I'm assuming it's okay to break it.
- */
 class Unifier {
-public:
-
-  NodeManager* m;
+  
+  ASTContext* ctx;
  
-  /** Maps decls to their definitions or declarations. */
+  /// Maps decls to their definitions or declarations.
   const Ontology* ont;
 
-  /** Maps local variable names to type nodes. */
+  /// Maps local variable names to type nodes.
   ScopeStack<unsigned int> localVarTypes;
 
-  /** Holds all scopes that could be used to fully-qualify a relative path.
-   * First scope is always "global", then each successive scope is an extension
-   * of the one before it. The last one is the "current scope".
-   * e.g., `{ "global", "global::MyMod", "global::MyMod::MyMod2" }`
-   */
+  /// Holds all scopes that could be used to fully-qualify a relative path.
+  /// First scope is always "global", then each successive scope is an extension
+  /// of the one before it. The last one is the "current scope".
+  /// e.g., `{ "global", "global::MyMod", "global::MyMod::MyMod2" }`
   std::vector<std::string> relativePathQualifiers;
 
-  /** Accumulates type checking errors. */
+public:
+  /// Accumulates type checking errors.
   std::vector<LocatedError> errors;
 
-  // Nodes are initialized for common types to avoid making multiple nodes.
-  unsigned int ty_unit;
-  unsigned int ty_bool;
-  unsigned int ty_i8;
-  unsigned int ty_i32;
-  unsigned int ty_string;
-  unsigned int tyc_numeric;
-  unsigned int tyc_decimal;
+private:
+  
+  struct MyDenseMapInfo {
+    static inline TVar getEmptyKey() { return TVar(-1); }
+    static inline TVar getTombstoneKey() { return TVar(-2); }
+    static unsigned getHashValue(const TVar &Val) { return Val.get(); }
+    static bool isEqual(const TVar &LHS, const TVar &RHS) {
+      return LHS.get() == RHS.get();
+    }
+  };
 
-  Unifier(NodeManager* m, Ontology* ont) {
-    this->m = m;
+  /// Type variable bindings.
+  llvm::DenseMap<TVar, TypeOrTVar, struct MyDenseMapInfo> bindings;
+
+  int firstUnusedTypeVar = 1;
+
+  TVar fresh(Type ty) {
+    bindings[TVar(firstUnusedTypeVar)] = TypeOrTVar(ty);
+    return firstUnusedTypeVar++;
+  }
+
+  TVar freshFromTypeExp(Addr<TypeExp> _tyexp) {
+    AST::ID id = ctx->get(_tyexp).getID();
+    switch (ctx->get(_tyexp).getID()) {
+    case AST::ID::ARRAY_TEXP:
+      return fresh(Type::array(freshFromTypeExp(
+        ctx->GET_UNSAFE<ArrayTypeExp>(_tyexp).getInnerType()
+      )));
+    case AST::ID::REF_TEXP:
+      return fresh(Type::ref(freshFromTypeExp(
+        ctx->GET_UNSAFE<RefTypeExp>(_tyexp).getPointeeType()
+      )));
+    case AST::ID::WREF_TEXP:
+      return fresh(Type::wref(freshFromTypeExp(
+        ctx->GET_UNSAFE<WRefTypeExp>(_tyexp).getPointeeType()
+      )));
+    case AST::ID::BOOL_TEXP: return fresh(Type::bool_());
+    case AST::ID::f32_TEXP: return fresh(Type::f32());
+    case AST::ID::f64_TEXP: return fresh(Type::f64());
+    case AST::ID::i8_TEXP: return fresh(Type::i8());
+    case AST::ID::i32_TEXP: return fresh(Type::i32());
+    case AST::ID::UNIT_TEXP: return fresh(Type::unit());
+    default:
+      assert(false && "Unreachable code");
+    }
+  }
+
+  /// @brief Follows `bindings` until a type var is found that is either bound
+  /// to a type or bound do nothing. In the latter case, `Type::notype()` is
+  /// returned. Side-effect free. 
+  std::pair<TVar, Type> resolve(TVar v) {
+    auto found = bindings.find(v);
+    while (found != bindings.end()) {
+      if (found->getSecond().isType()) {
+        return std::pair<TVar, Type>(v, found->getSecond().getType());
+      }
+      v = found->getSecond().getTVar();
+      found = bindings.find(v);
+    }
+    return std::pair<TVar, Type>(v, Type::notype());
+  }
+
+public:
+
+  Unifier(ASTContext* ctx, Ontology* ont) {
+    this->ctx = ctx;
     this->ont = ont;
-    relativePathQualifiers.push_back(std::string("global"));
-    ty_unit = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::UNIT });
-    ty_bool = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::BOOL });
-    ty_i8 = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::i8 });
-    ty_i32 = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::i32 });
-    ty_string = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::STRING });
-    tyc_numeric = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::NUMERIC });
-    tyc_decimal = m->add({ { 0, 0, 0 }, NN, NN, NN, NOEXTRA, NodeTy::DECIMAL });
+    relativePathQualifiers.push_back("global");
   }
 
-  /** Resolves a type until a non-TYPEVAR is reached or a terminal TYPEVAR
-   * is reached. `_ty` should refer to a type node. */
-  unsigned int resolve(unsigned int _ty) {
-    Node ty = m->get(_ty);
-    while (ty.ty == NodeTy::TYPEVAR && ty.n1 != NN) {
-      _ty = ty.n1;
-      ty = m->get(_ty);
+  /// @brief Enforces an equality relation in `bindings` between the two type
+  /// variables. Returns `true` if this is possible and `false` otherwise.
+  bool unify(TVar v1, TVar v2) {
+    std::pair<TVar, Type> res1 = resolve(v1);
+    std::pair<TVar, Type> res2 = resolve(v2);
+    TVar w1 = res1.first;
+    TVar w2 = res2.first;
+    Type t1 = res1.second;
+    Type t2 = res2.second;
+
+    if (t1.isNoType()) { bindings[w1] = TypeOrTVar(w2); return true; }
+    if (t2.isNoType()) { bindings[w2] = TypeOrTVar(w1); return true; }
+
+    if (t1.getID() == t2.getID()) {
+      Type::ID ty = t1.getID();
+      if (ty == Type::ID::ARRAY) {
+        if (unify(t1.getInner(), t2.getInner())) {
+          bindings[w1] = TypeOrTVar(w2);
+          return true;
+        } else return false;
+      } else if (ty == Type::ID::REF || ty == Type::ID::WREF) {
+        if (unify(t1.getInner(), t2.getInner())) {
+          bindings[w1] = TypeOrTVar(w2);
+          return true;
+        } else return false;
+      } else if (ty == Type::ID::BOOL || ty == Type::ID::DECIMAL
+      || ty == Type::ID::f32 || ty == Type::ID::f64 || ty == Type::ID::i8
+      || ty == Type::ID::i32 || ty == Type::ID::NUMERIC
+      || ty == Type::ID::UNIT) {
+        bindings[w1] = TypeOrTVar(w2);
+        return true;
+      }
+      else return false;
     }
-    return _ty;
-  }
-
-  /** Resolves a type, except the second-to-last type is returned (the last
-   * TYPEVAR) instead of the last type. */
-  unsigned int almostResolve(unsigned int _tyVar) {
-    Node tyVar = m->get(_tyVar);
-    while (tyVar.n1 != NN) {
-      Node ty2 = m->get(tyVar.n1);
-      if (ty2.ty != NodeTy::TYPEVAR) return _tyVar;
-      _tyVar = tyVar.n1;
-      tyVar = ty2;
+    else if (t1.getID() == Type::ID::NUMERIC) {
+      switch (t2.getID()) {
+      case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
+      case Type::ID::i8: case Type::ID::i32:
+        bindings[w1] = TypeOrTVar(w2);
+        return true;
+      default:
+        return false;
+      }
     }
-    return _tyVar;
-  }
-
-  /** Binds `_tyVar` to `_toTy`. */
-  void bind(unsigned int _tyVar, unsigned int _toTy) {
-    Node tyVar = m->get(_tyVar);
-    // can remove the following if block when we're sure this is safe.
-    if (tyVar.ty != NodeTy::TYPEVAR) { printf("Expected typevar here!!! Got %hu\n", tyVar.ty); exit(1); }
-    tyVar.n1 = _toTy;
-    m->set(_tyVar, tyVar);
-  }
-
-  /** Enforces the constraint that the two types resolve to the same type.
-   * The first type must be a type variable.
-   * Returns true if unification succeeded.
-   * If the first argument is a refineable type class like numeric or writable ref,
-   * then unification succeeds if it can be refined to the second arg. However, this is
-   * not the case if the arguments are switched.
-   * */
-  bool unify(unsigned int _tyVar1, unsigned int _ty2) {
-    unsigned int _rtyVar1 = almostResolve(_tyVar1);
-    unsigned int _rty1 = resolve(_rtyVar1);
-    unsigned int _rty2 = resolve(_ty2);
-    Node rty1 = m->get(_rty1);
-    Node rty2 = m->get(_rty2);
-
-    if (rty1.ty == rty2.ty) {
-      if (rty1.ty == NodeTy::f32 || rty1.ty == NodeTy::f64 || rty1.ty == NodeTy::i8
-      || rty1.ty == NodeTy::i32 || rty1.ty == NodeTy::BOOL || rty1.ty == NodeTy::STRING
-      || rty1.ty == NodeTy::UNIT
-      || rty1.ty == NodeTy::NUMERIC || rty1.ty == NodeTy::DECIMAL) {
-        bind(_rtyVar1, _ty2);
-      } else if (rty1.ty == NodeTy::TYPEVAR) {
-        bind(_rtyVar1, _ty2);
-      } else if (rty1.ty == NodeTy::TY_ARRAY) {
-        // TODO: enforce that array sizes must match
-        return unify(rty1.n2, rty2.n2);
-      } else if (rty1.ty == NodeTy::TY_REF || rty1.ty == NodeTy::TY_WREF) {
-        return unify(rty1.n1, rty2.n1);
-      } else {
-        printf("Fatal unification error: node is not a type\n");
-        exit(1);
+    else if (t1.getID() == Type::ID::DECIMAL) {
+      switch (t2.getID()) {
+      case Type::ID::f32: case Type::ID::f64:
+        bindings[w1] = TypeOrTVar(w2);
+        return true;
+      default:
+        return false;
       }
-    } else if (rty1.ty == NodeTy::TYPEVAR) {
-      bind(_rtyVar1, _ty2);
-    } else if (rty2.ty == NodeTy::TYPEVAR) {
-      bind(_rty2, _rtyVar1);
-    } else if (rty1.ty == NodeTy::NUMERIC) {
-      switch (rty2.ty) {
-        case NodeTy::f32:
-        case NodeTy::f64:
-        case NodeTy::i8:
-        case NodeTy::i32:
-        case NodeTy::DECIMAL:
-          bind(_rtyVar1, _ty2);
-          break;
-        default:
-          return false;
+    }
+    else if (t2.getID() == Type::ID::NUMERIC) {
+      switch (t1.getID()) {
+      case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
+      case Type::ID::i8: case Type::ID::i32:
+        bindings[w2] = TypeOrTVar(w1);
+        return true;
+      default:
+        return false;
       }
-    } else if (rty2.ty == NodeTy::NUMERIC) {
-      switch (rty1.ty) {
-        case NodeTy::f32:
-        case NodeTy::f64:
-        case NodeTy::i8:
-        case NodeTy::i32:
-        case NodeTy::DECIMAL:
-          if (m->get(_ty2).ty == NodeTy::TYPEVAR) {
-            bind(almostResolve(_ty2), _rtyVar1);
-          }
-          break;
-        default:
-          return false;
+    }
+    else if (t2.getID() == Type::ID::DECIMAL) {
+      switch (t1.getID()) {
+      case Type::ID::f32: case Type::ID::f64:
+        bindings[w2] = TypeOrTVar(w1);
+        return true;
+      default:
+        return false;
       }
-    } else if (rty1.ty == NodeTy::DECIMAL) {
-      switch (rty2.ty) {
-        case NodeTy::f32:
-        case NodeTy::f64:
-          bind(_rtyVar1, _ty2);
-          break;
-        default:
-          return false;
-      }
-    } else if (rty2.ty == NodeTy::DECIMAL) {
-      switch (rty1.ty) {
-        case NodeTy::f32:
-        case NodeTy::f64:
-          if (m->get(_ty2).ty == NodeTy::TYPEVAR) {
-            bind(almostResolve(_ty2), _rty1);
-          }
-          break;
-        default:
-          return false;
-      }
-    } 
-    
-    else if (rty1.ty == NodeTy::TY_WREF) {
-      if (rty2.ty != NodeTy::TY_REF) return false;
-      if (!unify(rty1.n1, rty2.n1)) return false;
-      bind(_rtyVar1, _ty2);
     }
     
-    else {
-      return false;
-    }
-
-    return true;
+    return false;
   }
 
-  /** Typechecks `_exp` and unifies the inferred type with `_expectedTy`.
-   * If the unification fails, pushes an error.
-   * Returns the inferred type (same as tyExp). */
-  unsigned int expectTyToBe(unsigned int _exp, unsigned int _expectedTy) {
-    unsigned int _inferredTy = tyExp(_exp);
-    if (!unify(_inferredTy, _expectedTy)) {
-      std::string errMsg("I expected the type of this expression to be ");
-      errMsg.append(tyNodeToString(resolve(_expectedTy)));
-      errMsg.append(",\nbut I inferred the type to be ");
-      errMsg.append(tyNodeToString(resolve(_inferredTy)));
-      errMsg.append(".");
-      errors.push_back(LocatedError(m->get(_exp).loc, errMsg));
-    }
-    return _inferredTy;
-  }
-
-  /** Calls `expectTyToBe` on every expression in the EXPLIST (the second
-   * argument is always `_tyVar`). */
-  void expectTysToBe(unsigned int _expList, unsigned int _tyVar) {
-    Node expList = m->get(_expList);
-    while (expList.ty == NodeTy::EXPLIST_CONS) {
-      expectTyToBe(expList.n1, _tyVar);
-      expList = m->get(expList.n2);
-    }
-  }
-
-  /** Returns the number of elements in the provided expression list. */
-  long expListSize(unsigned int _expList) {
-    long ret = 0;
-    Node expList = m->get(_expList);
-    while (expList.ty == NodeTy::EXPLIST_CONS) {
-      ++ret;
-      expList = m->get(expList.n2);
-    }
-    return ret;
-  }
-
-  /** Typechecks an expression node at location `_n` in `m`.
-   * Returns The type node `m->get(_n).n1` of the expression for convenience. */
-  unsigned int tyExp(unsigned int _n) {
-    Node n = m->get(_n);
-
-    if (n.ty == NodeTy::ADD || n.ty == NodeTy::SUB || n.ty == NodeTy::MUL || n.ty == NodeTy::DIV) {
-      unsigned int tyn2 = expectTyToBe(n.n2, tyc_numeric);
-      unsigned int tyn3 = expectTyToBe(n.n3, tyn2);
-      bind(n.n1, tyn2);
-    }
-
-    else if (n.ty == NodeTy::ARRAY_CONSTR_LIST) {
-      long arraySize = expListSize(n.n2);
-      unsigned int innerTyVar = m->add({ {0,0,0}, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
-      unsigned int arrSizeNode = m->add({ {0,0,0}, ty_i32, NN, NN, {.intVal=arraySize}, NodeTy::LIT_INT });
-      unsigned int arrayType = m->add({ {0,0,0}, arrSizeNode, innerTyVar, NN, NOEXTRA, NodeTy::TY_ARRAY });
-      expectTysToBe(n.n2, innerTyVar);
-      bind(n.n1, arrayType);
-    }
-
-    else if (n.ty == NodeTy::ARRAY_CONSTR_INIT) {
-      // check that the array size expression is a LIT_INT
-      Node n2 = m->get(n.n2);
-      if (n2.ty != NodeTy::LIT_INT) {
-        std::string errMsg("The size of an array initializer must be an integer literal");
-        errors.push_back(LocatedError(n2.loc, errMsg));
-      }
-
-      unsigned int innerTyVar = m->add({ {0,0,0}, NN, NN, NN, NOEXTRA, NodeTy::TYPEVAR });
-      unsigned int arrayType = m->add({ {0,0,0}, n.n2, innerTyVar, NN, NOEXTRA, NodeTy::TY_ARRAY });
-      expectTyToBe(n.n2, ty_i32);
-      expectTyToBe(n.n3, innerTyVar);
-
-      bind(n.n1, arrayType);
-    }
-
-    else if (n.ty == NodeTy::ASCRIP) {
-      expectTyToBe(n.n2, n.n3);
-      bind(n.n1, n.n3);
-    }
-
-    else if (n.ty == NodeTy::BLOCK) {
-      localVarTypes.push();
-      Node stmtList = m->get(n.n2);
-      unsigned int lastStmtTy = ty_unit;
-      while (stmtList.ty == NodeTy::STMTLIST_CONS) {
-        lastStmtTy = tyStmt(stmtList.n1);
-        stmtList = m->get(stmtList.n2);
-      }
-      bind(n.n1, lastStmtTy);
-      localVarTypes.pop();
-    }
-
-    else if (n.ty == NodeTy::CALL) {
-      Node eqident = m->get(n.n2);
-      std::string calleeRelName = relQIdentToString(eqident.n2);
-      bool yayFoundIt = false;
-      for (auto qual = relativePathQualifiers.end()-1; relativePathQualifiers.begin() <= qual; qual--) {
-        auto maybeFuncDecl = ont->findFunction(*qual + calleeRelName);
-        if (maybeFuncDecl == ont->functionSpaceEnd()) continue;
-        yayFoundIt = true;
-        Node funcDecl = m->get(maybeFuncDecl->second);
-
-        // Unify each of the arguments with parameter.
-        Node expList = m->get(n.n3);
-        Node paramList = m->get(funcDecl.n2);
-        while (expList.ty == NodeTy::EXPLIST_CONS && paramList.ty == NodeTy::PARAMLIST_CONS) {
-          expectTyToBe(expList.n1, paramList.n2);
-          expList = m->get(expList.n2);
-          paramList = m->get(paramList.n3);
-        }
-        if (expList.ty == NodeTy::EXPLIST_CONS || paramList.ty == NodeTy::PARAMLIST_CONS) {
-          errors.push_back(LocatedError(paramList.loc, "Arity mismatch for function " + *qual + calleeRelName));
-        }
-
-        // Unify return type
-        bind(n.n1, funcDecl.n3);
-
-        // Replace function name with fully qualified name
-        m->set(n.n2, { eqident.loc, NN, NN, NN, { .ptr = maybeFuncDecl->first }, NodeTy::EFQIDENT });
-      }
-      if (!yayFoundIt) {
-        errors.push_back(LocatedError(eqident.loc, "Cannot find function " + calleeRelName));
+  std::string TVarToString(TVar v) {
+    auto res = resolve(v);
+    if (res.second.isNoType()) {
+      return std::string("?") + std::to_string(v.get());
+    } else {
+      switch (res.second.getID()) {
+      case Type::ID::ARRAY:
+        return std::string("array<") + TVarToString(res.second.getInner()) + ">";
+      case Type::ID::REF:
+        return std::string("ref<") + TVarToString(res.second.getInner()) + ">";
+      case Type::ID::WREF:
+        return std::string("wref<") + TVarToString(res.second.getInner()) + ">";
+      case Type::ID::BOOL: return std::string("bool");
+      case Type::ID::DECIMAL: return std::string("decimal");
+      case Type::ID::f32: return std::string("f32");
+      case Type::ID::f64: return std::string("f64");
+      case Type::ID::i8: return std::string("i8");
+      case Type::ID::i32: return std::string("i32");
+      case Type::ID::NUMERIC: return std::string("numeric");
+      case Type::ID::UNIT: return std::string("unit");
+      default: return std::string("???");
       }
     }
-
-    else if (n.ty == NodeTy::EQIDENT) {
-      Node identNode = m->get(n.n2);
-      if (identNode.ty == NodeTy::IDENT) {
-        std::string identStr(identNode.extra.ptr, identNode.loc.sz);
-        unsigned int varTyNode = localVarTypes.getOrElse(identStr, NN);
-        if (varTyNode != NN) bind(n.n1, varTyNode);
-        else errors.push_back(LocatedError(n.loc, "Unbound identifier."));
-      } else {
-        errors.push_back(LocatedError(n.loc, "Didn't expect qualified identifier here."));
-      }
-    }
-
-    else if (n.ty == NodeTy::EQ || n.ty == NodeTy::NE) {
-      unsigned int tyn2 = tyExp(n.n2);
-      unsigned int tyn3 = tyExp(n.n3);
-      unify(tyn3, tyn2);
-      bind(n.n1, ty_bool);
-    }
-
-    else if (n.ty == NodeTy::FALSE || n.ty == NodeTy::TRUE) {
-      bind(n.n1, ty_bool);
-    }
-
-    else if (n.ty == NodeTy::IF) {
-      unsigned int tyn2 = tyExp(n.n2);
-      unsigned int tyn3 = tyExp(n.n3);
-      unsigned int tyn4 = tyExp(n.extra.nodes.n4);
-      unify(tyn2, ty_bool);
-      unify(tyn4, tyn3);
-      unify(n.n1, tyn3);
-    }
-
-    else if (n.ty == NodeTy::LIT_DEC) {
-      bind(n.n1, tyc_decimal);
-    }
-
-    else if (n.ty == NodeTy::LIT_INT) {
-      bind(n.n1, tyc_numeric);
-    }
-
-    else if (n.ty == NodeTy::LIT_STRING) {
-      bind(n.n1, ty_string);
-    }
-
-    else if (n.ty == NodeTy::MK_REF || n.ty == NodeTy::MK_WREF) {
-      unsigned int tyn2 = tyExp(n.n2);
-      NodeTy ty = n.ty == NodeTy::MK_WREF ? NodeTy::TY_WREF : NodeTy::TY_REF;
-      unsigned int refType = m->add({ {0,0,0}, tyn2, NN, NN, NOEXTRA, ty });
-      bind(n.n1, refType);
-    }
-
-    else {
-      printf("Unifier case not supported yet!: %s\n", NodeTyToString(n.ty));
-      exit(1);
-    }
-
-    return n.n1;
   }
 
-  /** Typechecks a statement pointed by by `_n`. Any variables introduced via binding
-   * are added to the topmost scope frame. Returns the type of the statement. */
-  unsigned int tyStmt(unsigned int _n) {
-    Node n = m->get(_n);
-
-    if (n.ty == NodeTy::LET) {
-      Node n1 = m->get(n.n1);
-      unsigned int tyn2 = tyExp(n.n2);
-      std::string identStr(n1.extra.ptr, n1.loc.sz);
-      localVarTypes.add(identStr, tyn2);
-      return ty_unit;
-    }
-
-    else if (isExpNodeTy(n.ty)) {
-      return tyExp(_n);
-    }
-
-    else {
-      printf("Unifier case not supported yet!!\n");
-      exit(1);
-    }
+  /// @brief
+  /// @return The inferred type of `_exp` (for convenience). 
+  TVar expectTyToBe(Addr<Exp> _exp, TVar expectedTy) {
+    TVar inferredTy = unifyExp(_exp);
+    if (unify(inferredTy, expectedTy)) return inferredTy;
+    std::string errMsg("Inferred type is ");
+    errMsg.append(TVarToString(inferredTy));
+    errMsg.append(" but expected ");
+    errMsg.append(TVarToString(expectedTy));
+    errMsg.append(".");
+    errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
+    return inferredTy;
   }
 
-  /** Same as `tyExp` but the return value is `void`. */
-  void voidTyExp(unsigned int _n) {
-    tyExp(_n);
-  }
+  // int expectTyToBe(Addr<Exp> _exp, int _expectedTy) {
+  //   int _inferredTy = unifyExp(_exp);
+  //   if (!unify(_inferredTy, _expectedTy)) {
+  //     Type expectedTy = ctx->get(resolve(flowDownstream(_expectedTy)));
+  //     Type inferredTy = ctx->get(resolve(flowDownstream(_inferredTy)));
+  //     std::string errMsg("I expected the type of this expression to be ");
+  //     errMsg.append(ASTIDToString(expectedTy.getID()));
+  //     errMsg.append(",\nbut I inferred the type to be ");
+  //     errMsg.append(ASTIDToString(inferredTy.getID()));
+  //     errMsg.append(".");
+  //     errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
+  //   }
+  //   return _inferredTy;
+  // }
 
-  void addParamsToLocalVarTypes(unsigned int _paramList) {
-    Node paramList = m->get(_paramList);
-    while (paramList.ty == NodeTy::PARAMLIST_CONS) {
-      Node paramName = m->get(paramList.n1);
-      std::string paramStr(paramName.extra.ptr, paramName.loc.sz);
-      localVarTypes.add(paramStr, paramList.n2);
-      paramList = m->get(paramList.n3);
-    }
-  }
+  /// @brief Unifies an expression. Returns the type of `_e`. 
+  TVar unifyExp(Addr<Exp> _e) {
+    AST::ID id = ctx->get(_e).getID();
 
-  /** Typechecks a func, proc, extern func, or extern proc */
-  void tyFuncOrProc(unsigned int _n) {
-    Node n = m->get(_n);
-    
-    // fully qualify the function name
-    Node funcNameNode = m->get(n.n1);
-    std::string fqName = relativePathQualifiers.back() + "::" + std::string(funcNameNode.extra.ptr, funcNameNode.loc.sz);
-    auto fqNamePerma = ont->getPermaPointer(fqName);
-    m->set(n.n1, { funcNameNode.loc, NN, NN, NN, { .ptr = fqNamePerma }, NodeTy::FQIDENT });
-
-    // type check the function body
-    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC) {
-      localVarTypes.push();
-      addParamsToLocalVarTypes(n.n2);
-      expectTyToBe(n.extra.nodes.n4, n.n3);
-      localVarTypes.pop();
-    }
-  }
-
-  // TODO: namespaces should be a little different
-  void tyModuleOrNamespace(unsigned int _n) {
-    Node n = m->get(_n);
-
-    // fully qualify the module name
-    Node modNameNode = m->get(n.n1);
-    std::string fqName = relativePathQualifiers.back() + "::" + std::string(modNameNode.extra.ptr, modNameNode.loc.sz);
-    auto fqNamePerma = ont->getPermaPointer(fqName);
-    m->set(n.n1, { modNameNode.loc, NN, NN, NN, { .ptr = fqNamePerma }, NodeTy::FQIDENT });
-
-    // recursively type check contents
-    relativePathQualifiers.push_back(fqName);
-    tyDeclList(n.n2);
-
-    relativePathQualifiers.pop_back();
-  }
-
-  void tyDecl(unsigned int _n) {
-    Node n = m->get(_n);
-
-    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC
-    || n.ty == NodeTy::EXTERN_FUNC || n.ty == NodeTy::EXTERN_PROC) {
-      tyFuncOrProc(_n);
+    if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
+    || id == AST::ID::DIV) {
+      BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
+      TVar lhsTy = expectTyToBe(e.getLHS(), fresh(Type::numeric()));
+      expectTyToBe(e.getRHS(), lhsTy);
+      e.setTVar(lhsTy);
+      ctx->SET_UNSAFE(_e, e);
     }
 
-    else if (n.ty == NodeTy::MODULE || n.ty == NodeTy::NAMESPACE) {
-      tyModuleOrNamespace(_n);
+    else if (id == AST::ID::ASCRIP) {
+      AscripExp e = ctx->GET_UNSAFE<AscripExp>(_e);
+      TVar ty = freshFromTypeExp(e.getAscripter());
+      expectTyToBe(e.getAscriptee(), ty);
+      e.setTVar(ty);
+      ctx->SET_UNSAFE(_e, e);
     }
-  }
 
-  void tyDeclList(unsigned int _declList) {
-    Node declList = m->get(_declList);
-    while (declList.ty == NodeTy::DECLLIST_CONS) {
-      tyDecl(declList.n1);
-      declList = m->get(declList.n2);
+    else if (id == AST::ID::INT_LIT) {
+      IntLit e = ctx->GET_UNSAFE<IntLit>(_e);
+      e.setTVar(fresh(Type::numeric()));
+      ctx->SET_UNSAFE(_e, e);
     }
+
+    return ctx->get(_e).getTVar(); 
   }
-
-  /** `_qident` must be the address of a QIDENT or IDENT.
-   * Returns the (un)qualified name as a string prefixed with `::`.
-   * e.g., `::MyMod::myfunc` */
-  std::string relQIdentToString(unsigned int _qident) {
-    std::string ret;
-    Node qident = m->get(_qident);
-    while (qident.ty == NodeTy::QIDENT) {
-      Node part = m->get(qident.n1);
-      ret.append("::");
-      ret.append(std::string(part.extra.ptr, part.loc.sz));
-      qident = m->get(qident.n2);
-    }
-    if (qident.ty == NodeTy::IDENT) {
-      ret.append("::");
-      ret.append(std::string(qident.extra.ptr, qident.loc.sz));
-    }
-    return ret;
-  }
-
-  std::string tyNodeToString(unsigned int _ty) {
-    Node ty = m->get(_ty);
-    return std::string(NodeTyToString(ty.ty));
-  }
-
-
-
 };
 
 #endif

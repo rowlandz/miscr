@@ -20,9 +20,6 @@ public:
     // declarations
     EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
 
-    // types
-    BOOL, DECIMAL, f32, f64, i8, i32, NUMERIC, REF, TYPEVAR, UNIT, WREF,
-
     // type expressions
     ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i32_TEXP, REF_TEXP,
     UNIT_TEXP, WREF_TEXP, 
@@ -41,58 +38,61 @@ protected:
 public:
   ID getID() const { return id; }
 
-  /// @brief Returns true if this AST can be downcast to `Type`. 
-  bool isType() const {
-    switch (id) {
-    case BOOL: case DECIMAL: case f32: case f64: case i8: case i32: case REF:
-    case TYPEVAR: case UNIT: case WREF: return true;
-    default: return false;
-    }
-  }
-
   /// @brief Returns true if this AST can be downcast to `LocatedAST`. 
-  bool isLocated() const { return !isType(); }
+  bool isLocated() const { return true; }
 
 };
 
-/// @brief The type of an expression or statement.
-class Type : public AST {
+/// @brief A type variable that annotates an expression.
+class TVar {
+  int value;
+public:
+  static TVar none() { return TVar(-1); }
+  TVar(int value) { this->value = value; }
+  int get() const { return value; }
+  bool exists() { return value >= 0; }
+};
+
+/// @brief A type.
+class Type {
+public:
+  enum struct ID : unsigned char {
+    ARRAY, BOOL, DECIMAL, f32, f64, i8, i32, NOTYPE, NUMERIC, REF, UNIT, WREF
+  };
 protected:
-  Type(ID id) : AST(id) {}
+  Type::ID id;
+  TVar inner = TVar::none();
+  Type(Type::ID id) { this->id = id; this->inner = TVar::none(); }
+  Type(Type::ID id, TVar inner) { this->id = id; this->inner = inner; }
 public:
-  static Type mkUnit() { return Type(UNIT); }
-  static Type mkBool() { return Type(BOOL); }
-  static Type mkI8() { return Type(i8); }
-  static Type mkI32() { return Type(i32); }
-  static Type mkF32() { return Type(f32); }
-  static Type mkF64() { return Type(f64); }
-  static Type mkNumeric() { return Type(NUMERIC); }
-  static Type mkDecimal() { return Type(DECIMAL); }
+  static Type array(TVar of) { return Type(ID::ARRAY, of); }
+  static Type bool_() { return Type(ID::BOOL); }
+  static Type decimal() { return Type(ID::DECIMAL); }
+  static Type f32() { return Type(ID::f32); }
+  static Type f64() { return Type(ID::f64); }
+  static Type i8() { return Type(ID::i8); }
+  static Type i32() { return Type(ID::i32); }
+  static Type notype() { return Type(ID::NOTYPE); }
+  static Type numeric() { return Type(ID::NUMERIC); }
+  static Type ref(TVar of) { return Type(ID::REF, of); }
+  static Type unit() { return Type(ID::UNIT); }
+  static Type wref(TVar of) { return Type(ID::WREF, of); }
+  bool isNoType() { return id == ID::NOTYPE; }
+  ID getID() { return id; }
+  TVar getInner() { return inner; }
 };
 
-class TypeVar : public Type {
-  int typeVarID;
+class TypeOrTVar {
+  bool isType_;
+  union { TVar tvar; Type type; } data = { .tvar = TVar::none() };
 public:
-  TypeVar(int typeVarID) : Type(TYPEVAR) {
-    this->typeVarID = typeVarID;
-  }
-  int getTypeVarID() const { return typeVarID; }
-};
-
-class RefType : public Type {
-  Addr<Type> what;
-public:
-  RefType(Addr<Type> what) : Type(REF) {
-    this->what = what;
-  }
-};
-
-class WRefType : public Type {
-  Addr<Type> what;
-public:
-  WRefType(Addr<Type> what) : Type(WREF) {
-    this->what = what;
-  }
+  TypeOrTVar() { isType_ = true; }
+  TypeOrTVar(TVar tvar) { isType_ = false; data.tvar = tvar; }
+  TypeOrTVar(Type type) { isType_ = true; data.type = type; }
+  bool isType() { return isType_; }
+  bool isTVar() { return !isType_; }
+  Type getType() { return data.type; }
+  TVar getTVar() { return data.tvar; }
 };
 
 /// @brief An AST element that has a location in the source text.
@@ -186,10 +186,11 @@ public:
 /// @brief An expression or statement (currently there is no distinction).
 class Exp : public LocatedAST {
 protected:
-  Addr<Type> type;
-  Exp(ID id, Location loc) : LocatedAST(id, loc) { type = Addr<Type>::none(); }
+  TVar type = TVar::none();
+  Exp(ID id, Location loc) : LocatedAST(id, loc) {}
 public:
-  Addr<Type> getType() const { return type; };
+  TVar getTVar() const { return type; };
+  void setTVar(TVar type) { this->type = type; }
 };
 
 /// @brief A linked-list of expressions.
@@ -559,18 +560,6 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::MODULE:             return "MODULE";
   case AST::ID::NAMESPACE:          return "NAMESPACE";
 
-  case AST::ID::BOOL:               return "BOOL";
-  case AST::ID::DECIMAL:            return "DECIMAL";
-  case AST::ID::f32:                return "f32";
-  case AST::ID::f64:                return "f64";
-  case AST::ID::i8:                 return "i8";
-  case AST::ID::i32:                return "i32";
-  case AST::ID::NUMERIC:            return "NUMERIC";
-  case AST::ID::REF:                return "REF";
-  case AST::ID::TYPEVAR:            return "TYPEVAR";
-  case AST::ID::UNIT:               return "UNIT";
-  case AST::ID::WREF:               return "WREF";
-  
   case AST::ID::ARRAY_TEXP:         return "ARRAY_TEXP";
   case AST::ID::BOOL_TEXP:          return "BOOL_TEXP";
   case AST::ID::f32_TEXP:           return "f32_TEXP";
@@ -621,17 +610,6 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "FUNC")                return AST::ID::FUNC;
   else if (str == "MODULE")              return AST::ID::MODULE;
   else if (str == "NAMESPACE")           return AST::ID::NAMESPACE;
-  else if (str == "BOOL")                return AST::ID::BOOL;
-  else if (str == "DECIMAL")             return AST::ID::DECIMAL;
-  else if (str == "f32")                 return AST::ID::f32;
-  else if (str == "f64")                 return AST::ID::f64;
-  else if (str == "i8")                  return AST::ID::i8;
-  else if (str == "i32")                 return AST::ID::i32;
-  else if (str == "NUMERIC")             return AST::ID::NUMERIC;
-  else if (str == "REF")                 return AST::ID::REF;
-  else if (str == "TYPEVAR")             return AST::ID::TYPEVAR;
-  else if (str == "UNIT")                return AST::ID::UNIT;
-  else if (str == "WREF")                return AST::ID::WREF;
   
   else if (str == "ARRAY_TEXP")          return AST::ID::ARRAY_TEXP;
   else if (str == "BOOL_TEXP")           return AST::ID::BOOL_TEXP;

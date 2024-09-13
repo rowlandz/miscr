@@ -8,6 +8,9 @@
 /** Manages information about program variables. */
 template <typename V>
 class ScopeStack {
+
+  std::vector<std::map<std::string, V>> scopes;
+  
 public:
 
   ScopeStack() {
@@ -41,9 +44,6 @@ public:
   void pop() {
     scopes.pop_back();
   }
-
-private:
-  std::vector<std::map<std::string, V>> scopes;
 };
 
 #endif
