@@ -19,14 +19,15 @@ public:
 
   Typer(ASTContext* m) : cataloger(m, &ont), unifier(m, &ont) {}
 
+  const TypeContext* getTypeContext() const { return unifier.getTypeContext(); }
+
   void typeExp(Addr<Exp> _exp) {
     unifier.unifyExp(_exp);
   }
 
   void typeDecl(Addr<Decl> _decl) {
-    // cataloger.catalog(std::string("global"), _n);
-    // unifier.tyDecl(_n);
-    assert(false && "unimplemented");
+    cataloger.catalog(std::string("global"), _decl);
+    unifier.unifyDecl(_decl);
   }
 
   void typeDeclList(unsigned int _declList) {

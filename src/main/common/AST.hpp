@@ -8,6 +8,15 @@
 
 class IntLit;
 
+/// TODO: can we include the pointer to the ontology in this struct? 
+class FQNameKey {
+  unsigned int value;
+public:
+  FQNameKey() { value = -1; }
+  FQNameKey(unsigned int value) { this->value = value; }
+  unsigned int getValue() const { return value; }
+};
+
 /// @brief Base class for all AST elements.
 class AST {
 public:
@@ -25,7 +34,7 @@ public:
     UNIT_TEXP, WREF_TEXP, 
 
     // other
-    DECLLIST_CONS, DECLLIST_NIL, EXPLIST_CONS, EXPLIST_NIL, IDENT,
+    DECLLIST_CONS, DECLLIST_NIL, EXPLIST_CONS, EXPLIST_NIL, FQIDENT, IDENT,
     PARAMLIST_CONS, PARAMLIST_NIL, QIDENT,
   };
 
@@ -38,8 +47,16 @@ protected:
 public:
   ID getID() const { return id; }
 
-  /// @brief Returns true if this AST can be downcast to `LocatedAST`. 
-  bool isLocated() const { return true; }
+  bool isExp() {
+    switch (id) {
+    case ADD: case ARRAY_INIT: case ARRAY_LIST: case ASCRIP: case BLOCK:
+    case CALL: case DEC_LIT: case DIV: case ENAME: case EQ: case FALSE: case IF:
+    case INT_LIT: case LET: case MUL: case NE: case REF_EXP: case RETURN:
+    case STORE: case STRING_LIT: case SUB: case TRUE: case WREF_EXP:
+      return true;
+    default: return false;
+    }
+  }
 
 };
 
@@ -85,20 +102,23 @@ public:
 
 class TypeOrTVar {
   bool isType_;
-  union { TVar tvar; Type type; } data = { .tvar = TVar::none() };
+  union { TVar tvar; Type type; } data;
 public:
-  TypeOrTVar() { isType_ = true; }
-  TypeOrTVar(TVar tvar) { isType_ = false; data.tvar = tvar; }
-  TypeOrTVar(Type type) { isType_ = true; data.type = type; }
+  TypeOrTVar() : data({.type = Type::notype()}) { isType_ = true; }
+  TypeOrTVar(TVar tvar) : data({.tvar = tvar}) { isType_ = false; }
+  TypeOrTVar(Type type) : data({.type = type}) { isType_ = true; }
   bool isType() { return isType_; }
   bool isTVar() { return !isType_; }
   Type getType() { return data.type; }
   TVar getTVar() { return data.tvar; }
+  bool exists() {
+    return (isType_ && !data.type.isNoType())
+        || (!isType_ && data.tvar.exists());
+  }
 };
 
 /// @brief An AST element that has a location in the source text.
 class LocatedAST : public AST {
-  unsigned long unused0 : 48;
   Location location;
 protected:
   LocatedAST(ID id, Location location) : AST(id) {
@@ -111,7 +131,8 @@ public:
   Location getLocation() const { return location; }
 };
 
-/// @brief A qualified or unqualified identifier (QIDENT or IDENT).
+/// @brief A qualified, unqualified, or fully qualified identifier
+/// (QIDENT, IDENT, FQIDENT).
 class Name : public LocatedAST {
 protected:
   Name(ID id, Location loc) : LocatedAST(id, loc) {}
@@ -121,7 +142,7 @@ public:
 };
 
 /// @brief An unqualified name.
-class Ident : Name {
+class Ident : public Name {
   const char* ptr;
 public:
   Ident(Location loc, const char* ptr) : Name(IDENT, loc) {
@@ -131,7 +152,7 @@ public:
 };
 
 /// @brief A name with at least one qualifier (the head).
-class QIdent : Name {
+class QIdent : public Name {
   Addr<Ident> head;
   Addr<Name> tail;
 public:
@@ -140,6 +161,14 @@ public:
   }
   Addr<Ident> getHead() const { return head; }
   Addr<Name> getTail() const { return tail; }
+};
+
+/// @brief A fully qualified name.
+class FQIdent : public Name {
+  FQNameKey key;
+public:
+  FQIdent(Location loc, FQNameKey key) : Name(FQIDENT, loc), key(key) {}
+  FQNameKey getKey() { return key; }
 };
 
 /// @brief A type that appears in the source text.
@@ -469,6 +498,7 @@ protected:
   }
 public:
   Addr<Name> getName() const { return name; }
+  void setName(Addr<FQIdent> fqName) { name = fqName.upcast<Name>(); }
 };
 
 /// @brief A list of declarations.
@@ -579,6 +609,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::DECLLIST_NIL:       return "DECLLIST_NIL";
   case AST::ID::EXPLIST_CONS:       return "EXPLIST_CONS";
   case AST::ID::EXPLIST_NIL:        return "EXPLIST_NIL";
+  case AST::ID::FQIDENT:            return "FQIDENT";
   case AST::ID::IDENT:              return "IDENT";
   case AST::ID::PARAMLIST_CONS:     return "PARAMLIST_CONS";
   case AST::ID::PARAMLIST_NIL:      return "PARAMLIST_NIL";
@@ -630,6 +661,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "DECLLIST_NIL")        return AST::ID::DECLLIST_NIL;
   else if (str == "EXPLIST_CONS")        return AST::ID::EXPLIST_CONS;
   else if (str == "EXPLIST_NIL")         return AST::ID::EXPLIST_NIL;
+  else if (str == "FQIDENT")             return AST::ID::FQIDENT;
   else if (str == "IDENT")               return AST::ID::IDENT;
   else if (str == "PARAMLIST_CONS")      return AST::ID::PARAMLIST_CONS;
   else if (str == "PARAMLIST_NIL")       return AST::ID::PARAMLIST_NIL;
@@ -637,8 +669,6 @@ AST::ID stringToASTID(const std::string& str) {
 
   else { printf("Invalid AST::ID string: %s\n", str.c_str()); exit(1); }
 }
-
-#define CAST(newtype, value) reinterpret_cast<newtype*>(&value)
 
 /** Returns the sub-ASTs of `node`. This is only used for testing purposes. */
 std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {

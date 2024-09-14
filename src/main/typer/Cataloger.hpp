@@ -5,73 +5,75 @@
 #include "common/ASTContext.hpp"
 #include "common/Ontology.hpp"
 
-/**
- * First of three type checking phases.
- * Catalogs all decl names into an Ontology.
- */
+/// @brief First of the type checking phases. Fully qualifies all decl names
+/// and builds an `Ontology`.
 class Cataloger {
 public:
 
-  const ASTContext* m;
+  ASTContext* ctx;
   Ontology* ont;
   std::vector<std::string> errors;
 
-  Cataloger(const ASTContext* m, Ontology* ont) {
-    this->m = m;
+  Cataloger(ASTContext* ctx, Ontology* ont) {
+    this->ctx = ctx;
     this->ont = ont;
   }
 
-  /** Catalog a decl.
-   * `scope` is the scope that `_decl` appears in.
-   */
+  /// Catalogs a decl. `scope` is the scope that `_decl` appears in.
   void catalog(const std::string& scope, Addr<Decl> _decl) {
-    ASTMemoryBlock declBlock = m->get(_decl.UNSAFE_CAST<ASTMemoryBlock>());
-    AST* ast = reinterpret_cast<AST*>(&declBlock);
+    AST::ID id = ctx->get(_decl).getID();
 
-    if (ast->getID() == AST::ID::MODULE) {
-      ModuleDecl* mod = reinterpret_cast<ModuleDecl*>(&declBlock);
-      Ident declName = m->get(mod->getName().UNSAFE_CAST<Ident>());
-      std::string moduleName = scope + "::" + declName.asString();
-      auto existingEntry = ont->findModule(moduleName);
-      if (existingEntry == ont->moduleSpaceEnd()){
-        ont->recordModule(moduleName, _decl.UNSAFE_CAST<ModuleDecl>());
+    if (id == AST::ID::MODULE) {
+      Addr<ModuleDecl> _module = _decl.UNSAFE_CAST<ModuleDecl>();
+      ModuleDecl module = ctx->get(_module);
+      Ident relName = ctx->GET_UNSAFE<Ident>(module.getName());
+      std::string fqNameStr = scope + "::" + relName.asString();
+
+      if (ont->getModule(fqNameStr).isError()) {
+        FQNameKey key = ont->recordModule(fqNameStr, _module);
+        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
+        module.setName(fqName);
+        ctx->set(_module, module);
       } else {
-        moduleNameCollisionError(moduleName);
+        moduleNameCollisionError(fqNameStr);
       }
 
-      catalogDeclList(moduleName, mod->getDecls());
+      catalogDeclList(fqNameStr, module.getDecls());
     }
 
-    else if (ast->getID() == AST::ID::NAMESPACE) {
-      NamespaceDecl* ns = reinterpret_cast<NamespaceDecl*>(&declBlock);
-      Ident declName = m->get(ns->getName().UNSAFE_CAST<Ident>());
-      std::string namespaceName = scope + "::" + declName.asString();
-      catalogDeclList(namespaceName, ns->getDecls());
-    }
+    // else if (id == AST::ID::NAMESPACE) {
+    //   Addr<NamespaceDecl> _ns = _decl.UNSAFE_CAST<NamespaceDecl>();
+    //   NamespaceDecl ns = ctx->get(_ns);
+    //   Ident relName = ctx->GET_UNSAFE<Ident>(ns.getName());
+    //   std::string fqNameStr = scope + "::" + relName.asString();
+    //   catalogDeclList(fqNameStr, ns.getDecls());
+    // }
 
-    else if (ast->getID() == AST::ID::FUNC
-          || ast->getID() == AST::ID::EXTERN_FUNC) {
-      FunctionDecl* func = reinterpret_cast<FunctionDecl*>(&declBlock);
-      Ident declName = m->get(func->getName().UNSAFE_CAST<Ident>());
-      std::string uqname = declName.asString();
-      std::string fqname = scope + "::" + uqname;
+    else if (id == AST::ID::FUNC || id == AST::ID::EXTERN_FUNC) {
+      Addr<FunctionDecl> _funcDecl = _decl.UNSAFE_CAST<FunctionDecl>();
+      FunctionDecl funcDecl = ctx->get(_funcDecl);
+      Ident relName = ctx->GET_UNSAFE<Ident>(funcDecl.getName());
+      std::string relNameStr = relName.asString();
+      std::string fqNameStr = scope + "::" + relNameStr;
 
-      if (uqname == "main") {
+      if (ont->getFunctionDecl(fqNameStr).exists()) {
+        functionNameCollisionError(fqNameStr);
+        return;
+      }
+
+      if (relNameStr == "main") {
         if (!ont->entryPoint.empty()) {
           multipleEntryPointsError();
-        } else {
-          ont->recordMainProc(fqname, _decl.UNSAFE_CAST<FunctionDecl>());
+          return;
         }
+        ont->recordMainProc(fqNameStr, _funcDecl);
       } else {
-        auto existingEntry = ont->findFunction(fqname);
-        if (existingEntry == ont->functionSpaceEnd()) {
-          if (func->getID() == AST::ID::EXTERN_FUNC)
-            ont->recordExtern(fqname, uqname, _decl.UNSAFE_CAST<FunctionDecl>());
-          else
-            ont->recordFunction(fqname, _decl.UNSAFE_CAST<FunctionDecl>());
-        } else {
-          functionNameCollisionError(fqname);
-        }
+        FQNameKey key = id == AST::ID::EXTERN_FUNC ?
+                        ont->recordExtern(fqNameStr, relNameStr, _funcDecl) :
+                        ont->recordFunction(fqNameStr, _funcDecl);
+        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
+        funcDecl.setName(fqName);
+        ctx->set(_funcDecl, funcDecl);
       }
     }
   }
@@ -79,13 +81,12 @@ public:
   /// Catalogs the decls in a decl list. `scope` is the scope that the decls
   /// appear in.
   void catalogDeclList(const std::string& scope, Addr<DeclList> _declList) {
-    DeclList declList = m->get(_declList);
+    DeclList declList = ctx->get(_declList);
     while (declList.getID() == AST::ID::DECLLIST_CONS) {
       catalog(scope, declList.getHead());
-      declList = m->get(declList.getTail());
+      declList = ctx->get(declList.getTail());
     }
   }
-  
   
   void moduleNameCollisionError(const std::string& repeatedMod) {
     std::string errMsg = "Module is already defined: " + repeatedMod;

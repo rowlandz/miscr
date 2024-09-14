@@ -52,7 +52,8 @@ check_input:
         std::cout << err.render(usrInput.c_str(), lexer.getLocationTable());
       }
       if (typer.unifier.errors.size() == 0) {
-        std::cout << "No errors!" << std::endl;
+        std::vector<bool> indents;
+        print_parse_tree(m, parsed, indents, typer.getTypeContext(), &typer.ont);
       }
 
       goto next_input;

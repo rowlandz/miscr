@@ -17,6 +17,9 @@ public:
   /// Returns true if this address is invalid.
   bool isError() { return addr >= 0xfffffffe; }
 
+  /// Opposite of `isError`. 
+  bool exists() { return addr < 0xfffffffe; }
+
   /// @brief Epsilon is the special error address 0xfffffffe.
   bool isEpsilon() { return addr == 0xfffffffe; }
 
@@ -85,7 +88,7 @@ public:
 
   template<class T>
   void set(Addr<T> addr, T node) {
-    nodes[addr] = node;
+    nodes[addr.addr] = *reinterpret_cast<ASTMemoryBlock*>(&node);
   }
 
   template<class T, class U>

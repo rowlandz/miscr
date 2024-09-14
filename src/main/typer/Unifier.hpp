@@ -4,6 +4,7 @@
 #include <cassert>
 #include "llvm/ADT/DenseMap.h"
 #include "common/ASTContext.hpp"
+#include "common/TypeContext.hpp"
 #include "common/Ontology.hpp"
 #include "common/ScopeStack.hpp"
 #include "common/LocatedError.hpp"
@@ -30,64 +31,32 @@ public:
 
 private:
   
-  struct MyDenseMapInfo {
-    static inline TVar getEmptyKey() { return TVar(-1); }
-    static inline TVar getTombstoneKey() { return TVar(-2); }
-    static unsigned getHashValue(const TVar &Val) { return Val.get(); }
-    static bool isEqual(const TVar &LHS, const TVar &RHS) {
-      return LHS.get() == RHS.get();
-    }
-  };
-
-  /// Type variable bindings.
-  llvm::DenseMap<TVar, TypeOrTVar, struct MyDenseMapInfo> bindings;
-
-  int firstUnusedTypeVar = 1;
-
-  TVar fresh(Type ty) {
-    bindings[TVar(firstUnusedTypeVar)] = TypeOrTVar(ty);
-    return firstUnusedTypeVar++;
-  }
+  TypeContext tc;
 
   TVar freshFromTypeExp(Addr<TypeExp> _tyexp) {
     AST::ID id = ctx->get(_tyexp).getID();
     switch (ctx->get(_tyexp).getID()) {
     case AST::ID::ARRAY_TEXP:
-      return fresh(Type::array(freshFromTypeExp(
+      return tc.fresh(Type::array(freshFromTypeExp(
         ctx->GET_UNSAFE<ArrayTypeExp>(_tyexp).getInnerType()
       )));
     case AST::ID::REF_TEXP:
-      return fresh(Type::ref(freshFromTypeExp(
+      return tc.fresh(Type::ref(freshFromTypeExp(
         ctx->GET_UNSAFE<RefTypeExp>(_tyexp).getPointeeType()
       )));
     case AST::ID::WREF_TEXP:
-      return fresh(Type::wref(freshFromTypeExp(
+      return tc.fresh(Type::wref(freshFromTypeExp(
         ctx->GET_UNSAFE<WRefTypeExp>(_tyexp).getPointeeType()
       )));
-    case AST::ID::BOOL_TEXP: return fresh(Type::bool_());
-    case AST::ID::f32_TEXP: return fresh(Type::f32());
-    case AST::ID::f64_TEXP: return fresh(Type::f64());
-    case AST::ID::i8_TEXP: return fresh(Type::i8());
-    case AST::ID::i32_TEXP: return fresh(Type::i32());
-    case AST::ID::UNIT_TEXP: return fresh(Type::unit());
+    case AST::ID::BOOL_TEXP: return tc.fresh(Type::bool_());
+    case AST::ID::f32_TEXP: return tc.fresh(Type::f32());
+    case AST::ID::f64_TEXP: return tc.fresh(Type::f64());
+    case AST::ID::i8_TEXP: return tc.fresh(Type::i8());
+    case AST::ID::i32_TEXP: return tc.fresh(Type::i32());
+    case AST::ID::UNIT_TEXP: return tc.fresh(Type::unit());
     default:
       assert(false && "Unreachable code");
     }
-  }
-
-  /// @brief Follows `bindings` until a type var is found that is either bound
-  /// to a type or bound do nothing. In the latter case, `Type::notype()` is
-  /// returned. Side-effect free. 
-  std::pair<TVar, Type> resolve(TVar v) {
-    auto found = bindings.find(v);
-    while (found != bindings.end()) {
-      if (found->getSecond().isType()) {
-        return std::pair<TVar, Type>(v, found->getSecond().getType());
-      }
-      v = found->getSecond().getTVar();
-      found = bindings.find(v);
-    }
-    return std::pair<TVar, Type>(v, Type::notype());
   }
 
 public:
@@ -98,36 +67,38 @@ public:
     relativePathQualifiers.push_back("global");
   }
 
+  const TypeContext* getTypeContext() const { return &tc; }
+
   /// @brief Enforces an equality relation in `bindings` between the two type
   /// variables. Returns `true` if this is possible and `false` otherwise.
   bool unify(TVar v1, TVar v2) {
-    std::pair<TVar, Type> res1 = resolve(v1);
-    std::pair<TVar, Type> res2 = resolve(v2);
+    std::pair<TVar, Type> res1 = tc.resolve(v1);
+    std::pair<TVar, Type> res2 = tc.resolve(v2);
     TVar w1 = res1.first;
     TVar w2 = res2.first;
     Type t1 = res1.second;
     Type t2 = res2.second;
 
-    if (t1.isNoType()) { bindings[w1] = TypeOrTVar(w2); return true; }
-    if (t2.isNoType()) { bindings[w2] = TypeOrTVar(w1); return true; }
+    if (t1.isNoType()) { tc.bind(w1, w2); return true; }
+    if (t2.isNoType()) { tc.bind(w2, w1); return true; }
 
     if (t1.getID() == t2.getID()) {
       Type::ID ty = t1.getID();
       if (ty == Type::ID::ARRAY) {
         if (unify(t1.getInner(), t2.getInner())) {
-          bindings[w1] = TypeOrTVar(w2);
+          tc.bind(w1, w2);
           return true;
         } else return false;
       } else if (ty == Type::ID::REF || ty == Type::ID::WREF) {
         if (unify(t1.getInner(), t2.getInner())) {
-          bindings[w1] = TypeOrTVar(w2);
+          tc.bind(w1, w2);
           return true;
         } else return false;
       } else if (ty == Type::ID::BOOL || ty == Type::ID::DECIMAL
       || ty == Type::ID::f32 || ty == Type::ID::f64 || ty == Type::ID::i8
       || ty == Type::ID::i32 || ty == Type::ID::NUMERIC
       || ty == Type::ID::UNIT) {
-        bindings[w1] = TypeOrTVar(w2);
+        tc.bind(w1, w2);
         return true;
       }
       else return false;
@@ -136,7 +107,7 @@ public:
       switch (t2.getID()) {
       case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
       case Type::ID::i8: case Type::ID::i32:
-        bindings[w1] = TypeOrTVar(w2);
+        tc.bind(w1, w2);
         return true;
       default:
         return false;
@@ -146,7 +117,7 @@ public:
       switch (t1.getID()) {
       case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
       case Type::ID::i8: case Type::ID::i32:
-        bindings[w2] = TypeOrTVar(w1);
+        tc.bind(w2, w1);
         return true;
       default:
         return false;
@@ -155,7 +126,7 @@ public:
     else if (t1.getID() == Type::ID::DECIMAL) {
       switch (t2.getID()) {
       case Type::ID::f32: case Type::ID::f64:
-        bindings[w1] = TypeOrTVar(w2);
+        tc.bind(w1, w2);
         return true;
       default:
         return false;
@@ -164,7 +135,7 @@ public:
     else if (t2.getID() == Type::ID::DECIMAL) {
       switch (t1.getID()) {
       case Type::ID::f32: case Type::ID::f64:
-        bindings[w2] = TypeOrTVar(w1);
+        tc.bind(w2, w1);
         return true;
       default:
         return false;
@@ -174,40 +145,15 @@ public:
     return false;
   }
 
-  std::string TVarToString(TVar v) {
-    auto res = resolve(v);
-    if (res.second.isNoType()) {
-      return std::string("?") + std::to_string(v.get());
-    } else {
-      switch (res.second.getID()) {
-      case Type::ID::ARRAY:
-        return std::string("array<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::REF:
-        return std::string("ref<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::WREF:
-        return std::string("wref<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::BOOL: return std::string("bool");
-      case Type::ID::DECIMAL: return std::string("decimal");
-      case Type::ID::f32: return std::string("f32");
-      case Type::ID::f64: return std::string("f64");
-      case Type::ID::i8: return std::string("i8");
-      case Type::ID::i32: return std::string("i32");
-      case Type::ID::NUMERIC: return std::string("numeric");
-      case Type::ID::UNIT: return std::string("unit");
-      default: return std::string("???");
-      }
-    }
-  }
-
   /// @brief
   /// @return The inferred type of `_exp` (for convenience). 
   TVar expectTyToBe(Addr<Exp> _exp, TVar expectedTy) {
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, expectedTy)) return inferredTy;
     std::string errMsg("Inferred type is ");
-    errMsg.append(TVarToString(inferredTy));
+    errMsg.append(tc.TVarToString(inferredTy));
     errMsg.append(" but expected ");
-    errMsg.append(TVarToString(expectedTy));
+    errMsg.append(tc.TVarToString(expectedTy));
     errMsg.append(".");
     errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
     return inferredTy;
@@ -222,7 +168,7 @@ public:
     if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
     || id == AST::ID::DIV) {
       BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
-      TVar lhsTy = expectTyToBe(e.getLHS(), fresh(Type::numeric()));
+      TVar lhsTy = expectTyToBe(e.getLHS(), tc.fresh(Type::numeric()));
       expectTyToBe(e.getRHS(), lhsTy);
       e.setTVar(lhsTy);
       ctx->SET_UNSAFE(_e, e);
@@ -239,7 +185,7 @@ public:
     else if (id == AST::ID::BLOCK) {
       BlockExp e = ctx->GET_UNSAFE<BlockExp>(_e);
       ExpList stmtList = ctx->get(e.getStatements());
-      TVar lastStmtTy = fresh(Type::unit());  // TODO: no need to freshen unit
+      TVar lastStmtTy = tc.fresh(Type::unit());  // TODO: no need to freshen unit
       localVarTypes.push();
       while (stmtList.nonEmpty()) {
         lastStmtTy = unifyExp(stmtList.getHead());
@@ -250,42 +196,42 @@ public:
       ctx->SET_UNSAFE(_e, e);
     }
 
-    else if (id == AST::ID::CALL) {
-      CallExp e = ctx->GET_UNSAFE<CallExp>(_e);
-      std::string calleeRelName = relNameToString(e.getFunction());
-      bool yayFoundIt = false;
-      for (auto qual = relativePathQualifiers.end()-1; relativePathQualifiers.begin() <= qual; qual--) {
-        auto maybeFuncDecl = ont->findFunction(*qual + calleeRelName);
-        if (maybeFuncDecl == ont->functionSpaceEnd()) continue;
-        yayFoundIt = true;
-        FunctionDecl funcDecl = ctx->get(maybeFuncDecl->second);
+    // else if (id == AST::ID::CALL) {
+    //   CallExp e = ctx->GET_UNSAFE<CallExp>(_e);
+    //   std::string calleeName = nameToString(e.getFunction());
+    //   bool yayFoundIt = false;
+    //   for (auto qual = relativePathQualifiers.end()-1; relativePathQualifiers.begin() <= qual; qual--) {
+    //     Addr<FunctionDecl> _funcDecl = ont->findFunction(*qual + "::" + calleeName);
+    //     if (_funcDecl.isError()) continue;
+    //     yayFoundIt = true;
+    //     FunctionDecl funcDecl = ctx->get(_funcDecl);
 
-        // Unify each of the arguments with parameter.
-        ExpList expList = ctx->get(e.getArguments());
-        ParamList paramList = ctx->get(funcDecl.getParameters());
-        while (expList.nonEmpty() && paramList.nonEmpty()) {
-          expectTyToBe(expList.getHead(), freshFromTypeExp(paramList.getHeadParamType()));
-          expList = ctx->get(expList.getTail());
-          paramList = ctx->get(paramList.getTail());
-        }
-        if (expList.nonEmpty() || paramList.nonEmpty()) {
-          errors.push_back(LocatedError(expList.getLocation(), "Arity mismatch for function " + *qual + calleeRelName));
-        }
+    //     // Unify each of the arguments with parameter.
+    //     ExpList expList = ctx->get(e.getArguments());
+    //     ParamList paramList = ctx->get(funcDecl.getParameters());
+    //     while (expList.nonEmpty() && paramList.nonEmpty()) {
+    //       expectTyToBe(expList.getHead(), freshFromTypeExp(paramList.getHeadParamType()));
+    //       expList = ctx->get(expList.getTail());
+    //       paramList = ctx->get(paramList.getTail());
+    //     }
+    //     if (expList.nonEmpty() || paramList.nonEmpty()) {
+    //       errors.push_back(LocatedError(expList.getLocation(), "Arity mismatch for function " + *qual + calleeName));
+    //     }
 
-        // Unify return type
-        e.setTVar(freshFromTypeExp(funcDecl.getReturnType()));
+    //     // Unify return type
+    //     e.setTVar(freshFromTypeExp(funcDecl.getReturnType()));
 
-        // Replace function name with fully qualified name
-        // TODO: this
-      }
-      if (!yayFoundIt) {
-        errors.push_back(LocatedError(e.getLocation(), "Cannot find function " + calleeRelName));
-      }
-    }
+    //     // Replace function name with fully qualified name
+        
+    //   }
+    //   if (!yayFoundIt) {
+    //     errors.push_back(LocatedError(e.getLocation(), "Cannot find function " + calleeName));
+    //   }
+    // }
 
     else if (id == AST::ID::DEC_LIT) {
       DecimalLit e = ctx->GET_UNSAFE<DecimalLit>(_e);
-      e.setTVar(fresh(Type::decimal()));
+      e.setTVar(tc.fresh(Type::decimal()));
       ctx->SET_UNSAFE(_e, e);
     }
 
@@ -310,19 +256,19 @@ public:
       BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
       TVar lhsTy = unifyExp(e.getLHS());
       expectTyToBe(e.getRHS(), lhsTy);
-      e.setTVar(fresh(Type::bool_()));
+      e.setTVar(tc.fresh(Type::bool_()));
       ctx->SET_UNSAFE(_e, e);
     }
 
     else if (id == AST::ID::FALSE || id == AST::ID::TRUE) {
       BoolLit e = ctx->GET_UNSAFE<BoolLit>(_e);
-      e.setTVar(fresh(Type::bool_()));
+      e.setTVar(tc.fresh(Type::bool_()));
       ctx->SET_UNSAFE(_e, e);
     }
 
     else if (id == AST::ID::IF) {
       IfExp e = ctx->GET_UNSAFE<IfExp>(_e);
-      expectTyToBe(e.getCondExp(), fresh(Type::bool_()));
+      expectTyToBe(e.getCondExp(), tc.fresh(Type::bool_()));
       TVar thenTy = unifyExp(e.getThenExp());
       expectTyToBe(e.getElseExp(), thenTy);
       e.setTVar(thenTy);
@@ -331,7 +277,7 @@ public:
 
     else if (id == AST::ID::INT_LIT) {
       IntLit e = ctx->GET_UNSAFE<IntLit>(_e);
-      e.setTVar(fresh(Type::numeric()));
+      e.setTVar(tc.fresh(Type::numeric()));
       ctx->SET_UNSAFE(_e, e);
     }
 
@@ -340,13 +286,13 @@ public:
       TVar rhsTy = unifyExp(e.getDefinition());
       std::string boundIdent = ctx->get(e.getBoundIdent()).asString();
       localVarTypes.add(boundIdent, rhsTy);
-      return fresh(Type::unit());
+      return tc.fresh(Type::unit());
     }
 
     else if (id == AST::ID::REF_EXP) {
       RefExp e = ctx->GET_UNSAFE<RefExp>(_e);
       TVar initializerTy = unifyExp(e.getInitializer());
-      e.setTVar(fresh(Type::ref(initializerTy)));
+      e.setTVar(tc.fresh(Type::ref(initializerTy)));
       ctx->SET_UNSAFE(_e, e);
     }
 
@@ -357,23 +303,79 @@ public:
     return ctx->get(_e).getTVar(); 
   }
 
-  /// Returns the (un)qualified name as a string prefixed with `::`.
-  /// e.g., `::MyMod::myfunc`
-  std::string relNameToString(Addr<Name> _name) {
+  /// Typechecks a func, extern func.
+  void unifyFunc(Addr<FunctionDecl> _funDecl) {
+    FunctionDecl funDecl = ctx->get(_funDecl);
+    localVarTypes.push();
+    addParamsToLocalVarTypes(funDecl.getParameters());
+    TVar retTy = freshFromTypeExp(funDecl.getReturnType());
+    expectTyToBe(funDecl.getBody(), retTy);
+    localVarTypes.pop();
+  }
+
+  void unifyModule(Addr<ModuleDecl> _module) {
+    ModuleDecl module = ctx->get(_module);
+    FQIdent fqName = ctx->GET_UNSAFE<FQIdent>(module.getName());
+    std::string fqNameStr = ont->getName(fqName.getKey());
+    relativePathQualifiers.push_back(fqNameStr);
+    unifyDeclList(module.getDecls());
+    relativePathQualifiers.pop_back();
+  }
+
+  void unifyDecl(Addr<Decl> _decl) {
+    AST::ID id = ctx->get(_decl).getID();
+    if (id == AST::ID::FUNC || id == AST::ID::EXTERN_FUNC)
+      unifyFunc(_decl.UNSAFE_CAST<FunctionDecl>());
+    else if (id == AST::ID::MODULE)
+      unifyModule(_decl.UNSAFE_CAST<ModuleDecl>());
+    else
+      assert(false && "unimplemented");
+  }
+
+  void unifyDeclList(Addr<DeclList> _declList) {
+    DeclList declList = ctx->get(_declList);
+    while (declList.nonEmpty()) {
+      unifyDecl(declList.getHead());
+      declList = ctx->get(declList.getTail());
+    }
+  }
+
+  void addParamsToLocalVarTypes(Addr<ParamList> _paramList) {
+    ParamList paramList = ctx->get(_paramList);
+    while (paramList.nonEmpty()) {
+      Ident paramName = ctx->get(paramList.getHeadParamName());
+      TVar paramTy = freshFromTypeExp(paramList.getHeadParamType());
+      localVarTypes.add(paramName.asString(), paramTy);
+      paramList = ctx->get(paramList.getTail());
+    }
+  }
+
+  /// Returns the name as a string (e.g., `MyMod1::MyMod2::myfunc`).
+  std::string nameToString(Addr<Name> _name) {
     std::string ret;
     Name name = ctx->get(_name);
     while (name.isQualified()) {
       QIdent qident = ctx->GET_UNSAFE<QIdent>(_name);
       Ident part = ctx->get(qident.getHead());
-      ret.append("::");
       ret.append(part.asString());
+      ret.append("::");
       name = ctx->get(qident.getTail());
     }
     Ident part = ctx->GET_UNSAFE<Ident>(_name);
-    ret.append("::");
     ret.append(part.asString());
     return ret;
   }
+
+  // std::pair<std::string, Addr<FunctionDecl>>
+  // lookupFunction(std::string relName) {
+  //   for (auto iter = relativePathQualifiers.crbegin();
+  //        iter != relativePathQualifiers.crend(); ++iter) {
+  //     std::string fqName = *iter + "::" + relName;
+  //     Addr<FunctionDecl> a = ont->findFunction(*iter + "::" + relName);
+  //     if (a.exists()) return a;
+  //   }
+  //   return Addr<FunctionDecl>::none();
+  // }
 };
 
 #endif

@@ -20,41 +20,41 @@
  */
 class Ontology {
 
-  std::map<std::string, const char*> permaPointers;
+  std::map<std::string, FQNameKey> functionKeys;
 
-  /** Maps the fully-qualified name of a function and procedure to its
-   * declaration or definition (in an ASTContext). */
-  std::map<const char*, Addr<FunctionDecl>> functionSpace;
+  std::map<std::string, FQNameKey> moduleKeys;
 
-  /** Maps the fully-qualified name of a module to its
-   * definition (in a NodeManager). */
-  std::map<const char*, Addr<ModuleDecl>> moduleSpace;
+  /// @brief Maps `FQNameKey` to function names (as they appear in LLVM IR).
+  std::vector<std::string> names;
+
+  /// @brief Maps `FQNameKey` to the decls.
+  std::vector<Addr<Decl>> decls;
 
 public:
 
   /** The fully-qualified name of the "main" entry point procedure.
    * Empty if no entry point has been found. */
   std::string entryPoint;
-  
-  ~Ontology() {
-    for (auto pair : permaPointers) {
-      free((void*)pair.second);
-    }
-  }
 
   /// Records an entry for a func named `name` with definition at `declAddr`.
   /// Note: this does *not* handle externs; use `recordExtern` instead.
-  void recordFunction(std::string name, Addr<FunctionDecl> declAddr) {
-    const char* ptr = recordNewPermaPointer(name, name);
-    functionSpace[ptr] = declAddr;
+  FQNameKey recordFunction(std::string name, Addr<FunctionDecl> declAddr) {
+    FQNameKey ret(names.size());
+    functionKeys[name] = ret;
+    names.push_back(name);
+    decls.push_back(declAddr.upcast<Decl>());
+    return ret;
   }
 
   /// Records an entry for an extern func named `name` with declaration at
   /// `declAddr`.
-  void recordExtern(std::string fqname, std::string shortName,
-      Addr<FunctionDecl> declAddr) {
-    const char* ptr = recordNewPermaPointer(fqname, shortName);
-    functionSpace[ptr] = declAddr;
+  FQNameKey recordExtern(std::string fqname, std::string shortName,
+        Addr<FunctionDecl> declAddr) {
+    FQNameKey ret(names.size());
+    functionKeys[fqname] = ret;
+    names.push_back(shortName);
+    decls.push_back(declAddr.upcast<Decl>());
+    return ret;
   }
 
   /// Records an entry for the main function/procedure.
@@ -64,51 +64,33 @@ public:
   }
 
   /// Records an entry for a module named `name` with definition at `declAddr`.
-  void recordModule(std::string name, Addr<ModuleDecl> declAddr) {
-    const char* ptr = recordNewPermaPointer(name, name);
-    moduleSpace[ptr] = declAddr;
+  FQNameKey recordModule(std::string name, Addr<ModuleDecl> _decl) {
+    FQNameKey ret(names.size());
+    moduleKeys[name] = ret;
+    names.push_back(name);
+    decls.push_back(_decl.upcast<Decl>());
+    return ret;
   }
 
-  /// Finds a func or extern func in the function space.
-  std::map<const char*, Addr<FunctionDecl>>::const_iterator
-  findFunction(const std::string& name) const {
-    auto p = permaPointers.find(name);
-    if (p == permaPointers.end()) return functionSpace.end();
-    else return functionSpace.find(p->second);
+  /// @brief Finds a function or extern function in the function space.
+  /// Returns `Addr::none()` if not found.
+  Addr<FunctionDecl> getFunctionDecl(std::string name) const {
+    auto result = functionKeys.find(name);
+    if (result == functionKeys.end()) return Addr<FunctionDecl>::none();
+    return decls[result->second.getValue()].UNSAFE_CAST<FunctionDecl>();
   }
 
-  std::map<const char*, Addr<ModuleDecl>>::const_iterator
-  findModule(const std::string& name) const {
-    auto p = permaPointers.find(name);
-    if (p == permaPointers.end()) return moduleSpace.end();
-    else return moduleSpace.find(p->second);
+  /// @brief Finds a module in the module space. Returns `Addr::none` if
+  /// not found.
+  Addr<ModuleDecl> getModule(std::string name) const {
+    auto result = moduleKeys.find(name);
+    if (result == moduleKeys.end()) return Addr<ModuleDecl>::none();
+    return decls[result->second.getValue()].UNSAFE_CAST<ModuleDecl>();
   }
 
-  std::map<const char*, Addr<FunctionDecl>>::const_iterator
-  functionSpaceEnd() const {
-    return functionSpace.end();
-  }
-
-  std::map<const char*, Addr<ModuleDecl>>::const_iterator
-  moduleSpaceEnd() const {
-    return moduleSpace.end();
-  }
-
-  /// Returns a pointer to a C-string equivalent to `name` that
-  /// won't change as long as this Ontology object still exists.
-  const char* getPermaPointer(std::string& name) const {
-    auto ptr = permaPointers.at(name);
-    return ptr;
-  }
-
-private:
-
-  const char* recordNewPermaPointer(std::string fqname, std::string toStore) {
-    char* newPtr = (char*)malloc(toStore.size() + 1);
-    strcpy(newPtr, toStore.c_str());
-    newPtr[toStore.size()] = '\0';
-    permaPointers[fqname] = newPtr;
-    return newPtr;
+  /// @brief Lookup the name associated with this key. 
+  std::string getName(FQNameKey key) const {
+    return names[key.getValue()];
   }
 };
 
