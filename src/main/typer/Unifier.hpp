@@ -15,8 +15,8 @@ class Unifier {
   /// Maps decls to their definitions or declarations.
   const Ontology* ont;
 
-  /// Maps local variable names to type nodes.
-  ScopeStack<unsigned int> localVarTypes;
+  /// Maps local variable names to type vars.
+  ScopeStack<TVar> localVarTypes;
 
   /// Holds all scopes that could be used to fully-qualify a relative path.
   /// First scope is always "global", then each successive scope is an extension
@@ -142,20 +142,20 @@ public:
         return false;
       }
     }
-    else if (t1.getID() == Type::ID::DECIMAL) {
-      switch (t2.getID()) {
-      case Type::ID::f32: case Type::ID::f64:
-        bindings[w1] = TypeOrTVar(w2);
-        return true;
-      default:
-        return false;
-      }
-    }
     else if (t2.getID() == Type::ID::NUMERIC) {
       switch (t1.getID()) {
       case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
       case Type::ID::i8: case Type::ID::i32:
         bindings[w2] = TypeOrTVar(w1);
+        return true;
+      default:
+        return false;
+      }
+    }
+    else if (t1.getID() == Type::ID::DECIMAL) {
+      switch (t2.getID()) {
+      case Type::ID::f32: case Type::ID::f64:
+        bindings[w1] = TypeOrTVar(w2);
         return true;
       default:
         return false;
@@ -213,22 +213,9 @@ public:
     return inferredTy;
   }
 
-  // int expectTyToBe(Addr<Exp> _exp, int _expectedTy) {
-  //   int _inferredTy = unifyExp(_exp);
-  //   if (!unify(_inferredTy, _expectedTy)) {
-  //     Type expectedTy = ctx->get(resolve(flowDownstream(_expectedTy)));
-  //     Type inferredTy = ctx->get(resolve(flowDownstream(_inferredTy)));
-  //     std::string errMsg("I expected the type of this expression to be ");
-  //     errMsg.append(ASTIDToString(expectedTy.getID()));
-  //     errMsg.append(",\nbut I inferred the type to be ");
-  //     errMsg.append(ASTIDToString(inferredTy.getID()));
-  //     errMsg.append(".");
-  //     errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
-  //   }
-  //   return _inferredTy;
-  // }
-
-  /// @brief Unifies an expression. Returns the type of `_e`. 
+  /// @brief Unifies an expression or statement. Returns the type of `_e`. 
+  /// Expressions or statements that bind local identifiers will cause
+  /// `localVarTypes` to be updated.
   TVar unifyExp(Addr<Exp> _e) {
     AST::ID id = ctx->get(_e).getID();
 
@@ -249,13 +236,143 @@ public:
       ctx->SET_UNSAFE(_e, e);
     }
 
+    else if (id == AST::ID::BLOCK) {
+      BlockExp e = ctx->GET_UNSAFE<BlockExp>(_e);
+      ExpList stmtList = ctx->get(e.getStatements());
+      TVar lastStmtTy = fresh(Type::unit());  // TODO: no need to freshen unit
+      localVarTypes.push();
+      while (stmtList.nonEmpty()) {
+        lastStmtTy = unifyExp(stmtList.getHead());
+        stmtList = ctx->get(stmtList.getTail());
+      }
+      localVarTypes.pop();
+      e.setTVar(lastStmtTy);
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else if (id == AST::ID::CALL) {
+      CallExp e = ctx->GET_UNSAFE<CallExp>(_e);
+      std::string calleeRelName = relNameToString(e.getFunction());
+      bool yayFoundIt = false;
+      for (auto qual = relativePathQualifiers.end()-1; relativePathQualifiers.begin() <= qual; qual--) {
+        auto maybeFuncDecl = ont->findFunction(*qual + calleeRelName);
+        if (maybeFuncDecl == ont->functionSpaceEnd()) continue;
+        yayFoundIt = true;
+        FunctionDecl funcDecl = ctx->get(maybeFuncDecl->second);
+
+        // Unify each of the arguments with parameter.
+        ExpList expList = ctx->get(e.getArguments());
+        ParamList paramList = ctx->get(funcDecl.getParameters());
+        while (expList.nonEmpty() && paramList.nonEmpty()) {
+          expectTyToBe(expList.getHead(), freshFromTypeExp(paramList.getHeadParamType()));
+          expList = ctx->get(expList.getTail());
+          paramList = ctx->get(paramList.getTail());
+        }
+        if (expList.nonEmpty() || paramList.nonEmpty()) {
+          errors.push_back(LocatedError(expList.getLocation(), "Arity mismatch for function " + *qual + calleeRelName));
+        }
+
+        // Unify return type
+        e.setTVar(freshFromTypeExp(funcDecl.getReturnType()));
+
+        // Replace function name with fully qualified name
+        // TODO: this
+      }
+      if (!yayFoundIt) {
+        errors.push_back(LocatedError(e.getLocation(), "Cannot find function " + calleeRelName));
+      }
+    }
+
+    else if (id == AST::ID::DEC_LIT) {
+      DecimalLit e = ctx->GET_UNSAFE<DecimalLit>(_e);
+      e.setTVar(fresh(Type::decimal()));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    /* TODO: Make sure typevar is set even in error cases. */
+    else if (id == AST::ID::ENAME) {
+      NameExp e = ctx->GET_UNSAFE<NameExp>(_e);
+      Name name = ctx->get(e.getName());
+      if (name.isUnqualified()) {
+        std::string s = ctx->get(e.getName().UNSAFE_CAST<Ident>()).asString();
+        TVar ty = localVarTypes.getOrElse(s, TVar::none());
+        if (ty.exists()) e.setTVar(ty);
+        else {
+          errors.push_back(LocatedError(e.getLocation(), "Unbound identifier"));
+        }
+      } else {
+        errors.push_back(LocatedError(e.getLocation(), "Didn't expect qualified ident here"));
+      }
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else if (id == AST::ID::EQ || id == AST::ID::NE) {
+      BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
+      TVar lhsTy = unifyExp(e.getLHS());
+      expectTyToBe(e.getRHS(), lhsTy);
+      e.setTVar(fresh(Type::bool_()));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else if (id == AST::ID::FALSE || id == AST::ID::TRUE) {
+      BoolLit e = ctx->GET_UNSAFE<BoolLit>(_e);
+      e.setTVar(fresh(Type::bool_()));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else if (id == AST::ID::IF) {
+      IfExp e = ctx->GET_UNSAFE<IfExp>(_e);
+      expectTyToBe(e.getCondExp(), fresh(Type::bool_()));
+      TVar thenTy = unifyExp(e.getThenExp());
+      expectTyToBe(e.getElseExp(), thenTy);
+      e.setTVar(thenTy);
+      ctx->SET_UNSAFE(_e, e);
+    }
+
     else if (id == AST::ID::INT_LIT) {
       IntLit e = ctx->GET_UNSAFE<IntLit>(_e);
       e.setTVar(fresh(Type::numeric()));
       ctx->SET_UNSAFE(_e, e);
     }
 
+    else if (id == AST::ID::LET) {
+      LetExp e = ctx->GET_UNSAFE<LetExp>(_e);
+      TVar rhsTy = unifyExp(e.getDefinition());
+      std::string boundIdent = ctx->get(e.getBoundIdent()).asString();
+      localVarTypes.add(boundIdent, rhsTy);
+      return fresh(Type::unit());
+    }
+
+    else if (id == AST::ID::REF_EXP) {
+      RefExp e = ctx->GET_UNSAFE<RefExp>(_e);
+      TVar initializerTy = unifyExp(e.getInitializer());
+      e.setTVar(fresh(Type::ref(initializerTy)));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else {
+      assert(false && "unimplemented");
+    }
+
     return ctx->get(_e).getTVar(); 
+  }
+
+  /// Returns the (un)qualified name as a string prefixed with `::`.
+  /// e.g., `::MyMod::myfunc`
+  std::string relNameToString(Addr<Name> _name) {
+    std::string ret;
+    Name name = ctx->get(_name);
+    while (name.isQualified()) {
+      QIdent qident = ctx->GET_UNSAFE<QIdent>(_name);
+      Ident part = ctx->get(qident.getHead());
+      ret.append("::");
+      ret.append(part.asString());
+      name = ctx->get(qident.getTail());
+    }
+    Ident part = ctx->GET_UNSAFE<Ident>(_name);
+    ret.append("::");
+    ret.append(part.asString());
+    return ret;
   }
 };
 

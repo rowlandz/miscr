@@ -48,6 +48,7 @@ class TVar {
   int value;
 public:
   static TVar none() { return TVar(-1); }
+  TVar() { this->value = -1; }
   TVar(int value) { this->value = value; }
   int get() const { return value; }
   bool exists() { return value >= 0; }
@@ -114,6 +115,9 @@ public:
 class Name : public LocatedAST {
 protected:
   Name(ID id, Location loc) : LocatedAST(id, loc) {}
+public:
+  bool isQualified() { return getID() == QIDENT; }
+  bool isUnqualified() { return getID() == IDENT; }
 };
 
 /// @brief An unqualified name.
@@ -356,6 +360,7 @@ public:
   }
   Addr<Name> getFunction() const { return function; }
   Addr<ExpList> getArguments() const { return arguments; }
+  void setFunction(Addr<Name> function) { this->function = function; }
 };
 
 /// @brief A type ascription expression.
