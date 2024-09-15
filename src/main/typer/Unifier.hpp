@@ -71,7 +71,9 @@ public:
 
   /// @brief Enforces an equality relation in `bindings` between the two type
   /// variables. Returns `true` if this is possible and `false` otherwise.
-  bool unify(TVar v1, TVar v2) {
+  /// @param implicitCoercions If this is set, then certain mismatches between
+  /// the type vars are allowed to remain (such as from `wref` to `rref`).
+  bool unify(TVar v1, TVar v2, bool implicitCoercions = false) {
     std::pair<TVar, Type> res1 = tc.resolve(v1);
     std::pair<TVar, Type> res2 = tc.resolve(v2);
     TVar w1 = res1.first;
@@ -165,18 +167,40 @@ public:
         return false;
       }
     }
+    else if (t1.getID() == Type::ID::WREF && implicitCoercions) {
+      if (t2.getID() == Type::ID::RREF) {
+        return unify(t1.getInner(), t2.getInner(), implicitCoercions);
+      } else return false;
+    }
     
     return false;
   }
 
-  /// @brief
+  /// @brief Unifies `_exp`, then unifies the inferred type with `ty`. An error
+  /// message is pushed if the second unification fails. 
   /// @return The inferred type of `_exp` (for convenience). 
-  TVar expectTyToBe(Addr<Exp> _exp, TVar expectedTy) {
+  TVar unifyWith(Addr<Exp> _exp, TVar ty) {
     TVar inferredTy = unifyExp(_exp);
-    if (unify(inferredTy, expectedTy)) return inferredTy;
+    if (unify(inferredTy, ty)) return inferredTy;
+    std::string errMsg("Cannot unify type ");
+    errMsg.append(tc.TVarToString(inferredTy));
+    errMsg.append(" with type ");
+    errMsg.append(tc.TVarToString(ty));
+    errMsg.append(".");
+    errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
+    return inferredTy;
+  }
+
+  /// @brief Unifies `_exp`, then unifies the inferred type with `ty` with
+  /// implicit coercions enabled. An error message is pushed if the second
+  /// unification fails.
+  /// @return The inferred type of `_exp` (for convenience).
+  TVar expectTypeToBe(Addr<Exp> _exp, TVar expectedTy) {
+    TVar inferredTy = unifyExp(_exp);
+    if (unify(inferredTy, expectedTy, true)) return inferredTy;
     std::string errMsg("Inferred type is ");
     errMsg.append(tc.TVarToString(inferredTy));
-    errMsg.append(" but expected ");
+    errMsg.append(" but expected type ");
     errMsg.append(tc.TVarToString(expectedTy));
     errMsg.append(".");
     errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
@@ -192,8 +216,8 @@ public:
     if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
     || id == AST::ID::DIV) {
       BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
-      TVar lhsTy = expectTyToBe(e.getLHS(), tc.fresh(Type::numeric()));
-      expectTyToBe(e.getRHS(), lhsTy);
+      TVar lhsTy = unifyWith(e.getLHS(), tc.fresh(Type::numeric()));
+      unifyWith(e.getRHS(), lhsTy);
       e.setTVar(lhsTy);
       ctx->SET_UNSAFE(_e, e);
     }
@@ -201,7 +225,7 @@ public:
     else if (id == AST::ID::ASCRIP) {
       AscripExp e = ctx->GET_UNSAFE<AscripExp>(_e);
       TVar ty = freshFromTypeExp(e.getAscripter());
-      expectTyToBe(e.getAscriptee(), ty);
+      expectTypeToBe(e.getAscriptee(), ty);
       e.setTVar(ty);
       ctx->SET_UNSAFE(_e, e);
     }
@@ -234,7 +258,7 @@ public:
     //     ExpList expList = ctx->get(e.getArguments());
     //     ParamList paramList = ctx->get(funcDecl.getParameters());
     //     while (expList.nonEmpty() && paramList.nonEmpty()) {
-    //       expectTyToBe(expList.getHead(), freshFromTypeExp(paramList.getHeadParamType()));
+    //       unifyWith(expList.getHead(), freshFromTypeExp(paramList.getHeadParamType()));
     //       expList = ctx->get(expList.getTail());
     //       paramList = ctx->get(paramList.getTail());
     //     }
@@ -263,7 +287,7 @@ public:
       DerefExp e = ctx->GET_UNSAFE<DerefExp>(_e);
       TVar retTy = tc.fresh();
       TVar refTy = tc.fresh(Type::ref(retTy));
-      expectTyToBe(e.getOf(), refTy);
+      unifyWith(e.getOf(), refTy);
       e.setTVar(retTy);
       ctx->SET_UNSAFE(_e, e);
     }
@@ -288,7 +312,7 @@ public:
     else if (id == AST::ID::EQ || id == AST::ID::NE) {
       BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
       TVar lhsTy = unifyExp(e.getLHS());
-      expectTyToBe(e.getRHS(), lhsTy);
+      unifyWith(e.getRHS(), lhsTy);
       e.setTVar(tc.fresh(Type::bool_()));
       ctx->SET_UNSAFE(_e, e);
     }
@@ -301,9 +325,9 @@ public:
 
     else if (id == AST::ID::IF) {
       IfExp e = ctx->GET_UNSAFE<IfExp>(_e);
-      expectTyToBe(e.getCondExp(), tc.fresh(Type::bool_()));
+      unifyWith(e.getCondExp(), tc.fresh(Type::bool_()));
       TVar thenTy = unifyExp(e.getThenExp());
-      expectTyToBe(e.getElseExp(), thenTy);
+      unifyWith(e.getElseExp(), thenTy);
       e.setTVar(thenTy);
       ctx->SET_UNSAFE(_e, e);
     }
@@ -337,8 +361,8 @@ public:
       StoreExp e = ctx->GET_UNSAFE<StoreExp>(_e);
       TVar retTy = tc.fresh();
       TVar lhsTy = tc.fresh(Type::wref(retTy));
-      expectTyToBe(e.getLHS(), lhsTy);
-      expectTyToBe(e.getRHS(), retTy);
+      unifyWith(e.getLHS(), lhsTy);
+      unifyWith(e.getRHS(), retTy);
       e.setTVar(retTy);
       ctx->SET_UNSAFE(_e, e);
     }
@@ -356,7 +380,7 @@ public:
     localVarTypes.push();
     addParamsToLocalVarTypes(funDecl.getParameters());
     TVar retTy = freshFromTypeExp(funDecl.getReturnType());
-    expectTyToBe(funDecl.getBody(), retTy);
+    unifyWith(funDecl.getBody(), retTy);
     localVarTypes.pop();
   }
 
