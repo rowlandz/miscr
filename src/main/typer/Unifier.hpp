@@ -41,12 +41,12 @@ private:
         ctx->GET_UNSAFE<ArrayTypeExp>(_tyexp).getInnerType()
       )));
     case AST::ID::REF_TEXP:
-      return tc.fresh(Type::ref(freshFromTypeExp(
+      return tc.fresh(Type::rref(freshFromTypeExp(
         ctx->GET_UNSAFE<RefTypeExp>(_tyexp).getPointeeType()
       )));
     case AST::ID::WREF_TEXP:
       return tc.fresh(Type::wref(freshFromTypeExp(
-        ctx->GET_UNSAFE<WRefTypeExp>(_tyexp).getPointeeType()
+        ctx->GET_UNSAFE<RefTypeExp>(_tyexp).getPointeeType()
       )));
     case AST::ID::BOOL_TEXP: return tc.fresh(Type::bool_());
     case AST::ID::f32_TEXP: return tc.fresh(Type::f32());
@@ -90,7 +90,8 @@ public:
           tc.bind(w1, w2);
           return true;
         } else return false;
-      } else if (ty == Type::ID::REF || ty == Type::ID::WREF) {
+      } else if (ty == Type::ID::REF || ty == Type::ID::RREF
+      || ty == Type::ID::WREF) {
         if (unify(t1.getInner(), t2.getInner())) {
           tc.bind(w1, w2);
           return true;
@@ -138,6 +139,28 @@ public:
       case Type::ID::f32: case Type::ID::f64:
         tc.bind(w2, w1);
         return true;
+      default:
+        return false;
+      }
+    }
+    else if (t1.getID() == Type::ID::REF) {
+      switch (t2.getID()) {
+      case Type::ID::RREF: case Type::ID::WREF:
+        if (unify(t1.getInner(), t2.getInner())) {
+          tc.bind(w1, w2);
+          return true;
+        } else return false;
+      default:
+        return false;
+      }
+    }
+    else if (t2.getID() == Type::ID::REF) {
+      switch (t1.getID()) {
+      case Type::ID::RREF: case Type::ID::WREF:
+        if (unify(t1.getInner(), t2.getInner())) {
+          tc.bind(w2, w1);
+          return true;
+        } else return false;
       default:
         return false;
       }
@@ -300,17 +323,20 @@ public:
       ctx->SET_UNSAFE(_e, e);
     }
 
-    else if (id == AST::ID::REF_EXP) {
+    else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
       RefExp e = ctx->GET_UNSAFE<RefExp>(_e);
       TVar initializerTy = unifyExp(e.getInitializer());
-      e.setTVar(tc.fresh(Type::ref(initializerTy)));
+      TVar retTy = id == AST::ID::WREF_EXP ?
+                   tc.fresh(Type::wref(initializerTy)) :
+                   tc.fresh(Type::rref(initializerTy));
+      e.setTVar(retTy);
       ctx->SET_UNSAFE(_e, e);
     }
 
     else if (id == AST::ID::STORE) {
       StoreExp e = ctx->GET_UNSAFE<StoreExp>(_e);
       TVar retTy = tc.fresh();
-      TVar lhsTy = tc.fresh(Type::ref(retTy));
+      TVar lhsTy = tc.fresh(Type::wref(retTy));
       expectTyToBe(e.getLHS(), lhsTy);
       expectTyToBe(e.getRHS(), retTy);
       e.setTVar(retTy);

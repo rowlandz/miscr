@@ -72,30 +72,39 @@ public:
   bool exists() { return value >= 0; }
 };
 
-/// @brief A type.
+/// @brief A concrete type (e.g., `i32`, `bool`) or a type constraint (e.g.,
+/// `numeric`).
 class Type {
 public:
   enum struct ID : unsigned char {
-    ARRAY, BOOL, DECIMAL, f32, f64, i8, i32, NOTYPE, NUMERIC, REF, UNIT, WREF
+    // concrete types
+    ARRAY, BOOL, f32, f64, i8, i32, RREF, UNIT, WREF,
+
+    // type constraints
+    DECIMAL, NUMERIC, REF,
+
+    // other
+    NOTYPE,
   };
 protected:
   Type::ID id;
-  TVar inner = TVar::none();
+  TVar inner;
   Type(Type::ID id) { this->id = id; this->inner = TVar::none(); }
   Type(Type::ID id, TVar inner) { this->id = id; this->inner = inner; }
 public:
   static Type array(TVar of) { return Type(ID::ARRAY, of); }
   static Type bool_() { return Type(ID::BOOL); }
-  static Type decimal() { return Type(ID::DECIMAL); }
   static Type f32() { return Type(ID::f32); }
   static Type f64() { return Type(ID::f64); }
   static Type i8() { return Type(ID::i8); }
   static Type i32() { return Type(ID::i32); }
-  static Type notype() { return Type(ID::NOTYPE); }
-  static Type numeric() { return Type(ID::NUMERIC); }
   static Type ref(TVar of) { return Type(ID::REF, of); }
+  static Type rref(TVar of) { return Type(ID::RREF, of); }
   static Type unit() { return Type(ID::UNIT); }
   static Type wref(TVar of) { return Type(ID::WREF, of); }
+  static Type decimal() { return Type(ID::DECIMAL); }
+  static Type numeric() { return Type(ID::NUMERIC); }
+  static Type notype() { return Type(ID::NOTYPE); }
   bool isNoType() { return id == ID::NOTYPE; }
   ID getID() { return id; }
   TVar getInner() { return inner; }
@@ -185,23 +194,18 @@ public:
   static TypeExp mkF64(Location loc) { return TypeExp(f64_TEXP, loc); }
 };
 
+/// @brief A read-only or writable reference type expression.
 class RefTypeExp : public TypeExp {
   Addr<TypeExp> pointeeType;
+  bool writable;
 public:
-  RefTypeExp(Location loc, Addr<TypeExp> pointeeType) : TypeExp(REF_TEXP, loc) {
+  RefTypeExp(Location loc, Addr<TypeExp> pointeeType, bool writable)
+      : TypeExp(writable ? WREF_TEXP : REF_TEXP, loc) {
     this->pointeeType = pointeeType;
+    this->writable = writable;
   }
   Addr<TypeExp> getPointeeType() const { return pointeeType; }
-};
-
-class WRefTypeExp : public TypeExp {
-  Addr<TypeExp> pointeeType;
-public:
-  WRefTypeExp(Location loc, Addr<TypeExp> pointeeType)
-      : TypeExp(WREF_TEXP, loc) {
-    this->pointeeType = pointeeType;
-  }
-  Addr<TypeExp> getPointeeType() const { return pointeeType; }
+  bool isWritable() const { return writable; }
 };
 
 class ArrayTypeExp : public TypeExp {
@@ -444,21 +448,12 @@ public:
   Addr<Exp> getRHS() const { return rhs; }
 };
 
-/// @brief A read-only reference constructor expression.
+/// @brief A read-only or writable reference constructor expression.
 class RefExp : public Exp {
   Addr<Exp> initializer;
 public:
-  RefExp(Location loc, Addr<Exp> initializer) : Exp(REF_EXP, loc) {
-    this->initializer = initializer;
-  }
-  Addr<Exp> getInitializer() const { return initializer; }
-};
-
-/// @brief A writable reference constructor expression.
-class WRefExp : public Exp {
-  Addr<Exp> initializer;
-public:
-  WRefExp(Location loc, Addr<Exp> initializer) : Exp(WREF_EXP, loc) {
+  RefExp(Location loc, Addr<Exp> initializer, bool writable)
+      : Exp(writable ? WREF_EXP : REF_EXP, loc) {
     this->initializer = initializer;
   }
   Addr<Exp> getInitializer() const { return initializer; }
@@ -765,10 +760,10 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const QIdent*>(nodePtr);
     ret.push_back(n->getHead().upcast<AST>());
     ret.push_back(n->getTail().upcast<AST>());
-  } else if (id == AST::ID::REF_EXP) {
+  } else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
     auto n = reinterpret_cast<const RefExp*>(nodePtr);
     ret.push_back(n->getInitializer().upcast<AST>());
-  } else if (id == AST::ID::REF_TEXP) {
+  } else if (id == AST::ID::REF_TEXP || id == AST::ID::WREF_TEXP) {
     auto n = reinterpret_cast<const RefTypeExp*>(nodePtr);
     ret.push_back(n->getPointeeType().upcast<AST>());
   } else if (id == AST::ID::RETURN) {
@@ -778,12 +773,6 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const StoreExp*>(nodePtr);
     ret.push_back(n->getLHS().upcast<AST>());
     ret.push_back(n->getRHS().upcast<AST>());
-  } else if (id == AST::ID::WREF_EXP) {
-    auto n = reinterpret_cast<const WRefExp*>(nodePtr);
-    ret.push_back(n->getInitializer().upcast<AST>());
-  } else if (id == AST::ID::WREF_TEXP) {
-    auto n = reinterpret_cast<const WRefTypeExp*>(nodePtr);
-    ret.push_back(n->getPointeeType().upcast<AST>());
   }
   return ret;
 }

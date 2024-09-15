@@ -216,9 +216,7 @@ public:
       Addr<Exp> e = expLv2();
       ARREST_IF_ERROR(e)
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return t.ty == HASH ?
-             ctx->add(WRefExp(loc, e)).upcast<Exp>() :
-             ctx->add(RefExp(loc, e)).upcast<Exp>();
+      return ctx->add(RefExp(loc, e, t.ty == HASH)).upcast<Exp>();
     } else {
       return expLv1();
     }
@@ -358,9 +356,7 @@ public:
       Addr<TypeExp> n1 = typeExp();
       ARREST_IF_ERROR(n1)
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return t.ty == HASH ?
-             ctx->add(WRefTypeExp(loc, n1)).upcast<TypeExp>() :
-             ctx->add(RefTypeExp(loc, n1)).upcast<TypeExp>();
+      return ctx->add(RefTypeExp(loc, n1, t.ty == HASH)).upcast<TypeExp>();
     } else {
       return typeExpLv0();
     }

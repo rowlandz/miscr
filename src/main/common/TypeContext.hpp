@@ -61,8 +61,8 @@ public:
       switch (res.second.getID()) {
       case Type::ID::ARRAY:
         return std::string("array<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::REF:
-        return std::string("ref<") + TVarToString(res.second.getInner()) + ">";
+      case Type::ID::RREF:
+        return std::string("rref<") + TVarToString(res.second.getInner()) + ">";
       case Type::ID::WREF:
         return std::string("wref<") + TVarToString(res.second.getInner()) + ">";
       case Type::ID::BOOL: return std::string("bool");
