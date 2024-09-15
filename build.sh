@@ -80,7 +80,8 @@ elif [ $1 = "tests" ]; then
     echo -en "\n  | $GROUPNAME::testGroup.runAll()" >> $DIR/src/test/testmain.cpp
   done
   echo -e ";\n}" >> $DIR/src/test/testmain.cpp
-  parrot clang++ -o $DIR/tests $DIR/src/test/testmain.cpp -I$DIR/src/test -I$DIR/src/main
+  LLVM_CONFIG_ARGS="-I/usr/lib/llvm-14/include -std=c++14 -L/usr/lib/llvm-14/lib -lLLVM-14"
+  parrot clang++ -o $DIR/tests $DIR/src/test/testmain.cpp -I$DIR/src/test -I$DIR/src/main $LLVM_CONFIG_ARGS
 
 
 else
