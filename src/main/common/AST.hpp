@@ -22,9 +22,9 @@ class AST {
 public:
   enum ID : unsigned short {
     // expressions and statements
-    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, CALL, DEC_LIT, DIV, ENAME, EQ,
-    FALSE, IF, INT_LIT, LET, MUL, NE, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
-    TRUE, WREF_EXP,
+    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, CALL, DEC_LIT, DEREF, DIV,
+    ENAME, EQ, FALSE, IF, INT_LIT, LET, MUL, NE, REF_EXP, RETURN, STORE,
+    STRING_LIT, SUB, TRUE, WREF_EXP,
 
     // declarations
     EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
@@ -50,9 +50,10 @@ public:
   bool isExp() {
     switch (id) {
     case ADD: case ARRAY_INIT: case ARRAY_LIST: case ASCRIP: case BLOCK:
-    case CALL: case DEC_LIT: case DIV: case ENAME: case EQ: case FALSE: case IF:
-    case INT_LIT: case LET: case MUL: case NE: case REF_EXP: case RETURN:
-    case STORE: case STRING_LIT: case SUB: case TRUE: case WREF_EXP:
+    case CALL: case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ:
+    case FALSE: case IF: case INT_LIT: case LET: case MUL: case NE:
+    case REF_EXP: case RETURN: case STORE: case STRING_LIT: case SUB:
+    case TRUE: case WREF_EXP:
       return true;
     default: return false;
     }
@@ -463,6 +464,14 @@ public:
   Addr<Exp> getInitializer() const { return initializer; }
 };
 
+/// @brief A dereference expression.
+class DerefExp : public Exp {
+  Addr<Exp> of;
+public:
+  DerefExp(Location loc, Addr<Exp> of) : Exp(DEREF, loc) { this->of = of; }
+  Addr<Exp> getOf() const { return of; }
+};
+
 /// @brief An array constructor that lists out the array contents.
 /// e.g., `[42, x, y+1]`
 class ArrayListExp : public Exp {
@@ -573,6 +582,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::BLOCK:              return "BLOCK";
   case AST::ID::CALL:               return "CALL";
   case AST::ID::DEC_LIT:            return "DEC_LIT";
+  case AST::ID::DEREF:              return "DEREF";
   case AST::ID::DIV:                return "DIV";
   case AST::ID::ENAME:              return "ENAME";
   case AST::ID::EQ:                 return "EQ";
@@ -625,6 +635,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "BLOCK")               return AST::ID::BLOCK;
   else if (str == "CALL")                return AST::ID::CALL;
   else if (str == "DEC_LIT")             return AST::ID::DEC_LIT;
+  else if (str == "DEREF")               return AST::ID::DEREF;
   else if (str == "DIV")                 return AST::ID::DIV;
   else if (str == "ENAME")               return AST::ID::ENAME;
   else if (str == "EQ")                  return AST::ID::EQ;
@@ -707,6 +718,9 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const DeclList*>(nodePtr);
     ret.push_back(n->getHead().upcast<AST>());
     ret.push_back(n->getTail().upcast<AST>());
+  } else if (id == AST::ID::DEREF) {
+    auto n = reinterpret_cast<const DerefExp*>(nodePtr);
+    ret.push_back(n->getOf().upcast<AST>());
   } else if (id == AST::ID::ENAME) {
     auto n = reinterpret_cast<const NameExp*>(nodePtr);
     ret.push_back(n->getName().upcast<AST>());

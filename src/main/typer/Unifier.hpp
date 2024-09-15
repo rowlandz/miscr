@@ -79,6 +79,7 @@ public:
     Type t1 = res1.second;
     Type t2 = res2.second;
 
+    if (w1.get() == w2.get()) return true;
     if (t1.isNoType()) { tc.bind(w1, w2); return true; }
     if (t2.isNoType()) { tc.bind(w2, w1); return true; }
 
@@ -235,7 +236,16 @@ public:
       ctx->SET_UNSAFE(_e, e);
     }
 
-    /* TODO: Make sure typevar is set even in error cases. */
+    else if (id == AST::ID::DEREF) {
+      DerefExp e = ctx->GET_UNSAFE<DerefExp>(_e);
+      TVar retTy = tc.fresh();
+      TVar refTy = tc.fresh(Type::ref(retTy));
+      expectTyToBe(e.getOf(), refTy);
+      e.setTVar(retTy);
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    // TODO: Make sure typevar is set even in error cases.
     else if (id == AST::ID::ENAME) {
       NameExp e = ctx->GET_UNSAFE<NameExp>(_e);
       Name name = ctx->get(e.getName());
@@ -286,13 +296,24 @@ public:
       TVar rhsTy = unifyExp(e.getDefinition());
       std::string boundIdent = ctx->get(e.getBoundIdent()).asString();
       localVarTypes.add(boundIdent, rhsTy);
-      return tc.fresh(Type::unit());
+      e.setTVar(tc.fresh(Type::unit()));
+      ctx->SET_UNSAFE(_e, e);
     }
 
     else if (id == AST::ID::REF_EXP) {
       RefExp e = ctx->GET_UNSAFE<RefExp>(_e);
       TVar initializerTy = unifyExp(e.getInitializer());
       e.setTVar(tc.fresh(Type::ref(initializerTy)));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else if (id == AST::ID::STORE) {
+      StoreExp e = ctx->GET_UNSAFE<StoreExp>(_e);
+      TVar retTy = tc.fresh();
+      TVar lhsTy = tc.fresh(Type::ref(retTy));
+      expectTyToBe(e.getLHS(), lhsTy);
+      expectTyToBe(e.getRHS(), retTy);
+      e.setTVar(retTy);
       ctx->SET_UNSAFE(_e, e);
     }
 

@@ -21,12 +21,15 @@ class TypeContext {
 
 public:
 
-  TypeContext() {}
-
   /// @brief Returns a fresh type variable bound to `ty`.
   TVar fresh(Type ty) {
     bindings[TVar(firstUnusedTypeVar)] = TypeOrTVar(ty);
     return firstUnusedTypeVar++;
+  }
+
+  /// @brief Returns a fresh unbound type variable. 
+  TVar fresh() {
+    return TVar(firstUnusedTypeVar++);
   }
 
   /// @brief Binds type variable `w` to `bindTo`. If `w` is already bound to

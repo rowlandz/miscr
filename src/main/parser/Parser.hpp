@@ -199,22 +199,34 @@ public:
 
   Addr<Exp> expLv1() {
     Token t = *p;
+    Addr<Exp> e = expLv0();
+    RETURN_IF_ERROR(e)
+    while (p->ty == EXCLAIM) {
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      e = ctx->add(DerefExp(loc, e)).upcast<Exp>();
+      ++p;
+    }
+    return e;
+  }
+
+  Addr<Exp> expLv2() {
+    Token t = *p;
     if (t.ty == AMP || t.ty == HASH) {
       ++p;
-      Addr<Exp> e = expLv1();
+      Addr<Exp> e = expLv2();
       ARREST_IF_ERROR(e)
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
       return t.ty == HASH ?
              ctx->add(WRefExp(loc, e)).upcast<Exp>() :
              ctx->add(RefExp(loc, e)).upcast<Exp>();
     } else {
-      return expLv0();
+      return expLv1();
     }
   }
 
-  Addr<Exp> expLv2() {
+  Addr<Exp> expLv3() {
     Token t = *p;
-    Addr<Exp> e = expLv1();
+    Addr<Exp> e = expLv2();
     RETURN_IF_ERROR(e)
     while (p->ty == COLON) {
       ++p;
@@ -226,27 +238,12 @@ public:
     return e;
   }
 
-  Addr<Exp> expLv3() {
-    Token t = *p;
-    Addr<Exp> lhs = expLv2();
-    RETURN_IF_ERROR(lhs)
-    while (p->ty == OP_MUL || p->ty == OP_DIV) {
-      AST::ID op = (p->ty == OP_MUL) ? AST::ID::MUL : AST::ID::DIV;
-      ++p;
-      Addr<Exp> rhs = expLv2();
-      ARREST_IF_ERROR(rhs)
-      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
-    }
-    return lhs;
-  }
-
   Addr<Exp> expLv4() {
     Token t = *p;
     Addr<Exp> lhs = expLv3();
     RETURN_IF_ERROR(lhs)
-    while (p->ty == OP_ADD || p->ty == OP_SUB) {
-      AST::ID op = (p->ty == OP_ADD) ? AST::ID::ADD : AST::ID::SUB;
+    while (p->ty == OP_MUL || p->ty == OP_DIV) {
+      AST::ID op = (p->ty == OP_MUL) ? AST::ID::MUL : AST::ID::DIV;
       ++p;
       Addr<Exp> rhs = expLv3();
       ARREST_IF_ERROR(rhs)
@@ -260,13 +257,42 @@ public:
     Token t = *p;
     Addr<Exp> lhs = expLv4();
     RETURN_IF_ERROR(lhs)
-    while (p->ty == OP_EQ || p->ty == OP_NEQ) {
-      AST::ID op = (p->ty == OP_EQ) ? AST::ID::EQ : AST::ID::NE;
+    while (p->ty == OP_ADD || p->ty == OP_SUB) {
+      AST::ID op = (p->ty == OP_ADD) ? AST::ID::ADD : AST::ID::SUB;
       ++p;
       Addr<Exp> rhs = expLv4();
       ARREST_IF_ERROR(rhs)
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
       lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
+    }
+    return lhs;
+  }
+
+  Addr<Exp> expLv6() {
+    Token t = *p;
+    Addr<Exp> lhs = expLv5();
+    RETURN_IF_ERROR(lhs)
+    while (p->ty == OP_EQ || p->ty == OP_NEQ) {
+      AST::ID op = (p->ty == OP_EQ) ? AST::ID::EQ : AST::ID::NE;
+      ++p;
+      Addr<Exp> rhs = expLv5();
+      ARREST_IF_ERROR(rhs)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
+    }
+    return lhs;
+  }
+
+  Addr<Exp> expLv7() {
+    Token t = *p;
+    Addr<Exp> lhs = expLv6();
+    RETURN_IF_ERROR(lhs)
+    while (p->ty == COLON_EQUAL) {
+      ++p;
+      Addr<Exp> rhs = expLv6();
+      ARREST_IF_ERROR(rhs)
+      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+      lhs = ctx->add(StoreExp(loc, lhs, rhs)).upcast<Exp>();
     }
     return lhs;
   }
@@ -289,7 +315,7 @@ public:
   Addr<Exp> exp() {
     Addr<Exp> ret = ifExp().upcast<Exp>();
     if (ret.notEpsilon()) return ret;
-    return expLv5();
+    return expLv7();
   }
 
   /// Zero or more comma-separated expressions with optional trailing comma
