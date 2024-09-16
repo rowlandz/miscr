@@ -244,38 +244,38 @@ public:
       ctx->SET_UNSAFE(_e, e);
     }
 
-    // else if (id == AST::ID::CALL) {
-    //   CallExp e = ctx->GET_UNSAFE<CallExp>(_e);
-    //   std::string calleeName = nameToString(e.getFunction());
-    //   bool yayFoundIt = false;
-    //   for (auto qual = relativePathQualifiers.end()-1; relativePathQualifiers.begin() <= qual; qual--) {
-    //     Addr<FunctionDecl> _funcDecl = ont->findFunction(*qual + "::" + calleeName);
-    //     if (_funcDecl.isError()) continue;
-    //     yayFoundIt = true;
-    //     FunctionDecl funcDecl = ctx->get(_funcDecl);
-
-    //     // Unify each of the arguments with parameter.
-    //     ExpList expList = ctx->get(e.getArguments());
-    //     ParamList paramList = ctx->get(funcDecl.getParameters());
-    //     while (expList.nonEmpty() && paramList.nonEmpty()) {
-    //       unifyWith(expList.getHead(), freshFromTypeExp(paramList.getHeadParamType()));
-    //       expList = ctx->get(expList.getTail());
-    //       paramList = ctx->get(paramList.getTail());
-    //     }
-    //     if (expList.nonEmpty() || paramList.nonEmpty()) {
-    //       errors.push_back(LocatedError(expList.getLocation(), "Arity mismatch for function " + *qual + calleeName));
-    //     }
-
-    //     // Unify return type
-    //     e.setTVar(freshFromTypeExp(funcDecl.getReturnType()));
-
-    //     // Replace function name with fully qualified name
-        
-    //   }
-    //   if (!yayFoundIt) {
-    //     errors.push_back(LocatedError(e.getLocation(), "Cannot find function " + calleeName));
-    //   }
-    // }
+    else if (id == AST::ID::CALL) {
+      CallExp e = ctx->GET_UNSAFE<CallExp>(_e);
+      std::string calleeRelName = nameToString(e.getFunction());
+      Addr<FunctionDecl> _callee = lookupFuncByRelName(calleeRelName);
+      if (_callee.exists()) {
+        FunctionDecl callee = ctx->get(_callee);
+        /*** unify each argument with corresponding parameter ***/
+        ExpList expList = ctx->get(e.getArguments());
+        ParamList paramList = ctx->get(callee.getParameters());
+        while (expList.nonEmpty() && paramList.nonEmpty()) {
+          TVar paramType = freshFromTypeExp(paramList.getHeadParamType());
+          expectTypeToBe(expList.getHead(), paramType);
+          expList = ctx->get(expList.getTail());
+          paramList = ctx->get(paramList.getTail());
+        }
+        if (expList.nonEmpty() || paramList.nonEmpty()) {
+          FQIdent calleeFQIdent = ctx->GET_UNSAFE<FQIdent>(callee.getName());
+          std::string errMsg("Arity mismatch for function ");
+          errMsg.append(ont->getName(calleeFQIdent.getKey()) + ".");
+          errors.push_back(LocatedError(e.getLocation(), errMsg));
+        }
+        /*** set this expression's type to the callee's return type ***/
+        e.setTVar(freshFromTypeExp(callee.getReturnType()));
+        /*** fully qualify the callee name ***/
+        e.setFunction(callee.getName());
+      } else {
+        std::string errMsg = "Function " + calleeRelName + " not found.";
+        errors.push_back(LocatedError(e.getLocation(), errMsg));
+        e.setTVar(tc.fresh());
+      }
+      ctx->SET_UNSAFE(_e, e);
+    }
 
     else if (id == AST::ID::DEC_LIT) {
       DecimalLit e = ctx->GET_UNSAFE<DecimalLit>(_e);
@@ -374,7 +374,7 @@ public:
     return ctx->get(_e).getTVar(); 
   }
 
-  /// Typechecks a func, extern func.
+  /// Typechecks a function.
   void unifyFunc(Addr<FunctionDecl> _funDecl) {
     FunctionDecl funDecl = ctx->get(_funDecl);
     localVarTypes.push();
@@ -394,13 +394,12 @@ public:
   }
 
   void unifyDecl(Addr<Decl> _decl) {
-    AST::ID id = ctx->get(_decl).getID();
-    if (id == AST::ID::FUNC || id == AST::ID::EXTERN_FUNC)
-      unifyFunc(_decl.UNSAFE_CAST<FunctionDecl>());
-    else if (id == AST::ID::MODULE)
-      unifyModule(_decl.UNSAFE_CAST<ModuleDecl>());
-    else
-      assert(false && "unimplemented");
+    switch (ctx->get(_decl).getID()) {
+    case AST::ID::FUNC: unifyFunc(_decl.UNSAFE_CAST<FunctionDecl>()); break;
+    case AST::ID::EXTERN_FUNC: break;
+    case AST::ID::MODULE: unifyModule(_decl.UNSAFE_CAST<ModuleDecl>()); break;
+    default: assert(false && "unimplemented");
+    }
   }
 
   void unifyDeclList(Addr<DeclList> _declList) {
@@ -437,16 +436,15 @@ public:
     return ret;
   }
 
-  // std::pair<std::string, Addr<FunctionDecl>>
-  // lookupFunction(std::string relName) {
-  //   for (auto iter = relativePathQualifiers.crbegin();
-  //        iter != relativePathQualifiers.crend(); ++iter) {
-  //     std::string fqName = *iter + "::" + relName;
-  //     Addr<FunctionDecl> a = ont->findFunction(*iter + "::" + relName);
-  //     if (a.exists()) return a;
-  //   }
-  //   return Addr<FunctionDecl>::none();
-  // }
+  Addr<FunctionDecl> lookupFuncByRelName(std::string relName) {
+    for (auto iter = relativePathQualifiers.crbegin();
+         iter != relativePathQualifiers.crend(); ++iter) {
+      std::string fqName = *iter + "::" + relName;
+      Addr<FunctionDecl> a = ont->getFunctionDecl(*iter + "::" + relName);
+      if (a.exists()) return a;
+    }
+    return Addr<FunctionDecl>::none();
+  }
 };
 
 #endif

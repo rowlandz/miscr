@@ -2,8 +2,8 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
-// #include "typer/Typer.hpp"
-// #include "codegen/Codegen.hpp"
+#include "typer/Typer.hpp"
+#include "codegen/Codegen.hpp"
 
 int main(int argc, char* argv[]) {
 
@@ -22,15 +22,15 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  NodeManager m;
-  Parser parser(&m, lexer.getTokens());
-  unsigned int parsedDeclList = parser.decls0();
-  if (IS_ERROR(parsedDeclList)) {
+  ASTContext ctx;
+  Parser parser(&ctx, lexer.getTokens());
+  Addr<DeclList> parsedDeclList = parser.decls0();
+  if (parsedDeclList.isError()) {
     printf("%s", parser.getError().render(text, lexer.getLocationTable()).c_str());
     exit(1);
   }
 
-  Typer typer(&m);
+  Typer typer(&ctx);
   typer.typeDeclList(parsedDeclList);
   if (typer.unifier.errors.size() > 0) {
     for (auto err : typer.unifier.errors) {
@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  Codegen codegen(&m, &typer.ont);
+  Codegen codegen(&ctx, typer.getTypeContext(), &typer.ont);
   codegen.genDeclList(parsedDeclList);
   codegen.mod->setModuleIdentifier(argv[1]);
   codegen.mod->setSourceFileName(argv[1]);

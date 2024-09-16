@@ -43,6 +43,36 @@ namespace TyperTests {
       throw std::runtime_error("Expected failure, but it succeeded.");
   }
 
+  void declShouldPass(const char* declText) {
+    Lexer lexer(declText);
+    if (!lexer.run()) throw std::runtime_error("Lexer error");
+    ASTContext ctx;
+    Parser parser(&ctx, lexer.getTokens());
+    Addr<Decl> parsed = parser.decl();
+    if (parsed.isError()) throw std::runtime_error("Parser error");
+    Typer typer(&ctx);
+    typer.typeDecl(parsed);
+    if (typer.unifier.errors.size() > 0) {
+      std::string errStr;
+      for (auto err : typer.unifier.errors)
+        errStr.append(err.render(declText, lexer.getLocationTable()));
+      throw std::runtime_error(errStr);
+    }
+  }
+
+  void declShouldFail(const char* declText) {
+    Lexer lexer(declText);
+    if (!lexer.run()) throw std::runtime_error("Lexer error");
+    ASTContext ctx;
+    Parser parser(&ctx, lexer.getTokens());
+    Addr<Decl> parsed = parser.decl();
+    if (parsed.isError()) throw std::runtime_error("Parser error");
+    Typer typer(&ctx);
+    typer.typeDecl(parsed);
+    if (typer.unifier.errors.size() == 0)
+      throw std::runtime_error("Expected failure, but it succeeded.");
+  }
+
   //////////////////////////////////////////////////////////////////////////////
 
   TEST(primitive_literals) {
@@ -91,6 +121,32 @@ namespace TyperTests {
       "  x := x! + 1;"
       "}",
       "i32"
+    );
+  }
+
+  TEST(decls_and_call_expressions) {
+    declShouldPass(
+      "module Testing {"
+      "  extern func f(x: i32): i32;"
+      "  extern func p(y: i8): bool;"
+      "  func g(x: i32): i32 = f(2*x) + 1;"
+      "  func h(z: i8): i32 = if p(z) then 0 else 1;"
+      "}"
+    );
+  }
+
+  TEST(decls_with_references) {
+    declShouldPass(
+      "module Testing {"
+      "  extern func f(x: &i32): unit;"
+      "  func h(): unit = f(#42);"
+      "}"
+    );
+    declShouldFail(
+      "module Testing {"
+      "  extern func f(x: #i32): unit;"
+      "  func h(): unit = f(&42);"
+      "}"
     );
   }
 }

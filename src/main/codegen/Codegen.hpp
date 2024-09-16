@@ -3,25 +3,29 @@
 
 #include <llvm/IR/IRBuilder.h>
 #include "common/ScopeStack.hpp"
-#include "common/NodeManager.hpp"
+#include "common/ASTContext.hpp"
+#include "common/TypeContext.hpp"
 #include "common/Ontology.hpp"
 
 class Codegen {
 public:
-  llvm::LLVMContext ctx;
+  llvm::LLVMContext llvmctx;
   llvm::IRBuilder<>* b;
   llvm::Module* mod;
-  const NodeManager* nodeManager;
+  const ASTContext* astctx;
+  const TypeContext* tyctx;
   const Ontology* ont;
 
   /** Maps variable names to their LLVM values */
   ScopeStack<llvm::Value*> varValues;
 
-  Codegen(const NodeManager* nodeManager, const Ontology* ont) {
-    b = new llvm::IRBuilder<>(ctx);
-    mod = new llvm::Module("MyModule", ctx);
+  Codegen(const ASTContext* astctx, const TypeContext* tyctx,
+        const Ontology* ont) {
+    b = new llvm::IRBuilder<>(llvmctx);
+    mod = new llvm::Module("MyModule", llvmctx);
     mod->setTargetTriple("x86_64-pc-linux-gnu");
-    this->nodeManager = nodeManager;
+    this->astctx = astctx;
+    this->tyctx = tyctx;
     this->ont = ont;
   }
 
@@ -30,197 +34,189 @@ public:
     delete b;
   }
 
-  llvm::ArrayType* genArrayType(unsigned int _arrayTy) {
-    Node arrayTy = nodeManager->get(_arrayTy);
-    llvm::Type* innerType = genType(arrayTy.n2);
-    Node intNode = nodeManager->get(arrayTy.n1);
-    return llvm::ArrayType::get(innerType, intNode.extra.intVal);
-  }
+  // llvm::ArrayType* genArrayType(unsigned int _arrayTy) {
+  //   Node arrayTy = astctx->get(_arrayTy);
+  //   llvm::Type* innerType = genType(arrayTy.n2);
+  //   Node intNode = astctx->get(arrayTy.n1);
+  //   return llvm::ArrayType::get(innerType, intNode.extra.intVal);
+  // }
 
-  llvm::Type* genType(unsigned int _n) {
-    Node n = nodeManager->get(_n);
-    switch (n.ty) {
-      case NodeTy::BOOL: return b->getInt1Ty();
-      case NodeTy::i8: return b->getInt8Ty();
-      case NodeTy::i32: return b->getInt32Ty();
-      case NodeTy::f32: return b->getFloatTy();
-      case NodeTy::f64: return b->getDoubleTy();
-      case NodeTy::STRING: return b->getInt8PtrTy();
-      case NodeTy::UNIT: return b->getVoidTy();
-      case NodeTy::TY_ARRAY: return genArrayType(_n);
+  llvm::Type* genType(TVar tvar) {
+    Type ty = tyctx->resolve(tvar).second;
+    if (ty.isNoType()) return b->getVoidTy();
+    switch (ty.getID()) {
+      case Type::ID::BOOL: return b->getInt1Ty();
+      case Type::ID::i8: return b->getInt8Ty();
+      case Type::ID::i32: return b->getInt32Ty();
+      case Type::ID::f32: return b->getFloatTy();
+      case Type::ID::f64: return b->getDoubleTy();
+      case Type::ID::UNIT: return b->getVoidTy();
       default: return b->getVoidTy();
     }
   }
 
-  llvm::FunctionType* makeFunctionType(unsigned int _paramList, unsigned int _retTy) {
-    Node paramList = nodeManager->get(_paramList);
+  llvm::Type* genType(Addr<TypeExp> _texp) {
+    AST::ID id = astctx->get(_texp).getID();
+    
+    if (id == AST::ID::i8_TEXP)
+      return b->getInt8Ty();
+    else if (id == AST::ID::i32_TEXP)
+      return b->getInt32Ty();
+    else if (id == AST::ID::f32_TEXP)
+      return b->getFloatTy();
+    else if (id == AST::ID::f64_TEXP)
+      return b->getDoubleTy();
+    else if (id == AST::ID::BOOL_TEXP)
+      return b->getInt1Ty();
+    else if (id == AST::ID::UNIT_TEXP)
+      return b->getVoidTy();
+    else return b->getVoidTy();
+  }
+
+  llvm::FunctionType* makeFunctionType(Addr<ParamList> _paramList,
+        Addr<TypeExp> _retTy) {
+    ParamList paramList = astctx->get(_paramList);
     std::vector<llvm::Type*> paramTys;
-    while (paramList.ty == NodeTy::PARAMLIST_CONS) {
-      paramTys.push_back(genType(paramList.n2));
-      paramList = nodeManager->get(paramList.n3);
+    while (paramList.nonEmpty()) {
+      paramTys.push_back(genType(paramList.getHeadParamType()));
+      paramList = astctx->get(paramList.getTail());
     }
     llvm::Type* retTy = genType(_retTy);
     return llvm::FunctionType::get(retTy, paramTys, false);
   }
 
-  /** Adds the parameters in `_paramList` to the topmost scope in the scope stack.
-   * Also sets argument names in the LLVM IR. */
-  void addParamsToScope(llvm::Function* f, unsigned int _paramList) {
-    Node paramList = nodeManager->get(_paramList);
+  /// Adds the parameters to the topmost scope in the scope stack. Also sets
+  /// argument names in the LLVM IR.
+  void addParamsToScope(llvm::Function* f, Addr<ParamList> _paramList) {
+    ParamList paramList = astctx->get(_paramList);
     for (llvm::Argument &arg : f->args()) {
-      Node paramName = nodeManager->get(paramList.n1);
-      std::string paramNameStr(paramName.extra.ptr, paramName.loc.sz);
-      varValues.add(paramNameStr, &arg);
-      arg.setName(paramNameStr);        // Not strictly necessary, but helpful to have
-      paramList = nodeManager->get(paramList.n3);
+      auto paramName = astctx->get(paramList.getHeadParamName()).asString();
+      varValues.add(paramName, &arg);
+      arg.setName(paramName);
+      paramList = astctx->get(paramList.getTail());
     }
   }
 
-  llvm::Value* genExp(unsigned int _n) {
-    Node n = nodeManager->get(_n);
+  llvm::Value* genExp(Addr<Exp> _exp) {
+    Exp exp = astctx->get(_exp);
+    AST::ID id = exp.getID();
 
-    if (n.ty == NodeTy::ARRAY_CONSTR_INIT) {
-      llvm::ArrayType* arrayType = genArrayType(n.n1);
-      long arraySize = nodeManager->get(n.n2).extra.intVal;
-      llvm::Value* initElement = genExp(n.n3);
-      std::vector<llvm::Constant*> elements(arraySize, (llvm::Constant*)initElement);
-      // std::vector<llvm::Constant*> elements(arraySize, initElement);
-      return llvm::ConstantArray::get(arrayType, elements);
-      // llvm::Type* innerType = genType(nodeManager->get(n.n1).n2);
-      // llvm::Value* arraySizeVal = genExp(n.n2);
-      // llvm::Value* ret = b->CreateAlloca(innerType, arraySizeVal);
-      // llvm::Value* initVal = genExp(n.n3);
-      // uint32_t arraySize = (uint32_t)nodeManager->get(n.n2).extra.intVal;
-      // for (uint32_t i = 0; i < arraySize; ++i) {
-      //   llvm::Value* idxVal = b->getInt32((uint32_t)i);
-      //   llvm::Value* offsetAddr = b->CreateGEP(innerType, ret, idxVal);
-      //   b->CreateStore(initVal, offsetAddr);
-      // }
+    if (exp.isBinopExp()) {
+      BinopExp e = astctx->GET_UNSAFE<BinopExp>(_exp);
+      llvm::Value* v1 = genExp(e.getLHS());
+      llvm::Value* v2 = genExp(e.getRHS());
+      switch (id) {
+      case AST::ID::ADD: return b->CreateAdd(v1, v2);
+      case AST::ID::DIV: return b->CreateSDiv(v1, v2);
+      case AST::ID::MUL: return b->CreateMul(v1, v2);
+      case AST::ID::SUB: return b->CreateSub(v1, v2);
+      default: assert(false && "unimplemented");
+      }
     }
 
-    else if (n.ty == NodeTy::ASCRIP) {
-      return genExp(n.n2);
+    else if (id == AST::ID::ASCRIP) {
+      AscripExp e = astctx->GET_UNSAFE<AscripExp>(_exp);
+      return genExp(e.getAscriptee());
     }
 
-    else if (n.ty == NodeTy::BLOCK) {
-      Node stmtList = nodeManager->get(n.n2);
+    else if (id == AST::ID::BLOCK) {
+      BlockExp e = astctx->GET_UNSAFE<BlockExp>(_exp);
+      ExpList stmtList = astctx->get(e.getStatements());
       llvm::Value* lastStmtVal = nullptr;
-      while (stmtList.ty == NodeTy::STMTLIST_CONS) {
-        lastStmtVal = genStmt(stmtList.n1);
-        stmtList = nodeManager->get(stmtList.n2);
+      while (stmtList.nonEmpty()) {
+        lastStmtVal = genExp(stmtList.getHead());
+        stmtList = astctx->get(stmtList.getTail());
       }
       return lastStmtVal;
     }
 
-    else if (n.ty == NodeTy::CALL) {
-      Node efqident = nodeManager->get(n.n2);
-      const char* funcName = efqident.extra.ptr;
-      llvm::Function* callee = mod->getFunction(funcName);
+    else if (id == AST::ID::CALL) {
+      CallExp e = astctx->GET_UNSAFE<CallExp>(_exp);
+      FQIdent fqIdent = astctx->GET_UNSAFE<FQIdent>(e.getFunction());
+      std::string name = ont->getName(fqIdent.getKey());
+      llvm::Function* callee = mod->getFunction(name);
 
       std::vector<llvm::Value*> args;
-      Node expList = nodeManager->get(n.n3);
-      while (expList.ty == NodeTy::EXPLIST_CONS) {
-        args.push_back(genExp(expList.n1));
-        expList = nodeManager->get(expList.n2);
+      ExpList expList = astctx->get(e.getArguments());
+      while (expList.nonEmpty()) {
+        args.push_back(genExp(expList.getHead()));
+        expList = astctx->get(expList.getTail());
       }
       return b->CreateCall(callee, args);
     }
 
-    else if (n.ty == NodeTy::EQ) {
-      llvm::Value* v1 = genExp(n.n2);
-      llvm::Value* v2 = genExp(n.n3);
+    // else if (id == AST::ID::EQ) {
+    //   llvm::Value* v1 = genExp(n.n2);
+    //   llvm::Value* v2 = genExp(n.n3);
 
-      llvm::Type* operandType = v1->getType();
-      if (operandType->isIntegerTy())
-        return b->CreateICmpEQ(v1, v2);
-      else if (operandType->isFloatingPointTy())
-        return b->CreateFCmpOEQ(v1, v2);
-      else {
-        printf("Fatal error: Didn't expect this type for an EQ expression\n");
-        exit(1);
-      }
-    }
+    //   llvm::Type* operandType = v1->getType();
+    //   if (operandType->isIntegerTy())
+    //     return b->CreateICmpEQ(v1, v2);
+    //   else if (operandType->isFloatingPointTy())
+    //     return b->CreateFCmpOEQ(v1, v2);
+    //   else {
+    //     printf("Fatal error: Didn't expect this type for an EQ expression\n");
+    //     exit(1);
+    //   }
+    // }
 
-    else if (n.ty == NodeTy::EQIDENT) {
-      Node identNode = nodeManager->get(n.n2);
-      if (identNode.ty == NodeTy::IDENT) {
-        std::string identStr(identNode.extra.ptr, identNode.loc.sz);
-        return varValues.getOrElse(identStr, nullptr);
+    else if (id == AST::ID::ENAME) {
+      NameExp e = astctx->GET_UNSAFE<NameExp>(_exp);
+      Name name = astctx->get(e.getName());
+      if (name.isUnqualified()) {
+        std::string ident = astctx->GET_UNSAFE<Ident>(e.getName()).asString();
+        return varValues.getOrElse(ident, nullptr);
       } else {
-        printf("Fatal error: Didn't expect qualified identifier in Codegen::genExp\n");
+        llvm::errs() << "Didn't expect qualified identifier\n";
         exit(1);
       }
     }
 
-    else if (n.ty == NodeTy::LIT_INT) {
-      return llvm::ConstantInt::get(genType(n.n1), n.extra.intVal);
+    else if (id == AST::ID::INT_LIT) {
+      IntLit lit = astctx->GET_UNSAFE<IntLit>(_exp);
+      return llvm::ConstantInt::get(genType(lit.getTVar()), lit.asLong());
     }
 
-    else if (n.ty == NodeTy::LIT_STRING) {
-      std::string s(n.extra.ptr+1, n.loc.sz-2);
-      llvm::Constant* llvmStr = b->CreateGlobalStringPtr(s);
-      return llvmStr;
-    }
-
-    else if (n.ty == NodeTy::ADD) {
-      llvm::Value* v1 = genExp(n.n2);
-      llvm::Value* v2 = genExp(n.n3);
-      return b->CreateAdd(v1, v2);
-    }
-
-    else if (n.ty == NodeTy::MUL) {
-      llvm::Value* v1 = genExp(n.n2);
-      llvm::Value* v2 = genExp(n.n3);
-      return b->CreateMul(v1, v2);
-    }
-
-    else {
-      printf("An error occured in genExp!\n");
-      exit(1);
-    }
-  }
-
-  llvm::Value* genStmt(unsigned int _n) {
-    Node n = nodeManager->get(_n);
-
-    if (n.ty == NodeTy::LET) {
-      llvm::Value* v = genExp(n.n2);
-      Node n1 = nodeManager->get(n.n1);
-      std::string identStr(n1.extra.ptr, n1.loc.sz);
-      v->setName(identStr);   // Not strictly necessary, but helpful to have
-      varValues.add(identStr, v);
+    else if (id == AST::ID::LET) {
+      LetExp e = astctx->GET_UNSAFE<LetExp>(_exp);
+      llvm::Value* v = genExp(e.getDefinition());
+      std::string boundIdentName = astctx->get(e.getBoundIdent()).asString();
+      v->setName(boundIdentName);
+      varValues.add(boundIdentName, v);
       return nullptr;
     }
 
-    else if (isExpNodeTy(n.ty)) {
-      return genExp(_n);
-    }
+    // else if (id == AST::ID::LIT_STRING) {
+    //   std::string s(n.extra.ptr+1, n.loc.sz-2);
+    //   llvm::Constant* llvmStr = b->CreateGlobalStringPtr(s);
+    //   return llvmStr;
+    // }
 
     else {
-      printf("Unsupported statement!\n");
+      llvm::errs() << "genExp cannot handle AST::ID::";
+      llvm::errs() << ASTIDToString(id) << "\n";
       exit(1);
     }
-
   }
 
-  /** Codegens a `func`, `proc`, `extern func` or `extern proc`. */
-  llvm::Function* genFunc(unsigned int _n) {
-    Node n = nodeManager->get(_n);
+  /** Codegens a `func`, `extern func`. */
+  llvm::Function* genFunc(Addr<FunctionDecl> _funDecl) {
+    FunctionDecl funDecl = astctx->get(_funDecl);
     
-    std::string funcName(nodeManager->get(n.n1).extra.ptr);
+    FQIdent fqName = astctx->GET_UNSAFE<FQIdent>(funDecl.getName());
 
     llvm::Function* f = llvm::Function::Create(
-      makeFunctionType(n.n2, n.n3),
+      makeFunctionType(funDecl.getParameters(), funDecl.getReturnType()),
       llvm::Function::ExternalLinkage,
-      funcName,
+      ont->getName(fqName.getKey()),
       mod
     );
 
-    if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC) {
+    if (funDecl.getID() == AST::ID::FUNC) {
       varValues.push();
-      addParamsToScope(f, n.n2);
-      b->SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", f));
-      llvm::Value* retVal = genExp(n.extra.nodes.n4);
+      addParamsToScope(f, funDecl.getParameters());
+      b->SetInsertPoint(llvm::BasicBlock::Create(llvmctx, "entry", f));
+      llvm::Value* retVal = genExp(funDecl.getBody());
       b->CreateRet(retVal);
       varValues.pop();
     }
@@ -228,27 +224,30 @@ public:
     return f;
   }
 
-  void genModuleOrNamespace(unsigned int _n) {
-    Node n = nodeManager->get(_n);
-    genDeclList(n.n2);
+  void genModule(Addr<ModuleDecl> _mod) {
+    ModuleDecl mod = astctx->get(_mod);
+    genDeclList(mod.getDecls());
   }
 
-  void genDecl(unsigned int _n) {
-    Node n = nodeManager->get(_n);
-
-    if (n.ty == NodeTy::MODULE || n.ty == NodeTy::NAMESPACE) {
-      genModuleOrNamespace(_n);
-    } else if (n.ty == NodeTy::FUNC || n.ty == NodeTy::PROC
-           || n.ty == NodeTy::EXTERN_FUNC || n.ty == NodeTy::EXTERN_PROC) {
-      genFunc(_n);
+  void genDecl(Addr<Decl> _decl) {
+    switch (astctx->get(_decl).getID()) {
+    case AST::ID::MODULE:
+      genModule(_decl.UNSAFE_CAST<ModuleDecl>());
+      break;
+    case AST::ID::FUNC: case AST::ID::EXTERN_FUNC:
+      genFunc(_decl.UNSAFE_CAST<FunctionDecl>());
+      break;
+    default:
+      llvm::errs() << "genDecl: unexpected AST::ID::" <<
+        ASTIDToString(astctx->get(_decl).getID()) << "\n";
     }
   }
 
-  void genDeclList(unsigned int _declList) {
-    Node declList = nodeManager->get(_declList);
-    while (declList.ty == NodeTy::DECLLIST_CONS) {
-      genDecl(declList.n1);
-      declList = nodeManager->get(declList.n2);
+  void genDeclList(Addr<DeclList> _declList) {
+    DeclList declList = astctx->get(_declList);
+    while (declList.nonEmpty()) {
+      genDecl(declList.getHead());
+      declList = astctx->get(declList.getTail());
     }
   }
 

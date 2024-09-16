@@ -30,10 +30,9 @@ public:
     unifier.unifyDecl(_decl);
   }
 
-  void typeDeclList(unsigned int _declList) {
-    // cataloger.catalogDeclList(std::string("global"), _declList);
-    // unifier.tyDeclList(_declList);
-    assert(false && "unimplemented");
+  void typeDeclList(Addr<DeclList> _declList) {
+    cataloger.catalogDeclList(std::string("global"), _declList);
+    unifier.unifyDeclList(_declList);
   }
 
 };

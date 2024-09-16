@@ -59,6 +59,13 @@ public:
     }
   }
 
+  bool isBinopExp() {
+    switch (id) {
+    case ADD: case DIV: case EQ: case MUL: case NE: case SUB: return true;
+    default: return false;
+    }
+  }
+
 };
 
 /// @brief A type variable that annotates an expression.
