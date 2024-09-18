@@ -8,16 +8,11 @@
 
 class IntLit;
 
-/// TODO: can we include the pointer to the ontology in this struct? 
-class FQNameKey {
-  unsigned int value;
-public:
-  FQNameKey() { value = -1; }
-  FQNameKey(unsigned int value) { this->value = value; }
-  unsigned int getValue() const { return value; }
-};
-
-/// @brief Base class for all AST elements.
+/// @brief An AST node is any syntactic form that appears in source code. All
+/// AST nodes have an `id`, which is used to downcast to subclasses, and a
+/// source code `location`. AST nodes may contain pseudo-pointers (instances
+/// of `Addr`) to other nodes. An `ASTContext` manages these nodes including,
+/// creation and dereferencing.
 class AST {
 public:
   enum ID : unsigned short {
@@ -40,12 +35,14 @@ public:
 
 private:
   ID id;
+  Location location;
 
 protected:
-  AST(ID id) { this->id = id; }
+  AST(ID id, Location location) : id(id), location(location) {}
 
 public:
   ID getID() const { return id; }
+  Location getLocation() const { return location; }
 
   bool isExp() {
     switch (id) {
@@ -65,10 +62,19 @@ public:
     default: return false;
     }
   }
-
 };
 
-/// @brief A type variable that annotates an expression.
+/// TODO: can we include the pointer to the ontology in this struct? 
+class FQNameKey {
+  unsigned int value;
+public:
+  FQNameKey() { value = -1; }
+  FQNameKey(unsigned int value) { this->value = value; }
+  unsigned int getValue() const { return value; }
+};
+
+/// @brief A type variable that annotates an expression. Type variables are
+/// managed by a `TypeContext` which resolves them to `Type` instances.
 class TVar {
   int value;
 public:
@@ -95,11 +101,17 @@ public:
   };
 protected:
   Type::ID id;
+  unsigned int arraySize;
   TVar inner;
   Type(Type::ID id) { this->id = id; this->inner = TVar::none(); }
   Type(Type::ID id, TVar inner) { this->id = id; this->inner = inner; }
+  Type(Type::ID id, unsigned int arraySize, TVar inner) {
+    this->id = id; this->arraySize = arraySize; this->inner = inner;
+  }
 public:
-  static Type array(TVar of) { return Type(ID::ARRAY, of); }
+  static Type array(unsigned int sz, TVar of) {
+    return Type(ID::ARRAY, sz, of);
+  }
   static Type bool_() { return Type(ID::BOOL); }
   static Type f32() { return Type(ID::f32); }
   static Type f64() { return Type(ID::f64); }
@@ -112,47 +124,17 @@ public:
   static Type decimal() { return Type(ID::DECIMAL); }
   static Type numeric() { return Type(ID::NUMERIC); }
   static Type notype() { return Type(ID::NOTYPE); }
-  bool isNoType() { return id == ID::NOTYPE; }
-  ID getID() { return id; }
-  TVar getInner() { return inner; }
-};
-
-class TypeOrTVar {
-  bool isType_;
-  union { TVar tvar; Type type; } data;
-public:
-  TypeOrTVar() : data({.type = Type::notype()}) { isType_ = true; }
-  TypeOrTVar(TVar tvar) : data({.tvar = tvar}) { isType_ = false; }
-  TypeOrTVar(Type type) : data({.type = type}) { isType_ = true; }
-  bool isType() { return isType_; }
-  bool isTVar() { return !isType_; }
-  Type getType() { return data.type; }
-  TVar getTVar() { return data.tvar; }
-  bool exists() {
-    return (isType_ && !data.type.isNoType())
-        || (!isType_ && data.tvar.exists());
-  }
-};
-
-/// @brief An AST element that has a location in the source text.
-class LocatedAST : public AST {
-  Location location;
-protected:
-  LocatedAST(ID id, Location location) : AST(id) {
-    this->location = location;
-  }
-public:
-  static LocatedAST* fromAST(AST* ast) {
-    return static_cast<LocatedAST*>(ast);
-  }
-  Location getLocation() const { return location; }
+  bool isNoType() const { return id == ID::NOTYPE; }
+  ID getID() const { return id; }
+  TVar getInner() const { return inner; }
+  unsigned int getArraySize() { return arraySize; }
 };
 
 /// @brief A qualified, unqualified, or fully qualified identifier
 /// (QIDENT, IDENT, FQIDENT).
-class Name : public LocatedAST {
+class Name : public AST {
 protected:
-  Name(ID id, Location loc) : LocatedAST(id, loc) {}
+  Name(ID id, Location loc) : AST(id, loc) {}
 public:
   bool isQualified() { return getID() == QIDENT; }
   bool isUnqualified() { return getID() == IDENT; }
@@ -189,9 +171,9 @@ public:
 };
 
 /// @brief A type that appears in the source text.
-class TypeExp : public LocatedAST {
+class TypeExp : public AST {
 protected:
-  TypeExp(ID id, Location loc) : LocatedAST(id, loc) {}
+  TypeExp(ID id, Location loc) : AST(id, loc) {}
 public:
   static TypeExp mkUnit(Location loc) { return TypeExp(UNIT_TEXP, loc); }
   static TypeExp mkBool(Location loc) { return TypeExp(BOOL_TEXP, loc); }
@@ -229,26 +211,26 @@ public:
 };
 
 /// @brief An expression or statement (currently there is no distinction).
-class Exp : public LocatedAST {
+class Exp : public AST {
 protected:
   TVar type = TVar::none();
-  Exp(ID id, Location loc) : LocatedAST(id, loc) {}
+  Exp(ID id, Location loc) : AST(id, loc) {}
 public:
   TVar getTVar() const { return type; };
   void setTVar(TVar type) { this->type = type; }
 };
 
 /// @brief A linked-list of expressions.
-class ExpList : public LocatedAST {
+class ExpList : public AST {
   Addr<Exp> head;
   Addr<ExpList> tail;
 public:
-  ExpList(Location loc) : LocatedAST(EXPLIST_NIL, loc) {
+  ExpList(Location loc) : AST(EXPLIST_NIL, loc) {
     this->head = Addr<Exp>::none();
     this->tail = Addr<ExpList>::none();
   }
   ExpList(Location loc, Addr<Exp> head, Addr<ExpList> tail)
-      : LocatedAST(EXPLIST_CONS, loc) {
+      : AST(EXPLIST_CONS, loc) {
     this->head = head;
     this->tail = tail;
   }
@@ -265,19 +247,19 @@ public:
 };
 
 /// @brief A list of parameters in a function signature.
-class ParamList : public LocatedAST {
+class ParamList : public AST {
   Addr<Ident> headParamName;
   Addr<TypeExp> headParamType;
   Addr<ParamList> tail;
 public:
-  ParamList(Location loc) : LocatedAST(PARAMLIST_NIL, loc) {
+  ParamList(Location loc) : AST(PARAMLIST_NIL, loc) {
     this->headParamName = Addr<Ident>::none();
     this->headParamType = Addr<TypeExp>::none();
     this->tail = Addr<ParamList>::none();
   }
   ParamList(Location loc, Addr<Ident> headParamName,
       Addr<TypeExp> headParamType, Addr<ParamList> tail)
-      : LocatedAST(PARAMLIST_CONS, loc) {
+      : AST(PARAMLIST_CONS, loc) {
     this->headParamName = headParamName;
     this->headParamType = headParamType;
     this->tail = tail;
@@ -309,6 +291,9 @@ public:
   long asLong() const {
     return atol(std::string(ptr, getLocation().sz).c_str());
   }
+  unsigned int asUint() const {
+    return atoi(std::string(ptr, getLocation().sz).c_str());
+  }
   std::string asString() { return std::string(ptr, getLocation().sz); }
 };
 
@@ -319,6 +304,7 @@ public:
   DecimalLit(Location loc, const char* ptr) : Exp(DEC_LIT, loc) {
     this->ptr = ptr;
   }
+  std::string asString() const { return std::string(ptr, getLocation().sz); }
   double asDouble() const {
     return atof(std::string(ptr, getLocation().sz).c_str());
   }
@@ -501,10 +487,10 @@ public:
 };
 
 /// @brief A declaration.
-class Decl : public LocatedAST {
+class Decl : public AST {
 protected:
   Addr<Name> name;
-  Decl(ID id, Location loc, Addr<Name> name) : LocatedAST(id, loc) {
+  Decl(ID id, Location loc, Addr<Name> name) : AST(id, loc) {
     this->name = name;
   }
 public:
@@ -513,16 +499,16 @@ public:
 };
 
 /// @brief A list of declarations.
-class DeclList : public LocatedAST {
+class DeclList : public AST {
   Addr<Decl> head;
   Addr<DeclList> tail;
 public:
-  DeclList(Location loc) : LocatedAST(DECLLIST_NIL, loc) {
+  DeclList(Location loc) : AST(DECLLIST_NIL, loc) {
     this->head = Addr<Decl>::none();
     this->tail = Addr<DeclList>::none();
   }
   DeclList(Location loc, Addr<Decl> head, Addr<DeclList> tail)
-      : LocatedAST(DECLLIST_CONS, loc) {
+      : AST(DECLLIST_CONS, loc) {
     this->head = head;
     this->tail = tail;
   }

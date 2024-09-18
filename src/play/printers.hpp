@@ -13,7 +13,7 @@ void print_parse_tree(
       const Ontology* ont = nullptr) {
   assert(n.exists() && "Tried to print error AST node!");
   AST node = ctx.get(n);
-  Location loc = ctx.get(n.UNSAFE_CAST<LocatedAST>()).getLocation();
+  Location loc = node.getLocation();
   printf("ln%3d, col%3d, sz%3d   ", loc.row, loc.col, loc.sz);
   if (indents.size() > 0) {
     for (auto i = 0; i < indents.size() - 1; i++) {

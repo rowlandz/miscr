@@ -5,12 +5,30 @@
 #include "common/AST.hpp"
 
 class TypeContext {
+  
   struct MyDenseMapInfo {
     static inline TVar getEmptyKey() { return TVar(-1); }
     static inline TVar getTombstoneKey() { return TVar(-2); }
     static unsigned getHashValue(const TVar &Val) { return Val.get(); }
     static bool isEqual(const TVar &LHS, const TVar &RHS) {
       return LHS.get() == RHS.get();
+    }
+  };
+
+  class TypeOrTVar {
+    bool isType_;
+    union { TVar tvar; Type type; } data;
+  public:
+    TypeOrTVar() : data({.type = Type::notype()}) { isType_ = true; }
+    TypeOrTVar(TVar tvar) : data({.tvar = tvar}) { isType_ = false; }
+    TypeOrTVar(Type type) : data({.type = type}) { isType_ = true; }
+    bool isType() { return isType_; }
+    bool isTVar() { return !isType_; }
+    Type getType() { return data.type; }
+    TVar getTVar() { return data.tvar; }
+    bool exists() {
+      return (isType_ && !data.type.isNoType())
+          || (!isType_ && data.tvar.exists());
     }
   };
 
@@ -42,6 +60,7 @@ public:
   /// to a type or bound do nothing. In the latter case, `Type::notype()` is
   /// returned. Side-effect free. 
   std::pair<TVar, Type> resolve(TVar v) const {
+    assert(v.exists() && "Tried to resolve a nonexistant typevar");
     TypeOrTVar found = bindings.lookup(v);
     while (found.exists()) {
       if (found.isType()) {
@@ -54,13 +73,19 @@ public:
   }
 
   std::string TVarToString(TVar v) const {
+    if (!v.exists()) return std::string("__nonexistant_tvar__");
     auto res = resolve(v);
     if (res.second.isNoType()) {
       return std::string("?") + std::to_string(v.get());
     } else {
       switch (res.second.getID()) {
-      case Type::ID::ARRAY:
-        return std::string("array<") + TVarToString(res.second.getInner()) + ">";
+      case Type::ID::ARRAY: {
+        std::string arrSize = std::to_string(res.second.getArraySize());
+        std::string innerTy = TVarToString(res.second.getInner());
+        return std::string("array<") + arrSize + ", " + innerTy + ">";
+      }
+      case Type::ID::REF:
+        return std::string("ref<") + TVarToString(res.second.getInner()) + ">";
       case Type::ID::RREF:
         return std::string("rref<") + TVarToString(res.second.getInner()) + ">";
       case Type::ID::WREF:

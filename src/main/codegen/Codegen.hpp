@@ -34,43 +34,39 @@ public:
     delete b;
   }
 
-  // llvm::ArrayType* genArrayType(unsigned int _arrayTy) {
-  //   Node arrayTy = astctx->get(_arrayTy);
-  //   llvm::Type* innerType = genType(arrayTy.n2);
-  //   Node intNode = astctx->get(arrayTy.n1);
-  //   return llvm::ArrayType::get(innerType, intNode.extra.intVal);
-  // }
-
   llvm::Type* genType(TVar tvar) {
     Type ty = tyctx->resolve(tvar).second;
     if (ty.isNoType()) return b->getVoidTy();
     switch (ty.getID()) {
-      case Type::ID::BOOL: return b->getInt1Ty();
-      case Type::ID::i8: return b->getInt8Ty();
-      case Type::ID::i32: return b->getInt32Ty();
-      case Type::ID::f32: return b->getFloatTy();
-      case Type::ID::f64: return b->getDoubleTy();
-      case Type::ID::UNIT: return b->getVoidTy();
-      default: return b->getVoidTy();
+    case Type::ID::BOOL: return b->getInt1Ty();
+    case Type::ID::i8: return b->getInt8Ty();
+    case Type::ID::i32: return b->getInt32Ty();
+    case Type::ID::f32: return b->getFloatTy();
+    case Type::ID::f64: return b->getDoubleTy();
+    case Type::ID::RREF:
+    case Type::ID::WREF: return llvm::PointerType::get(llvmctx, 0);
+    case Type::ID::UNIT: return b->getVoidTy();
+    default:
+      llvm::errs() << "genType(TVar) case unimplemented\n";
+      exit(1);
     }
   }
 
   llvm::Type* genType(Addr<TypeExp> _texp) {
-    AST::ID id = astctx->get(_texp).getID();
-    
-    if (id == AST::ID::i8_TEXP)
-      return b->getInt8Ty();
-    else if (id == AST::ID::i32_TEXP)
-      return b->getInt32Ty();
-    else if (id == AST::ID::f32_TEXP)
-      return b->getFloatTy();
-    else if (id == AST::ID::f64_TEXP)
-      return b->getDoubleTy();
-    else if (id == AST::ID::BOOL_TEXP)
-      return b->getInt1Ty();
-    else if (id == AST::ID::UNIT_TEXP)
-      return b->getVoidTy();
-    else return b->getVoidTy();
+    switch(astctx->get(_texp).getID()) {
+    case AST::ID::i8_TEXP: return b->getInt8Ty();
+    case AST::ID::i32_TEXP: return b->getInt32Ty();
+    case AST::ID::f32_TEXP: return b->getFloatTy();
+    case AST::ID::f64_TEXP: return b->getDoubleTy();
+    case AST::ID::ARRAY_TEXP: return llvm::PointerType::get(llvmctx, 0);
+    case AST::ID::BOOL_TEXP: return b->getInt1Ty();
+    case AST::ID::REF_TEXP:
+    case AST::ID::WREF_TEXP: return llvm::PointerType::get(llvmctx, 0);
+    case AST::ID::UNIT_TEXP: return b->getVoidTy();
+    default:
+      llvm::errs() << "genType(Addr<TypeExp>) case unimplemented\n";
+      exit(1);
+    }
   }
 
   llvm::FunctionType* makeFunctionType(Addr<ParamList> _paramList,
@@ -101,7 +97,7 @@ public:
     Exp exp = astctx->get(_exp);
     AST::ID id = exp.getID();
 
-    if (exp.isBinopExp()) {
+    if (exp.isBinopExp() && id != AST::ID::EQ && id != AST::ID::NE) {
       BinopExp e = astctx->GET_UNSAFE<BinopExp>(_exp);
       llvm::Value* v1 = genExp(e.getLHS());
       llvm::Value* v2 = genExp(e.getRHS());
@@ -145,20 +141,28 @@ public:
       return b->CreateCall(callee, args);
     }
 
-    // else if (id == AST::ID::EQ) {
-    //   llvm::Value* v1 = genExp(n.n2);
-    //   llvm::Value* v2 = genExp(n.n3);
+    else if (id == AST::ID::DEREF) {
+      DerefExp e = astctx->GET_UNSAFE<DerefExp>(_exp);
+      llvm::Value* ofExp = genExp(e.getOf());
+      llvm::Type* tyToLoad = genType(e.getTVar());
+      return b->CreateLoad(tyToLoad, ofExp);
+    }
 
-    //   llvm::Type* operandType = v1->getType();
-    //   if (operandType->isIntegerTy())
-    //     return b->CreateICmpEQ(v1, v2);
-    //   else if (operandType->isFloatingPointTy())
-    //     return b->CreateFCmpOEQ(v1, v2);
-    //   else {
-    //     printf("Fatal error: Didn't expect this type for an EQ expression\n");
-    //     exit(1);
-    //   }
-    // }
+    else if (id == AST::ID::EQ) {
+      BinopExp e = astctx->GET_UNSAFE<BinopExp>(_exp);
+      llvm::Value* v1 = genExp(e.getLHS());
+      llvm::Value* v2 = genExp(e.getRHS());
+
+      llvm::Type* operandType = v1->getType();
+      if (operandType->isIntegerTy())
+        return b->CreateICmpEQ(v1, v2);
+      else if (operandType->isFloatingPointTy())
+        return b->CreateFCmpOEQ(v1, v2);
+      else {
+        llvm::errs() << "Fatal error: Unexpected type for EQ\n";
+        exit(1);
+      }
+    }
 
     else if (id == AST::ID::ENAME) {
       NameExp e = astctx->GET_UNSAFE<NameExp>(_exp);
@@ -170,6 +174,35 @@ public:
         llvm::errs() << "Didn't expect qualified identifier\n";
         exit(1);
       }
+    }
+
+    else if (id == AST::ID::IF) {
+      IfExp e = astctx->GET_UNSAFE<IfExp>(_exp);
+      llvm::Function* f = b->GetInsertBlock()->getParent();
+      llvm::Value* condition = genExp(e.getCondExp());
+      auto thenBlock = llvm::BasicBlock::Create(llvmctx, "then");
+      auto elseBlock = llvm::BasicBlock::Create(llvmctx, "else");
+      auto contBlock = llvm::BasicBlock::Create(llvmctx, "ifcont");
+      b->CreateCondBr(condition, thenBlock, elseBlock);
+
+      f->getBasicBlockList().push_back(thenBlock);
+      b->SetInsertPoint(thenBlock);
+      llvm::Value* thenResult = genExp(e.getThenExp());
+      b->CreateBr(contBlock);
+      thenBlock = b->GetInsertBlock();
+
+      f->getBasicBlockList().push_back(elseBlock);
+      b->SetInsertPoint(elseBlock);
+      llvm::Value* elseResult = genExp(e.getElseExp());
+      b->CreateBr(contBlock);
+      elseBlock = b->GetInsertBlock();
+
+      f->getBasicBlockList().push_back(contBlock);
+      b->SetInsertPoint(contBlock);
+      llvm::PHINode* phiNode = b->CreatePHI(genType(e.getTVar()), 2);
+      phiNode->addIncoming(thenResult, thenBlock);
+      phiNode->addIncoming(elseResult, elseBlock);
+      return phiNode;
     }
 
     else if (id == AST::ID::INT_LIT) {
@@ -186,11 +219,22 @@ public:
       return nullptr;
     }
 
-    // else if (id == AST::ID::LIT_STRING) {
-    //   std::string s(n.extra.ptr+1, n.loc.sz-2);
-    //   llvm::Constant* llvmStr = b->CreateGlobalStringPtr(s);
-    //   return llvmStr;
-    // }
+    else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
+      RefExp e = astctx->GET_UNSAFE<RefExp>(_exp);
+      llvm::Value* v = genExp(e.getInitializer());
+      TVar initTy = astctx->get(e.getInitializer()).getTVar();
+      llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
+      b->CreateStore(v, memCell);
+      return memCell;
+    }
+
+    else if (id == AST::ID::STORE) {
+      StoreExp e = astctx->GET_UNSAFE<StoreExp>(_exp);
+      llvm::Value* lhs = genExp(e.getLHS());
+      llvm::Value* rhs = genExp(e.getRHS());
+      b->CreateStore(rhs, lhs);
+      return rhs;
+    }
 
     else {
       llvm::errs() << "genExp cannot handle AST::ID::";

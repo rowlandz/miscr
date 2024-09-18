@@ -33,20 +33,22 @@ private:
   
   TypeContext tc;
 
-  TVar freshFromTypeExp(Addr<TypeExp> _tyexp) {
-    AST::ID id = ctx->get(_tyexp).getID();
-    switch (ctx->get(_tyexp).getID()) {
-    case AST::ID::ARRAY_TEXP:
-      return tc.fresh(Type::array(freshFromTypeExp(
-        ctx->GET_UNSAFE<ArrayTypeExp>(_tyexp).getInnerType()
-      )));
+  TVar freshFromTypeExp(Addr<TypeExp> _texp) {
+    AST::ID id = ctx->get(_texp).getID();
+    switch (ctx->get(_texp).getID()) {
+    case AST::ID::ARRAY_TEXP: {
+      ArrayTypeExp texp = ctx->GET_UNSAFE<ArrayTypeExp>(_texp);
+      IntLit arraySizeLit = ctx->get(texp.getSizeLit());
+      unsigned int sz = arraySizeLit.asUint();
+      return tc.fresh(Type::array(sz, freshFromTypeExp(texp.getInnerType())));
+    }
     case AST::ID::REF_TEXP:
       return tc.fresh(Type::rref(freshFromTypeExp(
-        ctx->GET_UNSAFE<RefTypeExp>(_tyexp).getPointeeType()
+        ctx->GET_UNSAFE<RefTypeExp>(_texp).getPointeeType()
       )));
     case AST::ID::WREF_TEXP:
       return tc.fresh(Type::wref(freshFromTypeExp(
-        ctx->GET_UNSAFE<RefTypeExp>(_tyexp).getPointeeType()
+        ctx->GET_UNSAFE<RefTypeExp>(_texp).getPointeeType()
       )));
     case AST::ID::BOOL_TEXP: return tc.fresh(Type::bool_());
     case AST::ID::f32_TEXP: return tc.fresh(Type::f32());
@@ -54,8 +56,7 @@ private:
     case AST::ID::i8_TEXP: return tc.fresh(Type::i8());
     case AST::ID::i32_TEXP: return tc.fresh(Type::i32());
     case AST::ID::UNIT_TEXP: return tc.fresh(Type::unit());
-    default:
-      assert(false && "Unreachable code");
+    default: assert(false && "Unreachable code");
     }
   }
 
@@ -88,16 +89,15 @@ public:
     if (t1.getID() == t2.getID()) {
       Type::ID ty = t1.getID();
       if (ty == Type::ID::ARRAY) {
-        if (unify(t1.getInner(), t2.getInner())) {
-          tc.bind(w1, w2);
-          return true;
-        } else return false;
+        if (t1.getArraySize() != t2.getArraySize()) return false;
+        if (!unify(t1.getInner(), t2.getInner())) return false;
+        tc.bind(w1, w2);
+        return true;
       } else if (ty == Type::ID::REF || ty == Type::ID::RREF
       || ty == Type::ID::WREF) {
-        if (unify(t1.getInner(), t2.getInner())) {
-          tc.bind(w1, w2);
-          return true;
-        } else return false;
+        if (!unify(t1.getInner(), t2.getInner())) return false;
+        tc.bind(w1, w2);
+        return true;
       } else if (ty == Type::ID::BOOL || ty == Type::ID::DECIMAL
       || ty == Type::ID::f32 || ty == Type::ID::f64 || ty == Type::ID::i8
       || ty == Type::ID::i32 || ty == Type::ID::NUMERIC
@@ -219,6 +219,29 @@ public:
       TVar lhsTy = unifyWith(e.getLHS(), tc.fresh(Type::numeric()));
       unifyWith(e.getRHS(), lhsTy);
       e.setTVar(lhsTy);
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else if (id == AST::ID::ARRAY_INIT) {
+      ArrayInitExp e = ctx->GET_UNSAFE<ArrayInitExp>(_e);
+      unifyExp(e.getSizeLit().upcast<Exp>());
+      TVar ofTy = unifyExp(e.getInitializer());
+      IntLit sizeLit = ctx->get(e.getSizeLit());
+      e.setTVar(tc.fresh(Type::array(sizeLit.asUint(), ofTy)));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
+    else if (id == AST::ID::ARRAY_LIST) {
+      ArrayListExp e = ctx->GET_UNSAFE<ArrayListExp>(_e);
+      TVar ofTy = tc.fresh();
+      ExpList expList = ctx->get(e.getContent());
+      unsigned int numExps = 0;
+      while (expList.nonEmpty()) {
+        ++numExps;
+        unifyWith(expList.getHead(), ofTy);
+        expList = ctx->get(expList.getTail());
+      }
+      e.setTVar(tc.fresh(Type::array(numExps, ofTy)));
       ctx->SET_UNSAFE(_e, e);
     }
 
