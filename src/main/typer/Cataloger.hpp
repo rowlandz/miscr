@@ -66,7 +66,10 @@ public:
           multipleEntryPointsError();
           return;
         }
-        ont->recordMainProc(fqNameStr, _funcDecl);
+        FQNameKey key = ont->recordMainProc(fqNameStr, _funcDecl);
+        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
+        funcDecl.setName(fqName);
+        ctx->set(_funcDecl, funcDecl);
       } else {
         FQNameKey key = id == AST::ID::EXTERN_FUNC ?
                         ont->recordExtern(fqNameStr, relNameStr, _funcDecl) :

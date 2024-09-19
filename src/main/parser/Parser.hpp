@@ -201,12 +201,26 @@ public:
     Token t = *p;
     Addr<Exp> e = expLv0();
     RETURN_IF_ERROR(e)
-    while (p->ty == EXCLAIM) {
-      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      e = ctx->add(DerefExp(loc, e)).upcast<Exp>();
-      ++p;
+    for (;;) {
+      switch(p->ty) {
+      case EXCLAIM: {
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        e = ctx->add(DerefExp(loc, e)).upcast<Exp>();
+        ++p;
+        break;
+      }
+      case LBRACKET: {
+        ++p;
+        Addr<Exp> indexExp = exp();
+        ARREST_IF_ERROR(indexExp)
+        CHOMP_ELSE_ARREST(RBRACKET, "]", "index expression")
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        e = ctx->add(IndexExp(loc, e, indexExp)).upcast<Exp>();
+        break;
+      }
+      default: return e;
+      }
     }
-    return e;
   }
 
   Addr<Exp> expLv2() {

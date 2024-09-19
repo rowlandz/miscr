@@ -38,14 +38,22 @@ public:
     Type ty = tyctx->resolve(tvar).second;
     if (ty.isNoType()) return b->getVoidTy();
     switch (ty.getID()) {
+    case Type::ID::ARRAY:
+      return llvm::ArrayType::get(genType(ty.getInner()), ty.getArraySize());
     case Type::ID::BOOL: return b->getInt1Ty();
     case Type::ID::i8: return b->getInt8Ty();
     case Type::ID::i32: return b->getInt32Ty();
     case Type::ID::f32: return b->getFloatTy();
     case Type::ID::f64: return b->getDoubleTy();
     case Type::ID::RREF:
-    case Type::ID::WREF: return llvm::PointerType::get(llvmctx, 0);
+    case Type::ID::WREF: {
+      llvm::Type* pointeeType = genType(ty.getInner());
+      return llvm::PointerType::get(pointeeType, 0);
+    }
     case Type::ID::UNIT: return b->getVoidTy();
+
+    // NUMERIC just defaults to i32.
+    case Type::ID::NUMERIC: return b->getInt32Ty();
     default:
       llvm::errs() << "genType(TVar) case unimplemented\n";
       exit(1);
@@ -58,10 +66,18 @@ public:
     case AST::ID::i32_TEXP: return b->getInt32Ty();
     case AST::ID::f32_TEXP: return b->getFloatTy();
     case AST::ID::f64_TEXP: return b->getDoubleTy();
-    case AST::ID::ARRAY_TEXP: return llvm::PointerType::get(llvmctx, 0);
+    case AST::ID::ARRAY_TEXP: {
+      ArrayTypeExp texp = astctx->GET_UNSAFE<ArrayTypeExp>(_texp);
+      unsigned int arrSize = astctx->get(texp.getSizeLit()).asUint();
+      return llvm::ArrayType::get(genType(texp.getInnerType()), arrSize);
+    }
     case AST::ID::BOOL_TEXP: return b->getInt1Ty();
     case AST::ID::REF_TEXP:
-    case AST::ID::WREF_TEXP: return llvm::PointerType::get(llvmctx, 0);
+    case AST::ID::WREF_TEXP: {
+      RefTypeExp texp = astctx->GET_UNSAFE<RefTypeExp>(_texp);
+      llvm::Type* pointeeType = genType(texp.getPointeeType());
+      return llvm::PointerType::get(pointeeType, 0);
+    }
     case AST::ID::UNIT_TEXP: return b->getVoidTy();
     default:
       llvm::errs() << "genType(Addr<TypeExp>) case unimplemented\n";
@@ -108,6 +124,34 @@ public:
       case AST::ID::SUB: return b->CreateSub(v1, v2);
       default: assert(false && "unimplemented");
       }
+    }
+
+    else if (id == AST::ID::ARRAY_INIT) {
+      ArrayInitExp e = astctx->GET_UNSAFE<ArrayInitExp>(_exp);
+      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e.getTVar()));
+      unsigned int arrSize = astctx->get(e.getSizeLit()).asUint();
+      llvm::Value* init = genExp(e.getInitializer());
+      if (auto c = llvm::dyn_cast_or_null<llvm::Constant>(init)) {
+        std::vector<llvm::Constant*> vals(arrSize, c);
+        return llvm::ConstantArray::get(arrTy, vals);
+      } else {
+        assert(false && "This is not implemented yet.");
+      }
+    }
+
+    else if (id == AST::ID::ARRAY_LIST) {
+      ArrayListExp e = astctx->GET_UNSAFE<ArrayListExp>(_exp);
+      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e.getTVar()));
+      llvm::Value* ret = llvm::ConstantAggregateZero::get(arrTy);
+      ExpList expList = astctx->get(e.getContent());
+      unsigned int idx = 0;
+      while (expList.nonEmpty()) {
+        llvm::Value* v = genExp(expList.getHead());
+        ret = b->CreateInsertValue(ret, v, idx);
+        ++idx;
+        expList = astctx->get(expList.getTail());
+      }
+      return ret;
     }
 
     else if (id == AST::ID::ASCRIP) {
@@ -203,6 +247,15 @@ public:
       phiNode->addIncoming(thenResult, thenBlock);
       phiNode->addIncoming(elseResult, elseBlock);
       return phiNode;
+    }
+
+    else if (id == AST::ID::INDEX) {
+      IndexExp e = astctx->GET_UNSAFE<IndexExp>(_exp);
+      llvm::Value* baseV = genExp(e.getBase());
+      llvm::Value* indexV = genExp(e.getIndex());
+      TVar baseType = astctx->get(e.getBase()).getTVar();
+      TVar arrTy = tyctx->resolve(baseType).second.getInner();
+      return b->CreateGEP(genType(arrTy), baseV, { b->getInt64(0), indexV });
     }
 
     else if (id == AST::ID::INT_LIT) {

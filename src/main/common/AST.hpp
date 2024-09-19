@@ -18,7 +18,7 @@ public:
   enum ID : unsigned short {
     // expressions and statements
     ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, CALL, DEC_LIT, DEREF, DIV,
-    ENAME, EQ, FALSE, IF, INT_LIT, LET, MUL, NE, REF_EXP, RETURN, STORE,
+    ENAME, EQ, FALSE, IF, INDEX, INT_LIT, LET, MUL, NE, REF_EXP, RETURN, STORE,
     STRING_LIT, SUB, TRUE, WREF_EXP,
 
     // declarations
@@ -48,7 +48,7 @@ public:
     switch (id) {
     case ADD: case ARRAY_INIT: case ARRAY_LIST: case ASCRIP: case BLOCK:
     case CALL: case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ:
-    case FALSE: case IF: case INT_LIT: case LET: case MUL: case NE:
+    case FALSE: case IF: case INDEX: case INT_LIT: case LET: case MUL: case NE:
     case REF_EXP: case RETURN: case STORE: case STRING_LIT: case SUB:
     case TRUE: case WREF_EXP:
       return true;
@@ -486,6 +486,19 @@ public:
   Addr<Exp> getInitializer() const { return initializer; }
 };
 
+/// @brief An expression that calculates an address from a base reference and
+/// offset (e.g., `myarrayref[3]`).
+class IndexExp : public Exp {
+  Addr<Exp> base;
+  Addr<Exp> index;
+public:
+  IndexExp(Location loc, Addr<Exp> base, Addr<Exp> index) : Exp(INDEX, loc) {
+    this->base = base; this->index = index;
+  }
+  Addr<Exp> getBase() const { return base; }
+  Addr<Exp> getIndex() const { return index; }
+};
+
 /// @brief A declaration.
 class Decl : public AST {
 protected:
@@ -576,6 +589,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::EQ:                 return "EQ";
   case AST::ID::FALSE:              return "FALSE";
   case AST::ID::IF:                 return "IF";
+  case AST::ID::INDEX:              return "INDEX";
   case AST::ID::INT_LIT:            return "INT_LIT";
   case AST::ID::LET:                return "LET";
   case AST::ID::MUL:                return "MUL";
@@ -629,6 +643,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "EQ")                  return AST::ID::EQ;
   else if (str == "FALSE")               return AST::ID::FALSE;
   else if (str == "IF")                  return AST::ID::IF;
+  else if (str == "INDEX")               return AST::ID::INDEX;
   else if (str == "INT_LIT")             return AST::ID::INT_LIT;
   else if (str == "LET")                 return AST::ID::LET;
   else if (str == "MUL")                 return AST::ID::MUL;
@@ -732,6 +747,10 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     ret.push_back(n->getCondExp().upcast<AST>());
     ret.push_back(n->getThenExp().upcast<AST>());
     ret.push_back(n->getElseExp().upcast<AST>());
+  } else if (id == AST::ID::INDEX) {
+    auto n = reinterpret_cast<const IndexExp*>(nodePtr);
+    ret.push_back(n->getBase().upcast<AST>());
+    ret.push_back(n->getIndex().upcast<AST>());
   } else if (id == AST::ID::LET) {
     auto n = reinterpret_cast<const LetExp*>(nodePtr);
     ret.push_back(n->getBoundIdent().upcast<AST>());

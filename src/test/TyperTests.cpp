@@ -149,4 +149,9 @@ namespace TyperTests {
       "}"
     );
   }
+
+  TEST(indexing) {
+    expShouldHaveType("(&[1,2,3])[0]", "rref<numeric>");
+    expShouldHaveType("(#[1,2,3])[0]", "wref<numeric>");
+  }
 }

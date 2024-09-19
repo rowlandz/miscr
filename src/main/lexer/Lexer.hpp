@@ -245,6 +245,8 @@ private:
    * otherwise returns TOK_IDENT. */
   TokenTy identOrKeywordTy(const char* s, int len) {
     switch (len) {
+      case 1:
+        if (!strncmp("_", s, 1)) return UNDERSCORE;
       case 2:
         if (!strncmp("i8", s, 2)) return KW_i8;
         if (!strncmp("if", s, 2)) return KW_IF;

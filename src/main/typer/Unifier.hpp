@@ -355,6 +355,32 @@ public:
       ctx->SET_UNSAFE(_e, e);
     }
 
+    else if (id == AST::ID::INDEX) {
+      IndexExp e = ctx->GET_UNSAFE<IndexExp>(_e);
+      Type baseTy = tc.resolve(unifyExp(e.getBase())).second;
+      Type::ID refTyID = baseTy.getID();
+      if (refTyID == Type::ID::RREF || refTyID == Type::ID::WREF) {
+        Type innerTy = tc.resolve(baseTy.getInner()).second;
+        if (innerTy.getID() == Type::ID::ARRAY) {
+          e.setTVar(refTyID == Type::ID::WREF ?
+                    tc.fresh(Type::wref(innerTy.getInner())) :
+                    tc.fresh(Type::rref(innerTy.getInner())));
+        } else {
+          std::string errMsg("Must infer that this is a reference to an array");
+          Location loc = ctx->get(e.getBase()).getLocation();
+          errors.push_back(LocatedError(loc, errMsg));
+          e.setTVar(tc.fresh());
+        }
+      } else {
+        std::string errMsg("Couldn't infer that this is a reference");
+        Location loc = ctx->get(e.getBase()).getLocation();
+        errors.push_back(LocatedError(loc, errMsg));
+        e.setTVar(tc.fresh());
+      }
+      unifyWith(e.getIndex(), tc.fresh(Type::numeric()));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
     else if (id == AST::ID::INT_LIT) {
       IntLit e = ctx->GET_UNSAFE<IntLit>(_e);
       e.setTVar(tc.fresh(Type::numeric()));

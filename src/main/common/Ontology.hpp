@@ -59,8 +59,8 @@ public:
 
   /// Records an entry for the main function/procedure.
   /// Functionally the same as `recordExtern(fqname, "main", declAddr)`.
-  void recordMainProc(std::string fqname, Addr<FunctionDecl> declAddr) {
-    recordExtern(fqname, "main", declAddr);
+  FQNameKey recordMainProc(std::string fqname, Addr<FunctionDecl> declAddr) {
+    return recordExtern(fqname, "main", declAddr);
   }
 
   /// Records an entry for a module named `name` with definition at `declAddr`.

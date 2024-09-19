@@ -11,7 +11,8 @@ enum TokenTy: unsigned char {
   OP_EQ, OP_NEQ,
   LIT_DEC, LIT_INT, LIT_STRING,
   LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-  AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW, HASH, SEMICOLON,
+  AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
+  HASH, SEMICOLON, UNDERSCORE,
   COMMENT, DOC_COMMENT_L, DOC_COMMENT_R,
   END
 };
@@ -67,6 +68,7 @@ const char* TokenTyToString(TokenTy ty) {
     case FATARROW:        return "FATARROW";
     case HASH:            return "HASH";
     case SEMICOLON:       return "SEMICOLON";
+    case UNDERSCORE:      return "UNDERSCORE";
     case COMMENT:         return "COMMENT";
     case DOC_COMMENT_L:   return "DOC_COMMENT_L";
     case DOC_COMMENT_R:   return "DOC_COMMENT_R";
