@@ -6,6 +6,7 @@
 #include "common/ASTContext.hpp"
 #include "common/Location.hpp"
 
+class Exp;
 class IntLit;
 
 /// @brief An AST node is any syntactic form that appears in source code. All
@@ -13,6 +14,9 @@ class IntLit;
 /// source code `location`. AST nodes may contain pseudo-pointers (instances
 /// of `Addr`) to other nodes. An `ASTContext` manages these nodes including,
 /// creation and dereferencing.
+///
+/// All subclasses must fit within 32 bytes (including the 10 taken up by the
+/// location and ID).
 class AST {
 public:
   enum ID : unsigned short {
@@ -34,8 +38,8 @@ public:
   };
 
 private:
-  ID id;
   Location location;
+  ID id;
 
 protected:
   AST(ID id, Location location) : id(id), location(location) {}
@@ -101,15 +105,15 @@ public:
   };
 protected:
   Type::ID id;
-  unsigned int arraySize;
+  Addr<Exp> arraySize;
   TVar inner;
   Type(Type::ID id) { this->id = id; this->inner = TVar::none(); }
   Type(Type::ID id, TVar inner) { this->id = id; this->inner = inner; }
-  Type(Type::ID id, unsigned int arraySize, TVar inner) {
+  Type(Type::ID id, Addr<Exp> arraySize, TVar inner) {
     this->id = id; this->arraySize = arraySize; this->inner = inner;
   }
 public:
-  static Type array(unsigned int sz, TVar of) {
+  static Type array(Addr<Exp> sz, TVar of) {
     return Type(ID::ARRAY, sz, of);
   }
   static Type bool_() { return Type(ID::BOOL); }
@@ -127,7 +131,7 @@ public:
   bool isNoType() const { return id == ID::NOTYPE; }
   ID getID() const { return id; }
   TVar getInner() const { return inner; }
-  unsigned int getArraySize() { return arraySize; }
+  Addr<Exp> getArraySize() const { return arraySize; }
 };
 
 /// @brief A qualified, unqualified, or fully qualified identifier
@@ -197,17 +201,22 @@ public:
   bool isWritable() const { return writable; }
 };
 
+/// @brief Type expression of a constant-size array `[20 of i32]` or
+/// unknown-size array `[n of i32]` or `[_ of i32]`.
 class ArrayTypeExp : public TypeExp {
-  Addr<IntLit> sizeLit;
+  Addr<Exp> size;
   Addr<TypeExp> innerType;
 public:
-  ArrayTypeExp(Location loc, Addr<IntLit> sizeLit, Addr<TypeExp> innerType)
+  /// @brief If `size` is an error address, then an underscore was used to
+  /// indicate the array size. 
+  ArrayTypeExp(Location loc, Addr<Exp> size, Addr<TypeExp> innerType)
       : TypeExp(ARRAY_TEXP, loc) {
-    this->sizeLit = sizeLit;
-    this->innerType = innerType;
+    this->size = size; this->innerType = innerType;
   }
-  Addr<IntLit> getSizeLit() const { return sizeLit; }
+  /// @brief This returns an error address if size is unknown.
+  Addr<Exp> getSize() const { return size; }
   Addr<TypeExp> getInnerType() const { return innerType; }
+  bool hasUnderscoreSize() const { return size.isError(); }
 };
 
 /// @brief An expression or statement (currently there is no distinction).
@@ -474,15 +483,15 @@ public:
 /// @brief An expression that constructs an array by specifying a size and
 /// an element to fill all the spots. e.g., `[10 of 0]`
 class ArrayInitExp : public Exp {
-  Addr<IntLit> sizeLit;
+  Addr<Exp> size;
   Addr<Exp> initializer;
 public:
-  ArrayInitExp(Location loc, Addr<IntLit> sizeLit, Addr<Exp> initializer)
+  ArrayInitExp(Location loc, Addr<Exp> size, Addr<Exp> initializer)
       : Exp(ARRAY_INIT, loc) {
-    this->sizeLit = sizeLit;
+    this->size = size;
     this->initializer = initializer;
   }
-  Addr<IntLit> getSizeLit() const { return sizeLit; }
+  Addr<Exp> getSize() const { return size; }
   Addr<Exp> getInitializer() const { return initializer; }
 };
 
@@ -697,14 +706,15 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     ret.push_back(n->getRHS().upcast<AST>());
   } else if (id == AST::ID::ARRAY_INIT) {
     auto n = reinterpret_cast<const ArrayInitExp*>(nodePtr);
-    ret.push_back(n->getSizeLit().upcast<AST>());
+    ret.push_back(n->getSize().upcast<AST>());
     ret.push_back(n->getInitializer().upcast<AST>());
   } else if (id == AST::ID::ARRAY_LIST) {
     auto n = reinterpret_cast<const ArrayListExp*>(nodePtr);
     ret.push_back(n->getContent().upcast<AST>());
   } else if (id == AST::ID::ARRAY_TEXP) {
     auto n = reinterpret_cast<const ArrayTypeExp*>(nodePtr);
-    ret.push_back(n->getSizeLit().upcast<AST>());
+    if (n->getSize().exists())
+      ret.push_back(n->getSize().upcast<AST>());
     ret.push_back(n->getInnerType().upcast<AST>());
   } else if (id == AST::ID::ASCRIP) {
     auto n = reinterpret_cast<const AscripExp*>(nodePtr);

@@ -15,24 +15,24 @@ public:
   Addr(unsigned int addr) { this->addr = addr; }
 
   /// Returns true if this address is invalid.
-  bool isError() { return addr >= 0xfffffffe; }
+  bool isError() const { return addr >= 0xfffffffe; }
 
   /// Opposite of `isError`. 
-  bool exists() { return addr < 0xfffffffe; }
+  bool exists() const { return addr < 0xfffffffe; }
 
   /// @brief Epsilon is the special error address 0xfffffffe.
-  bool isEpsilon() { return addr == 0xfffffffe; }
+  bool isEpsilon() const { return addr == 0xfffffffe; }
 
   /// @brief Opposite of `isEpsilon` 
-  bool notEpsilon() { return addr != 0xfffffffe; }
+  bool notEpsilon() const { return addr != 0xfffffffe; }
 
   /// @brief Arrest is the special error address 0xffffffff.
-  bool isArrest() { return addr == 0xffffffff; }
+  bool isArrest() const { return addr == 0xffffffff; }
 
   /// @brief Cast the address of a derived type to the address of a base type.
   template<class U>
   std::enable_if_t<std::is_base_of<U,T>::value, Addr<U> >
-  upcast() { return Addr<U>(addr); }
+  upcast() const { return Addr<U>(addr); }
 
   /// @brief Cast the pointee type to any other type.
   template<class U> Addr<U> UNSAFE_CAST() const { return Addr<U>(addr); }

@@ -38,8 +38,14 @@ public:
     Type ty = tyctx->resolve(tvar).second;
     if (ty.isNoType()) return b->getVoidTy();
     switch (ty.getID()) {
-    case Type::ID::ARRAY:
-      return llvm::ArrayType::get(genType(ty.getInner()), ty.getArraySize());
+    case Type::ID::ARRAY: {
+      llvm::Value* sizeV = ty.getArraySize().exists() ?
+                           genExp(ty.getArraySize()) :
+                           b->getInt32(0);
+      llvm::ConstantInt* c = llvm::dyn_cast_or_null<llvm::ConstantInt>(sizeV);
+      uint64_t arrSize = c ? c->getZExtValue() : 0;
+      return llvm::ArrayType::get(genType(ty.getInner()), arrSize);
+    }
     case Type::ID::BOOL: return b->getInt1Ty();
     case Type::ID::i8: return b->getInt8Ty();
     case Type::ID::i32: return b->getInt32Ty();
@@ -68,7 +74,11 @@ public:
     case AST::ID::f64_TEXP: return b->getDoubleTy();
     case AST::ID::ARRAY_TEXP: {
       ArrayTypeExp texp = astctx->GET_UNSAFE<ArrayTypeExp>(_texp);
-      unsigned int arrSize = astctx->get(texp.getSizeLit()).asUint();
+      if (texp.getSize().isError())
+        return llvm::ArrayType::get(genType(texp.getInnerType()), 0);
+      llvm::Value* sizeV = genExp(texp.getSize());
+      llvm::ConstantInt* c = llvm::dyn_cast_or_null<llvm::ConstantInt>(sizeV);
+      uint64_t arrSize = c ? c->getZExtValue() : 0;
       return llvm::ArrayType::get(genType(texp.getInnerType()), arrSize);
     }
     case AST::ID::BOOL_TEXP: return b->getInt1Ty();
@@ -109,6 +119,7 @@ public:
     }
   }
 
+  /// @brief Generates LLVM IR that performs the computation `_exp`.
   llvm::Value* genExp(Addr<Exp> _exp) {
     Exp exp = astctx->get(_exp);
     AST::ID id = exp.getID();
@@ -129,19 +140,27 @@ public:
     else if (id == AST::ID::ARRAY_INIT) {
       ArrayInitExp e = astctx->GET_UNSAFE<ArrayInitExp>(_exp);
       auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e.getTVar()));
-      unsigned int arrSize = astctx->get(e.getSizeLit()).asUint();
-      llvm::Value* init = genExp(e.getInitializer());
-      if (auto c = llvm::dyn_cast_or_null<llvm::Constant>(init)) {
-        std::vector<llvm::Constant*> vals(arrSize, c);
-        return llvm::ConstantArray::get(arrTy, vals);
-      } else {
-        assert(false && "This is not implemented yet.");
+      llvm::Value* sizeV = genExp(e.getSize());
+      auto sizeC = llvm::dyn_cast_or_null<llvm::ConstantInt>(genExp(e.getSize()));
+      if (!sizeC) {
+        llvm::errs() << "genExp does not support array initializer with "
+                     << "non constant size\n";
+        exit(1);
       }
+      auto initC = llvm::dyn_cast_or_null<llvm::Constant>(genExp(e.getInitializer()));
+      if (!initC) {
+        llvm::errs() << "Array with non-constant initializer value!\n";
+        exit(1);
+      }
+      std::vector<llvm::Constant*> vals(sizeC->getZExtValue(), initC);
+      return llvm::ConstantArray::get(arrTy, vals);
     }
 
     else if (id == AST::ID::ARRAY_LIST) {
       ArrayListExp e = astctx->GET_UNSAFE<ArrayListExp>(_exp);
-      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e.getTVar()));
+      unsigned int arrSize = expListLength(e.getContent());
+      TVar elemTy = tyctx->resolve(e.getTVar()).second.getInner();
+      auto arrTy = llvm::ArrayType::get(genType(elemTy), arrSize);
       llvm::Value* ret = llvm::ConstantAggregateZero::get(arrTy);
       ExpList expList = astctx->get(e.getContent());
       unsigned int idx = 0;
@@ -175,11 +194,16 @@ public:
       FQIdent fqIdent = astctx->GET_UNSAFE<FQIdent>(e.getFunction());
       std::string name = ont->getName(fqIdent.getKey());
       llvm::Function* callee = mod->getFunction(name);
+      llvm::FunctionType* calleeType = callee->getFunctionType();
 
       std::vector<llvm::Value*> args;
       ExpList expList = astctx->get(e.getArguments());
+      unsigned int paramIdx = 0;
       while (expList.nonEmpty()) {
-        args.push_back(genExp(expList.getHead()));
+        llvm::Value* arg = genExp(expList.getHead());
+        arg = b->CreateBitCast(arg, calleeType->getParamType(paramIdx));
+        args.push_back(arg);
+        ++paramIdx;
         expList = astctx->get(expList.getTail());
       }
       return b->CreateCall(callee, args);
@@ -253,9 +277,10 @@ public:
       IndexExp e = astctx->GET_UNSAFE<IndexExp>(_exp);
       llvm::Value* baseV = genExp(e.getBase());
       llvm::Value* indexV = genExp(e.getIndex());
-      TVar baseType = astctx->get(e.getBase()).getTVar();
-      TVar arrTy = tyctx->resolve(baseType).second.getInner();
-      return b->CreateGEP(genType(arrTy), baseV, { b->getInt64(0), indexV });
+      TVar baseTVar = astctx->get(e.getBase()).getTVar();
+      TVar arrTVar = tyctx->resolve(baseTVar).second.getInner();
+      auto arrTy = llvm::dyn_cast_or_null<llvm::ArrayType>(genType(arrTVar));
+      return b->CreateGEP(arrTy, baseV, { b->getInt64(0), indexV });
     }
 
     else if (id == AST::ID::INT_LIT) {
@@ -274,11 +299,16 @@ public:
 
     else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
       RefExp e = astctx->GET_UNSAFE<RefExp>(_exp);
-      llvm::Value* v = genExp(e.getInitializer());
-      TVar initTy = astctx->get(e.getInitializer()).getTVar();
-      llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
-      b->CreateStore(v, memCell);
-      return memCell;
+      AST::ID initID = astctx->get(e.getInitializer()).getID();
+      if (initID == AST::ID::ARRAY_INIT || initID == AST::ID::ARRAY_LIST) {
+        return genRefToExp(e.getInitializer());
+      } else {
+        llvm::Value* v = genExp(e.getInitializer());
+        TVar initTy = astctx->get(e.getInitializer()).getTVar();
+        llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
+        b->CreateStore(v, memCell);
+        return memCell;
+      }
     }
 
     else if (id == AST::ID::STORE) {
@@ -290,10 +320,65 @@ public:
     }
 
     else {
-      llvm::errs() << "genExp cannot handle AST::ID::";
+      llvm::errs() << "genExp cannot handle AST::ID::"
+                   << ASTIDToString(id) << "\n";
+      exit(1);
+    }
+  }
+
+  /// @brief Generates LLVM IR that performs `_exp` and stores the result on
+  /// the stack. The returned value is a pointer to the result. In other words,
+  /// this is like calling `genExp(&(_exp))`. Certain expressions (like
+  /// constructing arrays of unknown size) can only be done on the stack and
+  /// not using pure LLVM values.
+  llvm::Value* genRefToExp(Addr<Exp> _exp) {
+    Exp exp = astctx->get(_exp);
+    AST::ID id = exp.getID();
+
+    // TODO: skipping initializer for now.
+    if (id == AST::ID::ARRAY_INIT) {
+      ArrayInitExp e = astctx->GET_UNSAFE<ArrayInitExp>(_exp);
+      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e.getTVar()));
+      llvm::Value* arrSize = genExp(e.getSize());
+      llvm::Value* ret = b->CreateAlloca(arrTy->getElementType(), arrSize);
+      return b->CreateBitCast(ret, llvm::PointerType::get(arrTy, 0));
+    }
+
+    else if (id == AST::ID::ARRAY_LIST) {
+      ArrayListExp e = astctx->GET_UNSAFE<ArrayListExp>(_exp);
+      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e.getTVar()));
+      auto elemTy = arrTy->getArrayElementType();
+      unsigned int arrayLen = expListLength(e.getContent());
+      llvm::Value* ret = b->CreateAlloca(elemTy, b->getInt32(arrayLen));
+      ExpList expList = astctx->get(e.getContent());
+      unsigned int idx = 0;
+      while (expList.nonEmpty()) {
+        llvm::Value* elem = genExp(expList.getHead());
+        llvm::Value* ptr = b->CreateGEP(elemTy, ret, b->getInt32(idx) );
+        b->CreateStore(elem, ptr);
+        ++idx;
+        expList = astctx->get(expList.getTail());
+      }
+      // return ret;
+      arrTy = llvm::ArrayType::get(elemTy, arrayLen);
+      return b->CreateBitCast(ret, llvm::PointerType::get(arrTy, 0));
+    }
+
+    else {
+      llvm::errs() << "genRefToExp cannot handle AST::ID::";
       llvm::errs() << ASTIDToString(id) << "\n";
       exit(1);
     }
+  }
+
+  unsigned int expListLength(Addr<ExpList> _expList) {
+    ExpList expList = astctx->get(_expList);
+    unsigned int ret = 0;
+    while (expList.nonEmpty()) {
+      ++ret;
+      expList = astctx->get(expList.getTail());
+    }
+    return ret;
   }
 
   /** Codegens a `func`, `extern func`. */

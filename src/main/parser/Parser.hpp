@@ -151,14 +151,13 @@ public:
     Token t1 = *p;
     Addr<Exp> firstExp = exp();
     ARREST_IF_ERROR(firstExp)
-    if (p->ty == KW_OF && ctx->get(firstExp).getID() == AST::ID::INT_LIT) {
-      Addr<IntLit> sizeLit = firstExp.UNSAFE_CAST<IntLit>();
+    if (p->ty == KW_OF) {
       ++p;
       Addr<Exp> initializer = exp();
       ARREST_IF_ERROR(initializer)
       CHOMP_ELSE_ARREST(RBRACKET, "]", "array init expression")
       Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-      return ctx->add(ArrayInitExp(loc, sizeLit, initializer)).upcast<Exp>();
+      return ctx->add(ArrayInitExp(loc, firstExp, initializer)).upcast<Exp>();
     } else if (p->ty == COMMA) {
       ++p;
       Addr<ExpList> contentTail = expListWotc0();
@@ -173,10 +172,6 @@ public:
       ++p;
       Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
       return ctx->add(ArrayListExp(loc, content)).upcast<Exp>();
-    } else if (p->ty == KW_OF) {
-      errTryingToParse = "array list expression";
-      expectedTokens = ", ]";
-      return ARRESTING_ERROR;
     } else {
       errTryingToParse = "array init or list expression";
       expectedTokens = "of , ]";
@@ -379,14 +374,19 @@ public:
   Addr<ArrayTypeExp> arrayTypeExp() {
     Token t = *p;
     if (p->ty == LBRACKET) ++p; else return EPSILON_ERROR;
-    Addr<IntLit> sizeLit = intLit();
-    ARREST_IF_ERROR(sizeLit)
+    Addr<Exp> size = Addr<Exp>::none();
+    if (p->ty == UNDERSCORE) {
+      ++p;
+    } else {
+      size = exp();
+      ARREST_IF_ERROR(size)
+    }
     CHOMP_ELSE_ARREST(KW_OF, "of", "array type expression")
     Addr<TypeExp> innerType = typeExp();
     ARREST_IF_ERROR(innerType)
     CHOMP_ELSE_ARREST(RBRACKET, "]", "array type expression")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(ArrayTypeExp(loc, sizeLit, innerType));
+    return ctx->add(ArrayTypeExp(loc, size, innerType));
   }
 
   // ---------- Statements ----------

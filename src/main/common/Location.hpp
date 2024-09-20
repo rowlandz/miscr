@@ -1,7 +1,7 @@
 #ifndef COMMON_LOCATION
 #define COMMON_LOCATION
 
-/** A range of text. */
+/// A range of text. The size is 8 bytes.
 class Location {
 public:
   unsigned short row;

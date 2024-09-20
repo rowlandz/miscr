@@ -33,14 +33,14 @@ private:
   
   TypeContext tc;
 
+  /// @brief Converts a type expression into a `Type` with fresh type variables.
   TVar freshFromTypeExp(Addr<TypeExp> _texp) {
     AST::ID id = ctx->get(_texp).getID();
     switch (ctx->get(_texp).getID()) {
     case AST::ID::ARRAY_TEXP: {
       ArrayTypeExp texp = ctx->GET_UNSAFE<ArrayTypeExp>(_texp);
-      IntLit arraySizeLit = ctx->get(texp.getSizeLit());
-      unsigned int sz = arraySizeLit.asUint();
-      return tc.fresh(Type::array(sz, freshFromTypeExp(texp.getInnerType())));
+      return tc.fresh(Type::array(texp.getSize(),
+        freshFromTypeExp(texp.getInnerType())));
     }
     case AST::ID::REF_TEXP:
       return tc.fresh(Type::rref(freshFromTypeExp(
@@ -89,10 +89,10 @@ public:
     if (t1.getID() == t2.getID()) {
       Type::ID ty = t1.getID();
       if (ty == Type::ID::ARRAY) {
-        if (t1.getArraySize() != t2.getArraySize()) return false;
-        if (!unify(t1.getInner(), t2.getInner())) return false;
-        tc.bind(w1, w2);
-        return true;
+        // It's safe not to bind w1 and w2 as long as ARRAY is not a type
+        // constraint and thus cannot be converted to something else.
+        // tc.bind(w1, w2);
+        return unify(t1.getInner(), t2.getInner());
       } else if (ty == Type::ID::REF || ty == Type::ID::RREF
       || ty == Type::ID::WREF) {
         if (!unify(t1.getInner(), t2.getInner())) return false;
@@ -224,10 +224,9 @@ public:
 
     else if (id == AST::ID::ARRAY_INIT) {
       ArrayInitExp e = ctx->GET_UNSAFE<ArrayInitExp>(_e);
-      unifyExp(e.getSizeLit().upcast<Exp>());
+      unifyWith(e.getSize(), tc.fresh(Type::numeric()));
       TVar ofTy = unifyExp(e.getInitializer());
-      IntLit sizeLit = ctx->get(e.getSizeLit());
-      e.setTVar(tc.fresh(Type::array(sizeLit.asUint(), ofTy)));
+      e.setTVar(tc.fresh(Type::array(e.getSize(), ofTy)));
       ctx->SET_UNSAFE(_e, e);
     }
 
@@ -241,7 +240,8 @@ public:
         unifyWith(expList.getHead(), ofTy);
         expList = ctx->get(expList.getTail());
       }
-      e.setTVar(tc.fresh(Type::array(numExps, ofTy)));
+      // TODO: how do we set the size of the array?
+      e.setTVar(tc.fresh(Type::array(Addr<Exp>::none(), ofTy)));
       ctx->SET_UNSAFE(_e, e);
     }
 

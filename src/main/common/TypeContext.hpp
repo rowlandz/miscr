@@ -80,9 +80,8 @@ public:
     } else {
       switch (res.second.getID()) {
       case Type::ID::ARRAY: {
-        std::string arrSize = std::to_string(res.second.getArraySize());
         std::string innerTy = TVarToString(res.second.getInner());
-        return std::string("array<") + arrSize + ", " + innerTy + ">";
+        return std::string("array<???,") + innerTy + ">";
       }
       case Type::ID::REF:
         return std::string("ref<") + TVarToString(res.second.getInner()) + ">";
