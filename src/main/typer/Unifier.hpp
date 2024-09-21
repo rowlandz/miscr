@@ -39,7 +39,7 @@ private:
     switch (ctx->get(_texp).getID()) {
     case AST::ID::ARRAY_TEXP: {
       ArrayTypeExp texp = ctx->GET_UNSAFE<ArrayTypeExp>(_texp);
-      return tc.fresh(Type::array(texp.getSize(),
+      return tc.fresh(Type::array_sart(texp.getSize(),
         freshFromTypeExp(texp.getInnerType())));
     }
     case AST::ID::REF_TEXP:
@@ -88,10 +88,7 @@ public:
 
     if (t1.getID() == t2.getID()) {
       Type::ID ty = t1.getID();
-      if (ty == Type::ID::ARRAY) {
-        // It's safe not to bind w1 and w2 as long as ARRAY is not a type
-        // constraint and thus cannot be converted to something else.
-        // tc.bind(w1, w2);
+      if (t1.isArrayType()) {
         return unify(t1.getInner(), t2.getInner());
       } else if (ty == Type::ID::REF || ty == Type::ID::RREF
       || ty == Type::ID::WREF) {
@@ -106,6 +103,9 @@ public:
         return true;
       }
       else return false;
+    }
+    else if (t1.isArrayType() && t2.isArrayType()) {
+      return unify(t1.getInner(), t2.getInner());
     }
     else if (t1.getID() == Type::ID::NUMERIC) {
       switch (t2.getID()) {
@@ -226,7 +226,7 @@ public:
       ArrayInitExp e = ctx->GET_UNSAFE<ArrayInitExp>(_e);
       unifyWith(e.getSize(), tc.fresh(Type::numeric()));
       TVar ofTy = unifyExp(e.getInitializer());
-      e.setTVar(tc.fresh(Type::array(e.getSize(), ofTy)));
+      e.setTVar(tc.fresh(Type::array_sart(e.getSize(), ofTy)));
       ctx->SET_UNSAFE(_e, e);
     }
 
@@ -241,7 +241,7 @@ public:
         expList = ctx->get(expList.getTail());
       }
       // TODO: how do we set the size of the array?
-      e.setTVar(tc.fresh(Type::array(Addr<Exp>::none(), ofTy)));
+      e.setTVar(tc.fresh(Type::array_sact(numExps, ofTy)));
       ctx->SET_UNSAFE(_e, e);
     }
 
@@ -361,7 +361,7 @@ public:
       Type::ID refTyID = baseTy.getID();
       if (refTyID == Type::ID::RREF || refTyID == Type::ID::WREF) {
         Type innerTy = tc.resolve(baseTy.getInner()).second;
-        if (innerTy.getID() == Type::ID::ARRAY) {
+        if (innerTy.isArrayType()) {
           e.setTVar(refTyID == Type::ID::WREF ?
                     tc.fresh(Type::wref(innerTy.getInner())) :
                     tc.fresh(Type::rref(innerTy.getInner())));
@@ -418,7 +418,8 @@ public:
 
     else if (id == AST::ID::STRING_LIT) {
       StringLit e = ctx->GET_UNSAFE<StringLit>(_e);
-      e.setTVar(tc.fresh(Type::rref(tc.fresh(Type::array(Addr<Exp>::none(),
+      unsigned int strArrayLen = e.processEscapes().size() + 1;
+      e.setTVar(tc.fresh(Type::rref(tc.fresh(Type::array_sact(strArrayLen,
         tc.fresh(Type::i8()))))));
       ctx->SET_UNSAFE(_e, e);
     }
@@ -485,6 +486,7 @@ public:
       Ident part = ctx->get(qident.getHead());
       ret.append(part.asString());
       ret.append("::");
+      _name = qident.getTail();
       name = ctx->get(qident.getTail());
     }
     Ident part = ctx->GET_UNSAFE<Ident>(_name);

@@ -38,12 +38,16 @@ public:
     Type ty = tyctx->resolve(tvar).second;
     if (ty.isNoType()) return b->getVoidTy();
     switch (ty.getID()) {
-    case Type::ID::ARRAY: {
-      llvm::Value* sizeV = ty.getArraySize().exists() ?
-                           genExp(ty.getArraySize()) :
+    case Type::ID::ARRAY_SART: {
+      llvm::Value* sizeV = ty.getRuntimeArraySize().exists() ?
+                           genExp(ty.getRuntimeArraySize()) :
                            b->getInt32(0);
       llvm::ConstantInt* c = llvm::dyn_cast_or_null<llvm::ConstantInt>(sizeV);
       uint64_t arrSize = c ? c->getZExtValue() : 0;
+      return llvm::ArrayType::get(genType(ty.getInner()), arrSize);
+    }
+    case Type::ID::ARRAY_SACT: {
+      unsigned int arrSize = ty.getCompileTimeArraySize();
       return llvm::ArrayType::get(genType(ty.getInner()), arrSize);
     }
     case Type::ID::BOOL: return b->getInt1Ty();

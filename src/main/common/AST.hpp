@@ -95,7 +95,9 @@ class Type {
 public:
   enum struct ID : unsigned char {
     // concrete types
-    ARRAY, BOOL, f32, f64, i8, i32, RREF, UNIT, WREF,
+    ARRAY_SART,  // array (sized at runtime)
+    ARRAY_SACT,  // array (sized at compile-time)
+    BOOL, f32, f64, i8, i32, RREF, UNIT, WREF,
 
     // type constraints
     DECIMAL, NUMERIC, REF,
@@ -103,19 +105,24 @@ public:
     // other
     NOTYPE,
   };
-protected:
+private:
   Type::ID id;
-  Addr<Exp> arraySize;
+  union { unsigned int compileTime; Addr<Exp> runtime; } arraySize;
   TVar inner;
-  Type(Type::ID id) { this->id = id; this->inner = TVar::none(); }
-  Type(Type::ID id, TVar inner) { this->id = id; this->inner = inner; }
-  Type(Type::ID id, Addr<Exp> arraySize, TVar inner) {
-    this->id = id; this->arraySize = arraySize; this->inner = inner;
+  Type(Type::ID id) : arraySize({.compileTime=0}) { this->id = id; }
+  Type(Type::ID id, TVar inner) : arraySize({.compileTime=0}) {
+    this->id = id; this->inner = inner;
+  }
+  Type(Addr<Exp> arraySize, TVar of) : arraySize({.runtime = arraySize}) {
+    this->id = ID::ARRAY_SART; this->inner = of;
+  }
+  Type(unsigned int arrSize, TVar of) : arraySize({.compileTime = arrSize}) {
+    this->id = ID::ARRAY_SACT; this->inner = of;
   }
 public:
-  static Type array(Addr<Exp> sz, TVar of) {
-    return Type(ID::ARRAY, sz, of);
-  }
+  /// @brief Construct an array type sized at runtime. 
+  static Type array_sart(Addr<Exp> sz, TVar of) { return Type(sz, of); }
+  static Type array_sact(unsigned int sz, TVar of) { return Type(sz, of); }
   static Type bool_() { return Type(ID::BOOL); }
   static Type f32() { return Type(ID::f32); }
   static Type f64() { return Type(ID::f64); }
@@ -129,9 +136,13 @@ public:
   static Type numeric() { return Type(ID::NUMERIC); }
   static Type notype() { return Type(ID::NOTYPE); }
   bool isNoType() const { return id == ID::NOTYPE; }
+  bool isArrayType() const {
+    return id == ID::ARRAY_SACT || id == ID::ARRAY_SART;
+  }
   ID getID() const { return id; }
   TVar getInner() const { return inner; }
-  Addr<Exp> getArraySize() const { return arraySize; }
+  unsigned int getCompileTimeArraySize() const { return arraySize.compileTime; }
+  Addr<Exp> getRuntimeArraySize() const { return arraySize.runtime; }
 };
 
 /// @brief A qualified, unqualified, or fully qualified identifier

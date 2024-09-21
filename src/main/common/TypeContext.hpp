@@ -79,9 +79,14 @@ public:
       return std::string("?") + std::to_string(v.get());
     } else {
       switch (res.second.getID()) {
-      case Type::ID::ARRAY: {
+      case Type::ID::ARRAY_SACT: {
         std::string innerTy = TVarToString(res.second.getInner());
-        return std::string("array<???,") + innerTy + ">";
+        std::string sz = std::to_string(res.second.getCompileTimeArraySize());
+        return std::string("array_sact<") + sz + "," + innerTy + ">";
+      }
+      case Type::ID::ARRAY_SART: {
+        std::string innerTy = TVarToString(res.second.getInner());
+        return std::string("array_sart<???,") + innerTy + ">";
       }
       case Type::ID::REF:
         return std::string("ref<") + TVarToString(res.second.getInner()) + ">";

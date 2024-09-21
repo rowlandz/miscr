@@ -124,6 +124,12 @@ namespace TyperTests {
     );
   }
 
+  TEST(arrays_and_strings) {
+    expShouldHaveType("[1,2,3]", "array_sact<3,numeric>");
+    expShouldHaveType("[20 of 0]", "array_sart<???,numeric>");
+    expShouldHaveType("\"hello\\n\"", "rref<array_sact<7,i8>>");
+  }
+
   TEST(decls_and_call_expressions) {
     declShouldPass(
       "module Testing {"

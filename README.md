@@ -20,12 +20,6 @@ Minimal dependencies:
 * (optional) GNU make
 Dead-simple unit test infrastructure; The include file `test.hpp` is only 54 lines of code!
 
-TODO:
-* Error handling
-* Module system
-* Type checker
-* Multi-line input on playground
-
 
 ## Module System
 
