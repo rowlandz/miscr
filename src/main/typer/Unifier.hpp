@@ -1,5 +1,5 @@
-#ifndef TYPER_UNIFIERNEW
-#define TYPER_UNIFIERNEW
+#ifndef TYPER_UNIFIER
+#define TYPER_UNIFIER
 
 #include <cassert>
 #include "llvm/ADT/DenseMap.h"
@@ -9,6 +9,14 @@
 #include "common/ScopeStack.hpp"
 #include "common/LocatedError.hpp"
 
+/// @brief Second of the two type checking phases. Performs Hindley-Milner
+/// type inference and unification. More specifically,
+///
+/// - Sets the type variables of expressions in an `ASTContext`. The type
+///   variables can be resolved using the `TypeContext` built by the unifier.
+/// 
+/// - Fully qualifies the function names in `CALL` expressions (i.e. replaces
+///   the name with a `FQIdent` with associated info stored in an `Ontology`).
 class Unifier {
   
   ASTContext* ctx;
@@ -25,11 +33,8 @@ class Unifier {
   /// e.g., `{ "global", "global::MyMod", "global::MyMod::MyMod2" }`
   std::vector<std::string> relativePathQualifiers;
 
-public:
   /// Accumulates type checking errors.
   std::vector<LocatedError> errors;
-
-private:
   
   TypeContext tc;
 
@@ -69,6 +74,8 @@ public:
   }
 
   const TypeContext* getTypeContext() const { return &tc; }
+
+  const std::vector<LocatedError>* getErrors() { return &errors; }
 
   /// @brief Enforces an equality relation in `bindings` between the two type
   /// variables. Returns `true` if this is possible and `false` otherwise.
@@ -219,7 +226,7 @@ public:
       TVar lhsTy = unifyWith(e.getLHS(), tc.fresh(Type::numeric()));
       unifyWith(e.getRHS(), lhsTy);
       e.setTVar(lhsTy);
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::ARRAY_INIT) {
@@ -227,7 +234,7 @@ public:
       unifyWith(e.getSize(), tc.fresh(Type::numeric()));
       TVar ofTy = unifyExp(e.getInitializer());
       e.setTVar(tc.fresh(Type::array_sart(e.getSize(), ofTy)));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::ARRAY_LIST) {
@@ -242,7 +249,7 @@ public:
       }
       // TODO: how do we set the size of the array?
       e.setTVar(tc.fresh(Type::array_sact(numExps, ofTy)));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::ASCRIP) {
@@ -250,7 +257,7 @@ public:
       TVar ty = freshFromTypeExp(e.getAscripter());
       expectTypeToBe(e.getAscriptee(), ty);
       e.setTVar(ty);
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::BLOCK) {
@@ -264,7 +271,7 @@ public:
       }
       localVarTypes.pop();
       e.setTVar(lastStmtTy);
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::CALL) {
@@ -297,13 +304,13 @@ public:
         errors.push_back(LocatedError(e.getLocation(), errMsg));
         e.setTVar(tc.fresh());
       }
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::DEC_LIT) {
       DecimalLit e = ctx->GET_UNSAFE<DecimalLit>(_e);
       e.setTVar(tc.fresh(Type::decimal()));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::DEREF) {
@@ -312,7 +319,7 @@ public:
       TVar refTy = tc.fresh(Type::ref(retTy));
       unifyWith(e.getOf(), refTy);
       e.setTVar(retTy);
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     // TODO: Make sure typevar is set even in error cases.
@@ -329,7 +336,7 @@ public:
       } else {
         errors.push_back(LocatedError(e.getLocation(), "Didn't expect qualified ident here"));
       }
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::EQ || id == AST::ID::NE) {
@@ -337,13 +344,13 @@ public:
       TVar lhsTy = unifyExp(e.getLHS());
       unifyWith(e.getRHS(), lhsTy);
       e.setTVar(tc.fresh(Type::bool_()));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::FALSE || id == AST::ID::TRUE) {
       BoolLit e = ctx->GET_UNSAFE<BoolLit>(_e);
       e.setTVar(tc.fresh(Type::bool_()));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::IF) {
@@ -352,7 +359,7 @@ public:
       TVar thenTy = unifyExp(e.getThenExp());
       unifyWith(e.getElseExp(), thenTy);
       e.setTVar(thenTy);
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::INDEX) {
@@ -378,13 +385,13 @@ public:
         e.setTVar(tc.fresh());
       }
       unifyWith(e.getIndex(), tc.fresh(Type::numeric()));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::INT_LIT) {
       IntLit e = ctx->GET_UNSAFE<IntLit>(_e);
       e.setTVar(tc.fresh(Type::numeric()));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::LET) {
@@ -393,7 +400,7 @@ public:
       std::string boundIdent = ctx->get(e.getBoundIdent()).asString();
       localVarTypes.add(boundIdent, rhsTy);
       e.setTVar(tc.fresh(Type::unit()));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
@@ -403,7 +410,7 @@ public:
                    tc.fresh(Type::wref(initializerTy)) :
                    tc.fresh(Type::rref(initializerTy));
       e.setTVar(retTy);
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::STORE) {
@@ -413,7 +420,7 @@ public:
       unifyWith(e.getLHS(), lhsTy);
       unifyWith(e.getRHS(), retTy);
       e.setTVar(retTy);
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else if (id == AST::ID::STRING_LIT) {
@@ -421,7 +428,7 @@ public:
       unsigned int strArrayLen = e.processEscapes().size() + 1;
       e.setTVar(tc.fresh(Type::rref(tc.fresh(Type::array_sact(strArrayLen,
         tc.fresh(Type::i8()))))));
-      ctx->SET_UNSAFE(_e, e);
+      ctx->set(_e, e);
     }
 
     else {

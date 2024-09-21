@@ -1,24 +1,22 @@
 #ifndef LEXER_SCANNER
 #define LEXER_SCANNER
 
-#include <cstdlib>            // TODO: can we remove this?
 #include <vector>
 #include "common/Token.hpp"
 #include "common/Location.hpp"
 #include "common/LocationTable.hpp"
 
-/** Abstracts out the functionality of scanning text and identifying tokens.
- * 
- ```
-    voila sample text
-          ~~~^
- ```
- * selected text is "sam"
- * current char is "p"
- * `step` would make the selection "samp" and current char "l"
- * `capture` would empty the selection and make "sam" a new token
- * `discard` would empty the selection without making a new token
- **/
+/// Abstracts out the functionality of scanning text and identifying tokens.
+/// 
+/// ```
+///    voila sample text
+///          ~~~^
+/// ```
+/// - selected text is "sam"
+/// - current char is "p"
+/// - `step` would make the selection "samp" and current char "l"
+/// - `capture` would empty the selection and make "sam" a new token
+/// - `discard` would empty the selection without making a new token
 template<typename S>
 class Scanner {
 
@@ -31,9 +29,9 @@ public:
     _state = initialState = _initialState;
   }
 
-  /** Moves the cursor one char to the right (which adds the current char
-   * to the selection) and sets the state to `newState`.
-   * @note the current character should *not* be a newline. */
+  /// Moves the cursor one char to the right (which adds the current char to
+  /// the selection) and sets the state to `newState`.
+  /// @note the current character should *not* be a newline. */
   void step(S newState) {
     if (*p2 == '\n') {
       newlines++;
@@ -44,8 +42,8 @@ public:
     _state = newState;
   }
 
-  /** Captures selected characters as a new token of type `ty`.
-   * Selection is cleared and state is reset. */
+  /// Captures selected characters as a new token of type `ty`. Selection is
+  /// cleared and state is reset.
   void capture(TokenTy ty) {
     u_int8_t tokenSize = (u_int8_t)(p2 - p1);
     _tokens.push_back({ p1, row, col, tokenSize, ty });
@@ -61,7 +59,7 @@ public:
     lastNewline = nullptr;
   }
 
-  /** Starts selection over at current cursor position and resets state. */
+  /// Starts selection over at current cursor position and resets state.
   void discard() {
     u_int8_t tokenSize = (u_int8_t)(p2 - p1);
     _state = initialState;
@@ -76,41 +74,41 @@ public:
     lastNewline = nullptr;
   }
 
-  /** Equivalent to `step(_); capture(ty)` */
+  /// Equivalent to `step(_); capture(ty)`
   void stepAndCapture(TokenTy ty) {
     step(initialState);
     capture(ty);
   }
 
-  /** Equivalent to `step(_); discard()`. Moves the cursor one char to the
-   * right and clears the selection without capturing a token. */
+  /// Equivalent to `step(_); discard()`. Moves the cursor one char to the
+  /// right and clears the selection without capturing a token.
   void stepAndDiscard() {
     step(initialState);
     discard();
   }
 
-  /** Returns the current token state. */
+  /// Returns the current token state.
   S state() { return _state; }
 
-  /** Returns the tokens. */
+  /// Returns the tokens. */
   const std::vector<Token>* tokens() { return &_tokens; }
 
-  /** Returns true if there are unprocessed chars left. */
+  /// Returns true if there are unprocessed chars left.
   bool thereAreMoreChars() { return *p2 != '\0'; }
 
-  /** Returns the first unprocessed char (the current char). */
+  /// Returns the first unprocessed char (the current char).
   char currentChar() { return *p2; }
 
-  /** Returns a pointer to the selection. */
+  /// Returns a pointer to the selection.
   const char* selectionPtr() { return p1; }
 
-  /** Returns the number of selected chars. */
+  /// Returns the number of selected chars.
   u_int16_t selectionSize() { return p2 - p1; }
 
-  /** Returns the current row and column as a Location of size one. */
+  /// Returns the current row and column as a Location of size one.
   Location currentLocation() { return { row, col, 1 }; }
 
-  /** Returns the location table. */
+  /// Returns the location table.
   const LocationTable* locationTable() { return &_locTable; }
 
 private:

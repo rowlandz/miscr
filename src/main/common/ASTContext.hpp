@@ -86,13 +86,9 @@ public:
     return static_cast<T>(this->nodes[addr.addr]);
   }
 
-  template<class T>
-  void set(Addr<T> addr, T node) {
-    nodes[addr.addr] = *reinterpret_cast<ASTMemoryBlock*>(&node);
-  }
-
   template<class T, class U>
-  void SET_UNSAFE(Addr<U> addr, T node) {
+  std::enable_if_t<std::is_base_of<U,T>::value, void >
+  set(Addr<U> addr, T node) {
     nodes[addr.addr] = *reinterpret_cast<ASTMemoryBlock*>(&node);
   }
 

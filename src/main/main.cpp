@@ -32,8 +32,8 @@ int main(int argc, char* argv[]) {
 
   Typer typer(&ctx);
   typer.typeDeclList(parsedDeclList);
-  if (typer.unifier.errors.size() > 0) {
-    for (auto err : typer.unifier.errors) {
+  if (typer.unifier.getErrors()->size() > 0) {
+    for (auto err : *typer.unifier.getErrors()) {
       printf("%s", err.render(text, lexer.getLocationTable()).c_str());
     }
     exit(1);

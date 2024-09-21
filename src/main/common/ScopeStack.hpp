@@ -5,7 +5,7 @@
 #include <vector>
 #include <map>
 
-/** Manages information about program variables. */
+/// Manages information about program variables.
 template <typename V>
 class ScopeStack {
 
@@ -22,10 +22,10 @@ public:
     scopes.back()[varName] = addr;
   }
 
-  /** Finds `varName` in the scopes stack. If multiple scopes contain `varName`, then
-   * the occurrance from the most recently pushed scope is used. Returns `alt` if the
-   * var does not exist in any scope. */
-  V getOrElse(std::string &varName, V alt) {
+  /// Finds `varName` in the scopes stack. If multiple scopes contain `varName`,
+  /// then the occurrance from the most recently pushed scope is used. Returns
+  /// `alt` if the var does not exist in any scope.
+  V getOrElse(std::string& varName, V alt) {
     for (auto scope = scopes.end()-1; scopes.begin() <= scope; scope--) {
       auto result = scope->find(varName);
       if (result != scope->end()) {
@@ -35,12 +35,12 @@ public:
     return alt;
   }
 
-  /** Pushs a new empty scope onto the stack. */
+  /// Pushs a new empty scope onto the stack.
   void push() {
     scopes.push_back(std::map<std::string, V>());
   }
 
-  /** Pops a scope off the stack. */
+  /// Pops a scope off the stack.
   void pop() {
     scopes.pop_back();
   }

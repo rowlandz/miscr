@@ -18,9 +18,9 @@ namespace TyperTests {
     if (parsed.isError()) throw std::runtime_error("Parser error");
     Typer typer(&ctx);
     typer.typeExp(parsed);
-    if (typer.unifier.errors.size() > 0) {
+    if (typer.unifier.getErrors()->size() > 0) {
       std::string errStr;
-      for (auto err : typer.unifier.errors)
+      for (auto err : *typer.unifier.getErrors())
         errStr.append(err.render(expText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
@@ -39,7 +39,7 @@ namespace TyperTests {
     if (parsed.isError()) throw std::runtime_error("Parser error");
     Typer typer(&ctx);
     typer.typeExp(parsed);
-    if (typer.unifier.errors.size() == 0)
+    if (typer.unifier.getErrors()->size() == 0)
       throw std::runtime_error("Expected failure, but it succeeded.");
   }
 
@@ -52,9 +52,9 @@ namespace TyperTests {
     if (parsed.isError()) throw std::runtime_error("Parser error");
     Typer typer(&ctx);
     typer.typeDecl(parsed);
-    if (typer.unifier.errors.size() > 0) {
+    if (typer.unifier.getErrors()->size() > 0) {
       std::string errStr;
-      for (auto err : typer.unifier.errors)
+      for (auto err : *typer.unifier.getErrors())
         errStr.append(err.render(declText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
@@ -69,7 +69,7 @@ namespace TyperTests {
     if (parsed.isError()) throw std::runtime_error("Parser error");
     Typer typer(&ctx);
     typer.typeDecl(parsed);
-    if (typer.unifier.errors.size() == 0)
+    if (typer.unifier.getErrors()->size() == 0)
       throw std::runtime_error("Expected failure, but it succeeded.");
   }
 

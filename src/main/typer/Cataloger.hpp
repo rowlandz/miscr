@@ -5,15 +5,14 @@
 #include "common/ASTContext.hpp"
 #include "common/Ontology.hpp"
 
-/// @brief First of the type checking phases. Fully qualifies all decl names
+/// @brief First of the two type checking phases. Fully qualifies all decl names
 /// and builds an `Ontology`.
 class Cataloger {
-public:
-
   ASTContext* ctx;
   Ontology* ont;
   std::vector<std::string> errors;
 
+public:
   Cataloger(ASTContext* ctx, Ontology* ont) {
     this->ctx = ctx;
     this->ont = ont;
@@ -40,14 +39,6 @@ public:
 
       catalogDeclList(fqNameStr, module.getDecls());
     }
-
-    // else if (id == AST::ID::NAMESPACE) {
-    //   Addr<NamespaceDecl> _ns = _decl.UNSAFE_CAST<NamespaceDecl>();
-    //   NamespaceDecl ns = ctx->get(_ns);
-    //   Ident relName = ctx->GET_UNSAFE<Ident>(ns.getName());
-    //   std::string fqNameStr = scope + "::" + relName.asString();
-    //   catalogDeclList(fqNameStr, ns.getDecls());
-    // }
 
     else if (id == AST::ID::FUNC || id == AST::ID::EXTERN_FUNC) {
       Addr<FunctionDecl> _funcDecl = _decl.UNSAFE_CAST<FunctionDecl>();

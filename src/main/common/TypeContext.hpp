@@ -4,6 +4,9 @@
 #include "llvm/ADT/DenseMap.h"
 #include "common/AST.hpp"
 
+/// @brief Manages type variables and their bindings, including generating fresh
+/// type vars, binding them to other type vars, resolving them to types, and
+/// printing types.
 class TypeContext {
   
   struct MyDenseMapInfo {

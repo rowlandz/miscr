@@ -19,7 +19,12 @@
 /// If the address is an error, return an arresting error.
 #define ARREST_IF_ERROR(a) if (a.isError()) { return ARRESTING_ERROR; }
 
-
+/// @brief The parser populates an `ASTContext` based on a `Token` vector.
+/// Parser functions are named after the AST element that they parse (e.g.,
+/// `name`, `exp`, `decl`). The parse tree itself is stored in the `ASTContext`
+/// and the pseudo-address (`Addr`) of the parsed element is returned. If the
+/// parse was unsuccessful, the returned address will satisfy its `.isError()`
+/// predicate and `getError` will construct a printable error message.
 class Parser {
   ASTContext* ctx;
   const std::vector<Token>* tokens;
@@ -72,7 +77,7 @@ public:
     Addr<Ident> head = ident();
     if (head.isError()) return head.upcast<Name>();
     if (p->ty == COLON_COLON) {
-      p++;
+      ++p;
       Addr<Name> tail = name();
       if (tail.isError()) return ARRESTING_ERROR;
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -393,7 +398,7 @@ public:
 
   Addr<LetExp> letStmt() {
     Token t = *p;
-    if (p->ty == KW_LET) p++; else return EPSILON_ERROR;
+    if (p->ty == KW_LET) ++p; else return EPSILON_ERROR;
     Addr<Ident> boundIdent = ident();
     ARREST_IF_ERROR(boundIdent)
     CHOMP_ELSE_ARREST(EQUAL, "=", "let statement")

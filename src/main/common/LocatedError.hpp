@@ -11,7 +11,7 @@
 #define BOLDWHITE "\x1B[1;37m"
 #define RESETCOLOR "\x1B[0m"
 
-/** A string of error text paired with a Location. */
+/// A string of error text paired with a Location.
 class LocatedError {
 public:
   Location location;

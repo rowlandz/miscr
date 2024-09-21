@@ -48,10 +48,10 @@ check_input:
 
       Typer typer(&m);
       type_function(typer, parsed, grammarElement);
-      for (auto err : typer.unifier.errors) {
+      for (auto err : *typer.unifier.getErrors()) {
         std::cout << err.render(usrInput.c_str(), lexer.getLocationTable());
       }
-      if (typer.unifier.errors.size() == 0) {
+      if (typer.unifier.getErrors()->size() == 0) {
         std::vector<bool> indents;
         print_parse_tree(m, parsed, indents, typer.getTypeContext(), &typer.ont);
       }

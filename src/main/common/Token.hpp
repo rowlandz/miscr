@@ -76,10 +76,8 @@ const char* TokenTyToString(TokenTy ty) {
   }
 }
 
-/**
- * A single "unit of meaning." The lexer turns a program into a sequence of
- * these and the parser turns that sequence into an AST.
- */
+/// A single "unit of meaning." The lexer turns a program into a sequence of
+/// these and the parser turns that sequence into an AST.
 typedef struct {
   const char* ptr;
   unsigned short row;
