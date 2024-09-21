@@ -40,6 +40,21 @@ public:
       catalogDeclList(fqNameStr, module.getDecls());
     }
 
+    else if (id == AST::ID::DATA) {
+      Addr<DataDecl> _dataDecl = _decl.UNSAFE_CAST<DataDecl>();
+      DataDecl dataDecl = ctx->get(_dataDecl);
+      Ident relName = ctx->GET_UNSAFE<Ident>(dataDecl.getName());
+      std::string fqNameStr = scope + "::" + relName.asString();
+      if (ont->getTypeDecl(fqNameStr).isError()) {
+        FQNameKey key = ont->recordType(fqNameStr, _dataDecl);
+        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
+        dataDecl.setName(fqName);
+        ctx->set(_dataDecl, dataDecl);
+      } else {
+        typeNameCollisionError(fqNameStr);
+      }
+    }
+
     else if (id == AST::ID::FUNC || id == AST::ID::EXTERN_FUNC) {
       Addr<FunctionDecl> _funcDecl = _decl.UNSAFE_CAST<FunctionDecl>();
       FunctionDecl funcDecl = ctx->get(_funcDecl);
@@ -82,6 +97,11 @@ public:
     }
   }
   
+  void typeNameCollisionError(const std::string& repeatedType) {
+    std::string errMsg = "Data type is already defined: " + repeatedType;
+    errors.push_back(errMsg);
+  }
+
   void moduleNameCollisionError(const std::string& repeatedMod) {
     std::string errMsg = "Module is already defined: " + repeatedMod;
     errors.push_back(errMsg);

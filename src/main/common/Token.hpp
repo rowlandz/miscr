@@ -3,8 +3,8 @@
 
 enum TokenTy: unsigned char {
   TOK_IDENT,
-  KW_BOOL, KW_CASE, KW_ELSE, KW_EXTERN, KW_FALSE, KW_FUNC, KW_IF, KW_LET,
-  KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_OF, KW_PROC, KW_RETURN, KW_STR,
+  KW_BOOL, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_FALSE, KW_FUNC, KW_IF,
+  KW_LET, KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_OF, KW_PROC, KW_RETURN, KW_STR,
   KW_THEN, KW_TRUE, KW_UNIT,
   KW_i8, KW_i16, KW_i32, KW_i64, KW_f32, KW_f64,
   OP_ADD, OP_SUB, OP_MUL, OP_DIV,
@@ -23,6 +23,7 @@ const char* TokenTyToString(TokenTy ty) {
     case KW_UNIT:         return "KW_UNIT";
     case KW_BOOL:         return "KW_BOOL";
     case KW_CASE:         return "KW_CASE";
+    case KW_DATA:         return "KW_DATA";
     case KW_ELSE:         return "KW_ELSE";
     case KW_EXTERN:       return "KW_EXTERN";
     case KW_FALSE:        return "KW_FALSE";

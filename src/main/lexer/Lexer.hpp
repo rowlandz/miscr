@@ -290,6 +290,7 @@ private:
       case 4:
         if (!strncmp("bool", s, 4)) return KW_BOOL;
         if (!strncmp("case", s, 4)) return KW_CASE;
+        if (!strncmp("data", s, 4)) return KW_DATA;
         if (!strncmp("else", s, 4)) return KW_ELSE;
         if (!strncmp("func", s, 4)) return KW_FUNC;
         if (!strncmp("proc", s, 4)) return KW_PROC;

@@ -26,7 +26,7 @@ public:
     RETURN, STORE, STRING_LIT, SUB, TRUE, WREF_EXP,
 
     // declarations
-    EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
+    DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
 
     // type expressions
     ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i16_TEXP, i32_TEXP,
@@ -148,6 +148,10 @@ public:
   Addr<Exp> getRuntimeArraySize() const { return arraySize.runtime; }
 };
 
+////////////////////////////////////////////////////////////////////////////////
+// NAMES
+////////////////////////////////////////////////////////////////////////////////
+
 /// @brief A qualified, unqualified, or fully qualified identifier
 /// (QIDENT, IDENT, FQIDENT).
 class Name : public AST {
@@ -187,6 +191,10 @@ public:
   FQIdent(Location loc, FQNameKey key) : Name(FQIDENT, loc), key(key) {}
   FQNameKey getKey() { return key; }
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// TYPE EXPRESSIONS
+////////////////////////////////////////////////////////////////////////////////
 
 /// @brief A type that appears in the source text.
 class TypeExp : public AST {
@@ -236,6 +244,10 @@ public:
   bool hasUnderscoreSize() const { return size.isError(); }
 };
 
+////////////////////////////////////////////////////////////////////////////////
+// EXPRESSIONS
+////////////////////////////////////////////////////////////////////////////////
+
 /// @brief An expression or statement (currently there is no distinction).
 class Exp : public AST {
 protected:
@@ -270,31 +282,6 @@ public:
   /// Returns the tail of this expression list. This is only safe to call
   /// if `isEmpty` returns false;
   Addr<ExpList> getTail() const { return tail; }
-};
-
-/// @brief A list of parameters in a function signature.
-class ParamList : public AST {
-  Addr<Ident> headParamName;
-  Addr<TypeExp> headParamType;
-  Addr<ParamList> tail;
-public:
-  ParamList(Location loc) : AST(PARAMLIST_NIL, loc) {
-    this->headParamName = Addr<Ident>::none();
-    this->headParamType = Addr<TypeExp>::none();
-    this->tail = Addr<ParamList>::none();
-  }
-  ParamList(Location loc, Addr<Ident> headParamName,
-      Addr<TypeExp> headParamType, Addr<ParamList> tail)
-      : AST(PARAMLIST_CONS, loc) {
-    this->headParamName = headParamName;
-    this->headParamType = headParamType;
-    this->tail = tail;
-  }
-  bool isEmpty() { return getID() == PARAMLIST_NIL; }
-  bool nonEmpty() { return getID() == PARAMLIST_CONS; }
-  Addr<Ident> getHeadParamName() const { return headParamName; }
-  Addr<TypeExp> getHeadParamType() const { return headParamType; }
-  Addr<ParamList> getTail() const { return tail; }
 };
 
 /// @brief A boolean literal (`true` or `false`).
@@ -545,6 +532,10 @@ public:
   Addr<Exp> getIndex() const { return index; }
 };
 
+////////////////////////////////////////////////////////////////////////////////
+// DECLARATIONS
+////////////////////////////////////////////////////////////////////////////////
+
 /// @brief A declaration.
 class Decl : public AST {
 protected:
@@ -597,6 +588,32 @@ public:
   Addr<DeclList> getDecls() const { return decls; }
 };
 
+/// @brief A list of parameters in a function signature, or a list of
+/// fields in a data type.
+class ParamList : public AST {
+  Addr<Ident> headParamName;
+  Addr<TypeExp> headParamType;
+  Addr<ParamList> tail;
+public:
+  ParamList(Location loc) : AST(PARAMLIST_NIL, loc) {
+    this->headParamName = Addr<Ident>::none();
+    this->headParamType = Addr<TypeExp>::none();
+    this->tail = Addr<ParamList>::none();
+  }
+  ParamList(Location loc, Addr<Ident> headParamName,
+      Addr<TypeExp> headParamType, Addr<ParamList> tail)
+      : AST(PARAMLIST_CONS, loc) {
+    this->headParamName = headParamName;
+    this->headParamType = headParamType;
+    this->tail = tail;
+  }
+  bool isEmpty() { return getID() == PARAMLIST_NIL; }
+  bool nonEmpty() { return getID() == PARAMLIST_CONS; }
+  Addr<Ident> getHeadParamName() const { return headParamName; }
+  Addr<TypeExp> getHeadParamType() const { return headParamType; }
+  Addr<ParamList> getTail() const { return tail; }
+};
+
 /// @brief A function or extern function (FUNC/EXTERN_FUNC).
 class FunctionDecl : public Decl {
   Addr<ParamList> parameters;
@@ -619,6 +636,17 @@ public:
   Addr<TypeExp> getReturnType() const { return returnType; }
   Addr<Exp> getBody() const { return body; }
 };
+
+/// @brief The declaration of a data type.
+class DataDecl : public Decl {
+  Addr<ParamList> fields;
+public:
+  DataDecl(Location loc, Addr<Name> name, Addr<ParamList> fields)
+      : Decl(DATA, loc, name) { this->fields = fields; }
+  Addr<ParamList> getFields() const { return fields; }
+};
+
+////////////////////////////////////////////////////////////////////////////////
 
 const char* ASTIDToString(AST::ID nt) {
   switch (nt) {
@@ -652,6 +680,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::TRUE:               return "TRUE";
   case AST::ID::WREF_EXP:           return "WREF_EXP";
 
+  case AST::ID::DATA:               return "DATA";
   case AST::ID::EXTERN_FUNC:        return "EXTERN_FUNC";
   case AST::ID::FUNC:               return "FUNC";
   case AST::ID::MODULE:             return "MODULE";
@@ -713,6 +742,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "TRUE")                return AST::ID::TRUE;
   else if (str == "WREF_EXP")            return AST::ID::WREF_EXP;
 
+  else if (str == "DATA")                return AST::ID::DATA;
   else if (str == "EXTERN_FUNC")         return AST::ID::EXTERN_FUNC;
   else if (str == "FUNC")                return AST::ID::FUNC;
   else if (str == "MODULE")              return AST::ID::MODULE;
@@ -778,6 +808,10 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
     auto n = reinterpret_cast<const CallExp*>(nodePtr);
     ret.push_back(n->getFunction().upcast<AST>());
     ret.push_back(n->getArguments().upcast<AST>());
+  } else if (id == AST::ID::DATA) {
+    auto n = reinterpret_cast<const DataDecl*>(nodePtr);
+    ret.push_back(n->getName().upcast<AST>());
+    ret.push_back(n->getFields().upcast<AST>());
   } else if (id == AST::ID::DECLLIST_CONS) {
     auto n = reinterpret_cast<const DeclList*>(nodePtr);
     ret.push_back(n->getHead().upcast<AST>());

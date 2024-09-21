@@ -482,6 +482,19 @@ public:
     return ctx->add(ParamList(loc, paramName, paramType, tail));
   }
 
+  Addr<DataDecl> dataDecl() {
+    Token t = *p;
+    if (p->ty == KW_DATA) ++p; else return EPSILON_ERROR;
+    Addr<Name> name = ident().upcast<Name>();
+    ARREST_IF_ERROR(name)
+    CHOMP_ELSE_ARREST(LPAREN, "(", "data")
+    Addr<ParamList> fields = paramListWotc0();
+    ARREST_IF_ERROR(fields)
+    CHOMP_ELSE_ARREST(RPAREN, ")", "data")
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return ctx->add(DataDecl(loc, name, fields));
+  }
+
   Addr<FunctionDecl> functionDecl() {
     Token t = *p;
     if (p->ty == KW_FUNC) ++p; else return EPSILON_ERROR;
@@ -489,7 +502,7 @@ public:
     ARREST_IF_ERROR(name)
     CHOMP_ELSE_ARREST(LPAREN, "(", "function")
     Addr<ParamList> params = paramListWotc0();
-    if (params.isError()) return ARRESTING_ERROR;
+    ARREST_IF_ERROR(params)
     CHOMP_ELSE_ARREST(RPAREN, ")", "function")
     CHOMP_ELSE_ARREST(COLON, ":", "function")
     Addr<TypeExp> retType = typeExp();
@@ -543,6 +556,7 @@ public:
   /** A declaration is a func, proc, data type, module, or namespace. */
   Addr<Decl> decl() {
     Addr<Decl> ret;
+    if ((ret = dataDecl().upcast<Decl>()).notEpsilon()) return ret;
     if ((ret = functionDecl().upcast<Decl>()).notEpsilon()) return ret;
     if ((ret = externFunctionDecl().upcast<Decl>()).notEpsilon()) return ret;
     if ((ret = moduleOrNamespace()).notEpsilon()) return ret;

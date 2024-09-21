@@ -184,3 +184,35 @@ func foo() {
 }
 
 ```
+
+# Data Structures
+
+A simple C-like structure (i.e., a block of memory divided into fields).
+
+```
+data Person(name: &str, age: i32)
+
+let bob: Person = Person("Bob", 40);
+let bobsage: i32 = bob.age;
+```
+
+An abstract data structure expects other data structures to extend it with
+more fields. Therefore it cannot be instantiated directly. The size of an
+abstract data structure is equal to the size of its largest descendant.
+
+```
+abstract data AST(loc: Location)
+
+abstract data Exp(extends AST, ty: Type)
+
+data IntLit(extends Exp, value: i64)
+
+data Add(extends Exp, lhs: &Exp, rhs: &Exp)
+```
+
+The address of a field can be calculated from the address of a struct:
+
+```
+let bob: &Person("Bob", 40);
+let bobsage: &i32 = bob[age];
+```
