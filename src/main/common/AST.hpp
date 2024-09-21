@@ -332,6 +332,23 @@ public:
   std::string asString() const {
     return std::string(ptr+1, getLocation().sz-2);
   }
+
+  /// Returns the contents of the string with escape sequences processed. 
+  std::string processEscapes() const {
+    std::string ret;
+    ret.reserve(getLocation().sz);
+    const char* const end = ptr + getLocation().sz - 1;
+    for (const char* p = ptr + 1; p < end; ++p) {
+      if (*p == '\\') {
+        switch (*(++p)) {
+        case 'n': ret.push_back('\n'); break;
+        case 't': ret.push_back('\t'); break;
+        default: ret.push_back(*p);
+        }
+      } else ret.push_back(*p);
+    }
+    return ret;
+  }
 };
 
 /// @brief A name used as an expression.

@@ -319,6 +319,11 @@ public:
       return rhs;
     }
 
+    else if (id == AST::ID::STRING_LIT) {
+      StringLit e = astctx->GET_UNSAFE<StringLit>(_exp);
+      return b->CreateGlobalString(e.processEscapes());
+    }
+
     else {
       llvm::errs() << "genExp cannot handle AST::ID::"
                    << ASTIDToString(id) << "\n";

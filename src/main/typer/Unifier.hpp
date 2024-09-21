@@ -416,6 +416,13 @@ public:
       ctx->SET_UNSAFE(_e, e);
     }
 
+    else if (id == AST::ID::STRING_LIT) {
+      StringLit e = ctx->GET_UNSAFE<StringLit>(_e);
+      e.setTVar(tc.fresh(Type::rref(tc.fresh(Type::array(Addr<Exp>::none(),
+        tc.fresh(Type::i8()))))));
+      ctx->SET_UNSAFE(_e, e);
+    }
+
     else {
       assert(false && "unimplemented");
     }
