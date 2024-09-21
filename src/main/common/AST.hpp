@@ -22,15 +22,15 @@ public:
   enum ID : unsigned short {
     // expressions and statements
     ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, CALL, DEC_LIT, DEREF, DIV,
-    ENAME, EQ, FALSE, IF, INDEX, INT_LIT, LET, MUL, NE, REF_EXP, RETURN, STORE,
-    STRING_LIT, SUB, TRUE, WREF_EXP,
+    ENAME, EQ, FALSE, GE, GT, IF, INDEX, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP,
+    RETURN, STORE, STRING_LIT, SUB, TRUE, WREF_EXP,
 
     // declarations
     EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
 
     // type expressions
-    ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i32_TEXP, REF_TEXP,
-    UNIT_TEXP, WREF_TEXP, 
+    ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i16_TEXP, i32_TEXP,
+    i64_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, WREF_TEXP, 
 
     // other
     DECLLIST_CONS, DECLLIST_NIL, EXPLIST_CONS, EXPLIST_NIL, FQIDENT, IDENT,
@@ -48,21 +48,22 @@ public:
   ID getID() const { return id; }
   Location getLocation() const { return location; }
 
-  bool isExp() {
+  bool isExp() const {
     switch (id) {
     case ADD: case ARRAY_INIT: case ARRAY_LIST: case ASCRIP: case BLOCK:
     case CALL: case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ:
-    case FALSE: case IF: case INDEX: case INT_LIT: case LET: case MUL: case NE:
-    case REF_EXP: case RETURN: case STORE: case STRING_LIT: case SUB:
-    case TRUE: case WREF_EXP:
+    case FALSE: case GE: case GT: case IF: case INDEX: case INT_LIT: case LE:
+    case LET: case LT: case MUL: case NE: case REF_EXP: case RETURN: case STORE:
+    case STRING_LIT: case SUB: case TRUE: case WREF_EXP:
       return true;
     default: return false;
     }
   }
 
-  bool isBinopExp() {
+  bool isBinopExp() const {
     switch (id) {
-    case ADD: case DIV: case EQ: case MUL: case NE: case SUB: return true;
+    case ADD: case DIV: case EQ: case GE: case GT: case LE: case LT: case MUL:
+    case NE: case SUB: return true;
     default: return false;
     }
   }
@@ -97,7 +98,7 @@ public:
     // concrete types
     ARRAY_SART,  // array (sized at runtime)
     ARRAY_SACT,  // array (sized at compile-time)
-    BOOL, f32, f64, i8, i32, RREF, UNIT, WREF,
+    BOOL, f32, f64, i8, i16, i32, i64, RREF, UNIT, WREF,
 
     // type constraints
     DECIMAL, NUMERIC, REF,
@@ -127,7 +128,9 @@ public:
   static Type f32() { return Type(ID::f32); }
   static Type f64() { return Type(ID::f64); }
   static Type i8() { return Type(ID::i8); }
+  static Type i16() { return Type(ID::i16); }
   static Type i32() { return Type(ID::i32); }
+  static Type i64() { return Type(ID::i64); }
   static Type ref(TVar of) { return Type(ID::REF, of); }
   static Type rref(TVar of) { return Type(ID::RREF, of); }
   static Type unit() { return Type(ID::UNIT); }
@@ -193,9 +196,12 @@ public:
   static TypeExp mkUnit(Location loc) { return TypeExp(UNIT_TEXP, loc); }
   static TypeExp mkBool(Location loc) { return TypeExp(BOOL_TEXP, loc); }
   static TypeExp mkI8(Location loc) { return TypeExp(i8_TEXP, loc); }
+  static TypeExp mkI16(Location loc) { return TypeExp(i16_TEXP, loc); }
   static TypeExp mkI32(Location loc) { return TypeExp(i32_TEXP, loc); }
+  static TypeExp mkI64(Location loc) { return TypeExp(i64_TEXP, loc); }
   static TypeExp mkF32(Location loc) { return TypeExp(f32_TEXP, loc); }
   static TypeExp mkF64(Location loc) { return TypeExp(f64_TEXP, loc); }
+  static TypeExp mkStr(Location loc) { return TypeExp(STR_TEXP, loc); }
 };
 
 /// @brief A read-only or writable reference type expression.
@@ -441,17 +447,20 @@ public:
   Addr<TypeExp> getAscripter() const { return ascripter; }
 };
 
-/// @brief A let statement.
+/// @brief A let statement. The type ascription is optional.
 class LetExp : public Exp {
   Addr<Ident> boundIdent;
+  Addr<TypeExp> ascrip;
   Addr<Exp> definition;
 public:
-  LetExp(Location loc, Addr<Ident> boundIdent, Addr<Exp> definition)
-      : Exp(LET, loc) {
+  LetExp(Location loc, Addr<Ident> boundIdent, Addr<TypeExp> ascrip,
+      Addr<Exp> definition) : Exp(LET, loc) {
     this->boundIdent = boundIdent;
+    this->ascrip = ascrip;
     this->definition = definition;
   }
   Addr<Ident> getBoundIdent() const { return boundIdent; }
+  Addr<TypeExp> getAscrip() const { return ascrip; }
   Addr<Exp> getDefinition() const { return definition; }
 };
 
@@ -626,9 +635,13 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::EQ:                 return "EQ";
   case AST::ID::FALSE:              return "FALSE";
   case AST::ID::IF:                 return "IF";
+  case AST::ID::GE:                 return "GE";
+  case AST::ID::GT:                 return "GT";
   case AST::ID::INDEX:              return "INDEX";
   case AST::ID::INT_LIT:            return "INT_LIT";
+  case AST::ID::LE:                 return "LE";
   case AST::ID::LET:                return "LET";
+  case AST::ID::LT:                 return "LT";
   case AST::ID::MUL:                return "MUL";
   case AST::ID::NE:                 return "NE";
   case AST::ID::REF_EXP:            return "REF_EXP";
@@ -649,8 +662,11 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::f32_TEXP:           return "f32_TEXP";
   case AST::ID::f64_TEXP:           return "f64_TEXP";
   case AST::ID::i8_TEXP:            return "i8_TEXP";
+  case AST::ID::i16_TEXP:           return "i16_TEXP";
   case AST::ID::i32_TEXP:           return "i32_TEXP";
+  case AST::ID::i64_TEXP:           return "i64_TEXP";
   case AST::ID::REF_TEXP:           return "REF_TEXP";
+  case AST::ID::STR_TEXP:           return "STR_TEXP";
   case AST::ID::UNIT_TEXP:          return "UNIT_TEXP";
   case AST::ID::WREF_TEXP:          return "WREF_TEXP";
   
@@ -679,10 +695,14 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "ENAME")               return AST::ID::ENAME;
   else if (str == "EQ")                  return AST::ID::EQ;
   else if (str == "FALSE")               return AST::ID::FALSE;
+  else if (str == "GE")                  return AST::ID::GE;
+  else if (str == "GT")                  return AST::ID::GT;
   else if (str == "IF")                  return AST::ID::IF;
   else if (str == "INDEX")               return AST::ID::INDEX;
   else if (str == "INT_LIT")             return AST::ID::INT_LIT;
+  else if (str == "LE")                  return AST::ID::LE;
   else if (str == "LET")                 return AST::ID::LET;
+  else if (str == "LT")                  return AST::ID::LT;
   else if (str == "MUL")                 return AST::ID::MUL;
   else if (str == "NE")                  return AST::ID::NE;
   else if (str == "REF_EXP")             return AST::ID::REF_EXP;
@@ -703,8 +723,11 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "f32_TEXP")            return AST::ID::f32_TEXP;
   else if (str == "f64_TEXP")            return AST::ID::f64_TEXP;
   else if (str == "i8_TEXP")             return AST::ID::i8_TEXP;
+  else if (str == "i16_TEXP")            return AST::ID::i16_TEXP;
   else if (str == "i32_TEXP")            return AST::ID::i32_TEXP;
+  else if (str == "i64_TEXP")            return AST::ID::i64_TEXP;
   else if (str == "REF_TEXP")            return AST::ID::REF_TEXP;
+  else if (str == "STR_TEXP")            return AST::ID::STR_TEXP;
   else if (str == "UNIT_TEXP")           return AST::ID::UNIT_TEXP;
   else if (str == "WREF_TEXP")           return AST::ID::WREF_TEXP;
   
@@ -727,8 +750,8 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
   AST::ID id = nodePtr->getID();
   std::vector<Addr<AST>> ret;
 
-  if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
-  || id == AST::ID::DIV || id == AST::ID::EQ || id == AST::ID::NE) {
+  // TODO: make this a switch statement
+  if (nodePtr->isBinopExp()) {
     auto n = reinterpret_cast<const BinopExp*>(nodePtr);
     ret.push_back(n->getLHS().upcast<AST>());
     ret.push_back(n->getRHS().upcast<AST>());
@@ -792,6 +815,8 @@ std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
   } else if (id == AST::ID::LET) {
     auto n = reinterpret_cast<const LetExp*>(nodePtr);
     ret.push_back(n->getBoundIdent().upcast<AST>());
+    if (n->getAscrip().exists())
+      ret.push_back(n->getAscrip().upcast<AST>());
     ret.push_back(n->getDefinition().upcast<AST>());
   } else if (id == AST::ID::MODULE) {
     auto n = reinterpret_cast<const ModuleDecl*>(nodePtr);

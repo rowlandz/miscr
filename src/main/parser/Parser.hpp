@@ -284,8 +284,14 @@ public:
     Token t = *p;
     Addr<Exp> lhs = expLv5();
     RETURN_IF_ERROR(lhs)
-    while (p->ty == OP_EQ || p->ty == OP_NEQ) {
-      AST::ID op = (p->ty == OP_EQ) ? AST::ID::EQ : AST::ID::NE;
+    while (p->ty == OP_EQ || p->ty == OP_NEQ || p->ty == OP_GE
+    || p->ty == OP_GT || p->ty == OP_LE || p->ty == OP_LT) {
+      AST::ID op = p->ty == OP_EQ ? AST::ID::EQ :
+                   p->ty == OP_NEQ ? AST::ID::NE :
+                   p->ty == OP_GE ? AST::ID::GE :
+                   p->ty == OP_GT ? AST::ID::GT :
+                   p->ty == OP_LE ? AST::ID::LE :
+                                    AST::ID::LT;
       ++p;
       Addr<Exp> rhs = expLv5();
       ARREST_IF_ERROR(rhs)
@@ -355,8 +361,11 @@ public:
     if (p->ty == KW_f32) return ctx->add(TypeExp::mkF32(tokToLoc(p++)));
     if (p->ty == KW_f64) return ctx->add(TypeExp::mkF64(tokToLoc(p++)));
     if (p->ty == KW_i8) return ctx->add(TypeExp::mkI8(tokToLoc(p++)));
+    if (p->ty == KW_i16) return ctx->add(TypeExp::mkI16(tokToLoc(p++)));
     if (p->ty == KW_i32) return ctx->add(TypeExp::mkI32(tokToLoc(p++)));
+    if (p->ty == KW_i64) return ctx->add(TypeExp::mkI64(tokToLoc(p++)));
     if (p->ty == KW_BOOL) return ctx->add(TypeExp::mkBool(tokToLoc(p++)));
+    if (p->ty == KW_STR) return ctx->add(TypeExp::mkStr(tokToLoc(p++)));
     if (p->ty == KW_UNIT) return ctx->add(TypeExp::mkUnit(tokToLoc(p++)));
     Addr<TypeExp> ret;
     if ((ret = arrayTypeExp().upcast<TypeExp>()).notEpsilon()) return ret;
@@ -401,11 +410,19 @@ public:
     if (p->ty == KW_LET) ++p; else return EPSILON_ERROR;
     Addr<Ident> boundIdent = ident();
     ARREST_IF_ERROR(boundIdent)
-    CHOMP_ELSE_ARREST(EQUAL, "=", "let statement")
+    Addr<TypeExp> ascrip = Addr<TypeExp>::none();
+    if (p->ty == COLON) {
+      ++p;
+      ascrip = typeExp();
+      ARREST_IF_ERROR(ascrip)
+      CHOMP_ELSE_ARREST(EQUAL, "=", "let statement")
+    } else {
+      CHOMP_ELSE_ARREST(EQUAL, ": =", "let statement")
+    }
     Addr<Exp> definition = exp();
     ARREST_IF_ERROR(definition)
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(LetExp(loc, boundIdent, definition));
+    return ctx->add(LetExp(loc, boundIdent, ascrip, definition));
   }
 
   Addr<ReturnExp> returnStmt() {

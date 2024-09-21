@@ -12,6 +12,8 @@ enum LexerST: unsigned char {
   ST_DIGITS_DOT_DIGITS,
   ST_IDENT,
   ST_EQUAL,
+  ST_RANGLE,
+  ST_LANGLE,
   ST_COLON,
   ST_STRING,
   ST_STRING_BSLASH,
@@ -62,6 +64,7 @@ private:
   Scanner<LexerST> tok;
   LocatedError err;
 
+  // TODO: alphabetize cases
   bool one_iteration() {
     char c = tok.currentChar();
     switch (tok.state()) {
@@ -72,6 +75,8 @@ private:
         else if (c == '"') tok.step(ST_STRING);
         else if (c == '/') tok.step(ST_FSLASH);
         else if (c == '=') tok.step(ST_EQUAL);
+        else if (c == '>') tok.step(ST_RANGLE);
+        else if (c == '<') tok.step(ST_LANGLE);
         else if (c == ':') tok.step(ST_COLON);
         else if (c == '&') tok.stepAndCapture(AMP);
         else if (c == '#') tok.stepAndCapture(HASH);
@@ -117,6 +122,16 @@ private:
         if (c == '>') tok.stepAndCapture(FATARROW);
         else if (c == '=') tok.stepAndCapture(OP_EQ);
         else tok.capture(EQUAL);
+        break;
+
+      case ST_LANGLE:
+        if (c == '=') tok.stepAndCapture(OP_LE);
+        else tok.capture(OP_LT);
+        break;
+
+      case ST_RANGLE:
+        if (c == '=') tok.stepAndCapture(OP_GE);
+        else tok.capture(OP_GT);
         break;
 
       case ST_COLON:
@@ -217,6 +232,12 @@ private:
       case ST_EQUAL:
         tok.capture(EQUAL);
         break;
+      case ST_LANGLE:
+        tok.capture(OP_LT);
+        break;
+      case ST_RANGLE:
+        tok.capture(OP_GT);
+        break;
       case ST_COLON:
         tok.capture(COLON);
         break;
@@ -260,8 +281,11 @@ private:
       case 3:
         if (!strncmp("f32", s, 3)) return KW_f32;
         if (!strncmp("f64", s, 3)) return KW_f64;
+        if (!strncmp("i16", s, 3)) return KW_i16;
         if (!strncmp("i32", s, 3)) return KW_i32;
+        if (!strncmp("i64", s, 3)) return KW_i64;
         if (!strncmp("let", s, 3)) return KW_LET;
+        if (!strncmp("str", s, 3)) return KW_STR;
         return TOK_IDENT;
       case 4:
         if (!strncmp("bool", s, 4)) return KW_BOOL;
@@ -281,7 +305,6 @@ private:
         if (!strncmp("extern", s, 6)) return KW_EXTERN;
         if (!strncmp("module", s, 6)) return KW_MODULE;
         if (!strncmp("return", s, 6)) return KW_RETURN;
-        if (!strncmp("string", s, 6)) return KW_STRING;
         return TOK_IDENT;
       case 9:
         if (!strncmp("namespace", s, 9)) return KW_NAMESPACE;

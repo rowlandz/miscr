@@ -102,7 +102,9 @@ public:
       case Type::ID::f32: return std::string("f32");
       case Type::ID::f64: return std::string("f64");
       case Type::ID::i8: return std::string("i8");
+      case Type::ID::i16: return std::string("i16");
       case Type::ID::i32: return std::string("i32");
+      case Type::ID::i64: return std::string("i64");
       case Type::ID::NUMERIC: return std::string("numeric");
       case Type::ID::UNIT: return std::string("unit");
       default: return std::string("???");

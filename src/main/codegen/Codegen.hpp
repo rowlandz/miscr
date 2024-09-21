@@ -52,7 +52,9 @@ public:
     }
     case Type::ID::BOOL: return b->getInt1Ty();
     case Type::ID::i8: return b->getInt8Ty();
+    case Type::ID::i16: return b->getInt16Ty();
     case Type::ID::i32: return b->getInt32Ty();
+    case Type::ID::i64: return b->getInt64Ty();
     case Type::ID::f32: return b->getFloatTy();
     case Type::ID::f64: return b->getDoubleTy();
     case Type::ID::RREF:
@@ -73,7 +75,9 @@ public:
   llvm::Type* genType(Addr<TypeExp> _texp) {
     switch(astctx->get(_texp).getID()) {
     case AST::ID::i8_TEXP: return b->getInt8Ty();
+    case AST::ID::i16_TEXP: return b->getInt16Ty();
     case AST::ID::i32_TEXP: return b->getInt32Ty();
+    case AST::ID::i64_TEXP: return b->getInt64Ty();
     case AST::ID::f32_TEXP: return b->getFloatTy();
     case AST::ID::f64_TEXP: return b->getDoubleTy();
     case AST::ID::ARRAY_TEXP: {
@@ -92,6 +96,7 @@ public:
       llvm::Type* pointeeType = genType(texp.getPointeeType());
       return llvm::PointerType::get(pointeeType, 0);
     }
+    case AST::ID::STR_TEXP: return llvm::ArrayType::get(b->getInt8Ty(), 0);
     case AST::ID::UNIT_TEXP: return b->getVoidTy();
     default:
       llvm::errs() << "genType(Addr<TypeExp>) case unimplemented\n";
@@ -135,6 +140,10 @@ public:
       switch (id) {
       case AST::ID::ADD: return b->CreateAdd(v1, v2);
       case AST::ID::DIV: return b->CreateSDiv(v1, v2);
+      case AST::ID::GE:  return b->CreateICmpSGE(v1, v2);
+      case AST::ID::GT:  return b->CreateICmpSGT(v1, v2);
+      case AST::ID::LE:  return b->CreateICmpSLE(v1, v2);
+      case AST::ID::LT:  return b->CreateICmpSLT(v1, v2);
       case AST::ID::MUL: return b->CreateMul(v1, v2);
       case AST::ID::SUB: return b->CreateSub(v1, v2);
       default: assert(false && "unimplemented");
@@ -299,6 +308,22 @@ public:
       v->setName(boundIdentName);
       varValues.add(boundIdentName, v);
       return nullptr;
+    }
+
+    else if (id == AST::ID::NE) {
+      BinopExp e = astctx->GET_UNSAFE<BinopExp>(_exp);
+      llvm::Value* v1 = genExp(e.getLHS());
+      llvm::Value* v2 = genExp(e.getRHS());
+
+      llvm::Type* operandType = v1->getType();
+      if (operandType->isIntegerTy())
+        return b->CreateICmpNE(v1, v2);
+      else if (operandType->isFloatingPointTy())
+        return b->CreateFCmpONE(v1, v2);
+      else {
+        llvm::errs() << "Fatal error: Unexpected type for NE\n";
+        exit(1);
+      }
     }
 
     else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {

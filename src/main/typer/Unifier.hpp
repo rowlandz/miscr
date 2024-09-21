@@ -59,7 +59,11 @@ class Unifier {
     case AST::ID::f32_TEXP: return tc.fresh(Type::f32());
     case AST::ID::f64_TEXP: return tc.fresh(Type::f64());
     case AST::ID::i8_TEXP: return tc.fresh(Type::i8());
+    case AST::ID::i16_TEXP: return tc.fresh(Type::i16());
     case AST::ID::i32_TEXP: return tc.fresh(Type::i32());
+    case AST::ID::i64_TEXP: return tc.fresh(Type::i64());
+    case AST::ID::STR_TEXP:
+      return tc.fresh(Type::array_sart(Addr<Exp>::none(), tc.fresh(Type::i8())));
     case AST::ID::UNIT_TEXP: return tc.fresh(Type::unit());
     default: assert(false && "Unreachable code");
     }
@@ -104,8 +108,8 @@ public:
         return true;
       } else if (ty == Type::ID::BOOL || ty == Type::ID::DECIMAL
       || ty == Type::ID::f32 || ty == Type::ID::f64 || ty == Type::ID::i8
-      || ty == Type::ID::i32 || ty == Type::ID::NUMERIC
-      || ty == Type::ID::UNIT) {
+      || ty == Type::ID::i16 || ty == Type::ID::i32 || ty == Type::ID::i64
+      || ty == Type::ID::NUMERIC || ty == Type::ID::UNIT) {
         tc.bind(w1, w2);
         return true;
       }
@@ -117,7 +121,8 @@ public:
     else if (t1.getID() == Type::ID::NUMERIC) {
       switch (t2.getID()) {
       case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
-      case Type::ID::i8: case Type::ID::i32:
+      case Type::ID::i8: case Type::ID::i16: case Type::ID::i32:
+      case Type::ID::i64:
         tc.bind(w1, w2);
         return true;
       default:
@@ -127,7 +132,8 @@ public:
     else if (t2.getID() == Type::ID::NUMERIC) {
       switch (t1.getID()) {
       case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
-      case Type::ID::i8: case Type::ID::i32:
+      case Type::ID::i8: case Type::ID::i16: case Type::ID::i32:
+      case Type::ID::i64:
         tc.bind(w2, w1);
         return true;
       default:
@@ -214,6 +220,7 @@ public:
     return inferredTy;
   }
 
+  // TODO: change if-stmt to switch-stmt
   /// @brief Unifies an expression or statement. Returns the type of `_e`. 
   /// Expressions or statements that bind local identifiers will cause
   /// `localVarTypes` to be updated.
@@ -247,7 +254,6 @@ public:
         unifyWith(expList.getHead(), ofTy);
         expList = ctx->get(expList.getTail());
       }
-      // TODO: how do we set the size of the array?
       e.setTVar(tc.fresh(Type::array_sact(numExps, ofTy)));
       ctx->set(_e, e);
     }
@@ -339,7 +345,8 @@ public:
       ctx->set(_e, e);
     }
 
-    else if (id == AST::ID::EQ || id == AST::ID::NE) {
+    else if (id == AST::ID::EQ || id == AST::ID::GE || id == AST::ID::GT
+    || id == AST::ID::LE || id == AST::ID::LT || id == AST::ID::NE) {
       BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
       TVar lhsTy = unifyExp(e.getLHS());
       unifyWith(e.getRHS(), lhsTy);
@@ -396,7 +403,13 @@ public:
 
     else if (id == AST::ID::LET) {
       LetExp e = ctx->GET_UNSAFE<LetExp>(_e);
-      TVar rhsTy = unifyExp(e.getDefinition());
+      TVar rhsTy;
+      if (e.getAscrip().exists()) {
+        rhsTy = freshFromTypeExp(e.getAscrip());
+        expectTypeToBe(e.getDefinition(), rhsTy);
+      } else {
+        rhsTy = unifyExp(e.getDefinition());
+      }
       std::string boundIdent = ctx->get(e.getBoundIdent()).asString();
       localVarTypes.add(boundIdent, rhsTy);
       e.setTVar(tc.fresh(Type::unit()));

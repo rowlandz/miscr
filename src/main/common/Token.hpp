@@ -4,11 +4,11 @@
 enum TokenTy: unsigned char {
   TOK_IDENT,
   KW_BOOL, KW_CASE, KW_ELSE, KW_EXTERN, KW_FALSE, KW_FUNC, KW_IF, KW_LET,
-  KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_OF, KW_PROC, KW_RETURN, KW_STRING, KW_THEN,
-  KW_TRUE, KW_UNIT,
-  KW_i8, KW_i32, KW_f32, KW_f64,
+  KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_OF, KW_PROC, KW_RETURN, KW_STR,
+  KW_THEN, KW_TRUE, KW_UNIT,
+  KW_i8, KW_i16, KW_i32, KW_i64, KW_f32, KW_f64,
   OP_ADD, OP_SUB, OP_MUL, OP_DIV,
-  OP_EQ, OP_NEQ,
+  OP_GE, OP_GT, OP_LE, OP_LT, OP_EQ, OP_NEQ,
   LIT_DEC, LIT_INT, LIT_STRING,
   LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
   AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
@@ -40,8 +40,14 @@ const char* TokenTyToString(TokenTy ty) {
     case KW_f32:          return "KW_f32";
     case KW_f64:          return "KW_f64";
     case KW_i8:           return "KW_i8";
+    case KW_i16:          return "KW_i16";
     case KW_i32:          return "KW_i32";
-    case KW_STRING:       return "KW_STRING";
+    case KW_i64:          return "KW_i64";
+    case KW_STR:          return "KW_STR";
+    case OP_GE:           return "OP_GE";
+    case OP_GT:           return "OP_GT";
+    case OP_LE:           return "OP_LE";
+    case OP_LT:           return "OP_LT";
     case OP_EQ:           return "OP_EQ";
     case OP_NEQ:          return "OP_NEQ";
     case OP_ADD:          return "OP_ADD";
