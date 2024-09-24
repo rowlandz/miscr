@@ -3,7 +3,6 @@
 
 #include <cassert>
 #include "llvm/ADT/DenseMap.h"
-#include "common/ASTContext.hpp"
 #include "common/TypeContext.hpp"
 #include "common/Ontology.hpp"
 #include "common/ScopeStack.hpp"
@@ -12,14 +11,12 @@
 /// @brief Second of the two type checking phases. Performs Hindley-Milner
 /// type inference and unification. More specifically,
 ///
-/// - Sets the type variables of expressions in an `ASTContext`. The type
+/// - Sets the type variables of expressions. The type
 ///   variables can be resolved using the `TypeContext` built by the unifier.
 /// 
 /// - Fully qualifies the function names in `CALL` expressions (i.e. replaces
 ///   the name with a `FQIdent` with associated info stored in an `Ontology`).
 class Unifier {
-  
-  ASTContext* ctx;
  
   /// Maps decls to their definitions or declarations.
   const Ontology* ont;
@@ -39,40 +36,35 @@ class Unifier {
   TypeContext tc;
 
   /// @brief Converts a type expression into a `Type` with fresh type variables.
-  TVar freshFromTypeExp(Addr<TypeExp> _texp) {
-    AST::ID id = ctx->get(_texp).getID();
-    switch (ctx->get(_texp).getID()) {
-    case AST::ID::ARRAY_TEXP: {
-      ArrayTypeExp texp = ctx->GET_UNSAFE<ArrayTypeExp>(_texp);
-      return tc.fresh(Type::array_sart(texp.getSize(),
-        freshFromTypeExp(texp.getInnerType())));
+  TVar freshFromTypeExp(TypeExp* _texp) {
+    AST::ID id = _texp->getID();
+
+    if (auto texp = ArrayTypeExp::downcast(_texp)) {
+      return tc.fresh(Type::array_sart(texp->getSize(),
+        freshFromTypeExp(texp->getInnerType())));
     }
-    case AST::ID::REF_TEXP:
-      return tc.fresh(Type::rref(freshFromTypeExp(
-        ctx->GET_UNSAFE<RefTypeExp>(_texp).getPointeeType()
-      )));
-    case AST::ID::WREF_TEXP:
-      return tc.fresh(Type::wref(freshFromTypeExp(
-        ctx->GET_UNSAFE<RefTypeExp>(_texp).getPointeeType()
-      )));
-    case AST::ID::BOOL_TEXP: return tc.fresh(Type::bool_());
-    case AST::ID::f32_TEXP: return tc.fresh(Type::f32());
-    case AST::ID::f64_TEXP: return tc.fresh(Type::f64());
-    case AST::ID::i8_TEXP: return tc.fresh(Type::i8());
-    case AST::ID::i16_TEXP: return tc.fresh(Type::i16());
-    case AST::ID::i32_TEXP: return tc.fresh(Type::i32());
-    case AST::ID::i64_TEXP: return tc.fresh(Type::i64());
-    case AST::ID::STR_TEXP:
-      return tc.fresh(Type::array_sart(Addr<Exp>::none(), tc.fresh(Type::i8())));
-    case AST::ID::UNIT_TEXP: return tc.fresh(Type::unit());
-    default: assert(false && "Unreachable code");
+    if (auto texp = RefTypeExp::downcast(_texp)) {
+      if (texp->isWritable())
+        return tc.fresh(Type::wref(freshFromTypeExp(texp->getPointeeType())));
+      else
+        return tc.fresh(Type::rref(freshFromTypeExp(texp->getPointeeType())));
     }
+    if (id == AST::ID::BOOL_TEXP) return tc.fresh(Type::bool_());
+    if (id == AST::ID::f32_TEXP) return tc.fresh(Type::f32());
+    if (id == AST::ID::f64_TEXP) return tc.fresh(Type::f64());
+    if (id == AST::ID::i8_TEXP) return tc.fresh(Type::i8());
+    if (id == AST::ID::i16_TEXP) return tc.fresh(Type::i16());
+    if (id == AST::ID::i32_TEXP) return tc.fresh(Type::i32());
+    if (id == AST::ID::i64_TEXP) return tc.fresh(Type::i64());
+    if (id == AST::ID::STR_TEXP)
+      return tc.fresh(Type::array_sart(nullptr, tc.fresh(Type::i8())));
+    if (id == AST::ID::UNIT_TEXP) return tc.fresh(Type::unit());
+    llvm_unreachable("Ahhh!!!");
   }
 
 public:
 
-  Unifier(ASTContext* ctx, Ontology* ont) {
-    this->ctx = ctx;
+  Unifier(Ontology* ont) {
     this->ont = ont;
     relativePathQualifiers.push_back("global");
   }
@@ -192,7 +184,7 @@ public:
   /// @brief Unifies `_exp`, then unifies the inferred type with `ty`. An error
   /// message is pushed if the second unification fails. 
   /// @return The inferred type of `_exp` (for convenience). 
-  TVar unifyWith(Addr<Exp> _exp, TVar ty) {
+  TVar unifyWith(Exp* _exp, TVar ty) {
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, ty)) return inferredTy;
     std::string errMsg("Cannot unify type ");
@@ -200,7 +192,7 @@ public:
     errMsg.append(" with type ");
     errMsg.append(tc.TVarToString(ty));
     errMsg.append(".");
-    errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
+    errors.push_back(LocatedError(_exp->getLocation(), errMsg));
     return inferredTy;
   }
 
@@ -208,7 +200,7 @@ public:
   /// implicit coercions enabled. An error message is pushed if the second
   /// unification fails.
   /// @return The inferred type of `_exp` (for convenience).
-  TVar expectTypeToBe(Addr<Exp> _exp, TVar expectedTy) {
+  TVar expectTypeToBe(Exp* _exp, TVar expectedTy) {
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, expectedTy, true)) return inferredTy;
     std::string errMsg("Inferred type is ");
@@ -216,7 +208,7 @@ public:
     errMsg.append(" but expected type ");
     errMsg.append(tc.TVarToString(expectedTy));
     errMsg.append(".");
-    errors.push_back(LocatedError(ctx->get(_exp).getLocation(), errMsg));
+    errors.push_back(LocatedError(_exp->getLocation(), errMsg));
     return inferredTy;
   }
 
@@ -224,254 +216,211 @@ public:
   /// @brief Unifies an expression or statement. Returns the type of `_e`. 
   /// Expressions or statements that bind local identifiers will cause
   /// `localVarTypes` to be updated.
-  TVar unifyExp(Addr<Exp> _e) {
-    AST::ID id = ctx->get(_e).getID();
+  TVar unifyExp(Exp* _e) {
+    AST::ID id = _e->getID();
 
-    if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
-    || id == AST::ID::DIV) {
-      BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
-      TVar lhsTy = unifyWith(e.getLHS(), tc.fresh(Type::numeric()));
-      unifyWith(e.getRHS(), lhsTy);
-      e.setTVar(lhsTy);
-      ctx->set(_e, e);
-    }
-
-    else if (id == AST::ID::ARRAY_INIT) {
-      ArrayInitExp e = ctx->GET_UNSAFE<ArrayInitExp>(_e);
-      unifyWith(e.getSize(), tc.fresh(Type::numeric()));
-      TVar ofTy = unifyExp(e.getInitializer());
-      e.setTVar(tc.fresh(Type::array_sart(e.getSize(), ofTy)));
-      ctx->set(_e, e);
-    }
-
-    else if (id == AST::ID::ARRAY_LIST) {
-      ArrayListExp e = ctx->GET_UNSAFE<ArrayListExp>(_e);
-      TVar ofTy = tc.fresh();
-      ExpList expList = ctx->get(e.getContent());
-      unsigned int numExps = 0;
-      while (expList.nonEmpty()) {
-        ++numExps;
-        unifyWith(expList.getHead(), ofTy);
-        expList = ctx->get(expList.getTail());
+    if (auto e = BinopExp::downcast(_e)) {
+      if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
+      || id == AST::ID::DIV) {
+        TVar lhsTy = unifyWith(e->getLHS(), tc.fresh(Type::numeric()));
+        unifyWith(e->getRHS(), lhsTy);
+        e->setTVar(lhsTy);
       }
-      e.setTVar(tc.fresh(Type::array_sact(numExps, ofTy)));
-      ctx->set(_e, e);
+
+      else if (id == AST::ID::EQ || id == AST::ID::GE || id == AST::ID::GT
+      || id == AST::ID::LE || id == AST::ID::LT || id == AST::ID::NE) {
+        TVar lhsTy = unifyExp(e->getLHS());
+        unifyWith(e->getRHS(), lhsTy);
+        e->setTVar(tc.fresh(Type::bool_()));
+      }
     }
 
-    else if (id == AST::ID::ASCRIP) {
-      AscripExp e = ctx->GET_UNSAFE<AscripExp>(_e);
-      TVar ty = freshFromTypeExp(e.getAscripter());
-      expectTypeToBe(e.getAscriptee(), ty);
-      e.setTVar(ty);
-      ctx->set(_e, e);
+    else if (auto e = ArrayInitExp::downcast(_e)) {
+      unifyWith(e->getSize(), tc.fresh(Type::numeric()));
+      TVar ofTy = unifyExp(e->getInitializer());
+      e->setTVar(tc.fresh(Type::array_sart(e->getSize(), ofTy)));
     }
 
-    else if (id == AST::ID::BLOCK) {
-      BlockExp e = ctx->GET_UNSAFE<BlockExp>(_e);
-      ExpList stmtList = ctx->get(e.getStatements());
+    else if (auto e = ArrayListExp::downcast(_e)) {
+      TVar ofTy = tc.fresh();
+      ExpList* expList = e->getContent();
+      unsigned int numExps = 0;
+      while (expList->nonEmpty()) {
+        ++numExps;
+        unifyWith(expList->getHead(), ofTy);
+        expList = expList->getTail();
+      }
+      e->setTVar(tc.fresh(Type::array_sact(numExps, ofTy)));
+    }
+
+    else if (auto e = AscripExp::downcast(_e)) {
+      TVar ty = freshFromTypeExp(e->getAscripter());
+      expectTypeToBe(e->getAscriptee(), ty);
+      e->setTVar(ty);
+    }
+
+    else if (auto e = BlockExp::downcast(_e)) {
+      ExpList* stmtList = e->getStatements();
       TVar lastStmtTy = tc.fresh(Type::unit());  // TODO: no need to freshen unit
       localVarTypes.push();
-      while (stmtList.nonEmpty()) {
-        lastStmtTy = unifyExp(stmtList.getHead());
-        stmtList = ctx->get(stmtList.getTail());
+      while (stmtList->nonEmpty()) {
+        lastStmtTy = unifyExp(stmtList->getHead());
+        stmtList = stmtList->getTail();
       }
       localVarTypes.pop();
-      e.setTVar(lastStmtTy);
-      ctx->set(_e, e);
+      e->setTVar(lastStmtTy);
     }
 
-    else if (id == AST::ID::CALL) {
-      CallExp e = ctx->GET_UNSAFE<CallExp>(_e);
-      std::string calleeRelName = nameToString(e.getFunction());
-      Addr<FunctionDecl> _callee = lookupFuncByRelName(calleeRelName);
-      if (_callee.exists()) {
-        FunctionDecl callee = ctx->get(_callee);
+    else if (auto e = CallExp::downcast(_e)) {
+      std::string calleeRelName = e->getFunction()->asStringRef().str();
+      FunctionDecl* _callee = lookupFuncByRelName(calleeRelName);
+      if (_callee != nullptr) {
         /*** unify each argument with corresponding parameter ***/
-        ExpList expList = ctx->get(e.getArguments());
-        ParamList paramList = ctx->get(callee.getParameters());
-        while (expList.nonEmpty() && paramList.nonEmpty()) {
-          TVar paramType = freshFromTypeExp(paramList.getHeadParamType());
-          expectTypeToBe(expList.getHead(), paramType);
-          expList = ctx->get(expList.getTail());
-          paramList = ctx->get(paramList.getTail());
+        ExpList* expList = e->getArguments();
+        ParamList* paramList = _callee->getParameters();
+        while (expList->nonEmpty() && paramList->nonEmpty()) {
+          TVar paramType = freshFromTypeExp(paramList->getHeadParamType());
+          expectTypeToBe(expList->getHead(), paramType);
+          expList = expList->getTail();
+          paramList = paramList->getTail();
         }
-        if (expList.nonEmpty() || paramList.nonEmpty()) {
-          FQIdent calleeFQIdent = ctx->GET_UNSAFE<FQIdent>(callee.getName());
+        if (expList->nonEmpty() || paramList->nonEmpty()) {
+          Name* calleeFQIdent = _callee->getName();
           std::string errMsg("Arity mismatch for function ");
-          errMsg.append(ont->getName(calleeFQIdent.getKey()) + ".");
-          errors.push_back(LocatedError(e.getLocation(), errMsg));
+          errMsg.append(ont->getName(calleeFQIdent->getKey()) + ".");
+          errors.push_back(LocatedError(e->getLocation(), errMsg));
         }
         /*** set this expression's type to the callee's return type ***/
-        e.setTVar(freshFromTypeExp(callee.getReturnType()));
+        e->setTVar(freshFromTypeExp(_callee->getReturnType()));
         /*** fully qualify the callee name ***/
-        e.setFunction(callee.getName());
+        e->setFunction(callee->getName());
       } else {
         std::string errMsg = "Function " + calleeRelName + " not found.";
-        errors.push_back(LocatedError(e.getLocation(), errMsg));
-        e.setTVar(tc.fresh());
+        errors.push_back(LocatedError(e->getLocation(), errMsg));
+        e->setTVar(tc.fresh());
       }
-      ctx->set(_e, e);
     }
 
-    else if (id == AST::ID::DEC_LIT) {
-      DecimalLit e = ctx->GET_UNSAFE<DecimalLit>(_e);
-      e.setTVar(tc.fresh(Type::decimal()));
-      ctx->set(_e, e);
+    else if (auto e = DecimalLit::downcast(_e)) {
+      e->setTVar(tc.fresh(Type::decimal()));
     }
 
-    else if (id == AST::ID::DEREF) {
-      DerefExp e = ctx->GET_UNSAFE<DerefExp>(_e);
+    else if (auto e = DerefExp::downcast(_e)) {
       TVar retTy = tc.fresh();
       TVar refTy = tc.fresh(Type::ref(retTy));
-      unifyWith(e.getOf(), refTy);
-      e.setTVar(retTy);
-      ctx->set(_e, e);
+      unifyWith(e->getOf(), refTy);
+      e->setTVar(retTy);
     }
 
     // TODO: Make sure typevar is set even in error cases.
-    else if (id == AST::ID::ENAME) {
-      NameExp e = ctx->GET_UNSAFE<NameExp>(_e);
-      Name name = ctx->get(e.getName());
-      if (name.isUnqualified()) {
-        std::string s = ctx->get(e.getName().UNSAFE_CAST<Ident>()).asString();
-        TVar ty = localVarTypes.getOrElse(s, TVar::none());
-        if (ty.exists()) e.setTVar(ty);
-        else {
-          errors.push_back(LocatedError(e.getLocation(), "Unbound identifier"));
-        }
-      } else {
-        errors.push_back(LocatedError(e.getLocation(), "Didn't expect qualified ident here"));
-      }
-      ctx->set(_e, e);
+    else if (auto e = NameExp::downcast(_e)) {
+      Name* name = e->getName();
+      std::string s = e->getName()->asStringRef().str();
+      TVar ty = localVarTypes.getOrElse(s, TVar::none());
+      if (ty.exists())
+        e->setTVar(ty);
+      else
+        errors.push_back(LocatedError(e->getLocation(), "Unbound identifier"));
     }
 
-    else if (id == AST::ID::EQ || id == AST::ID::GE || id == AST::ID::GT
-    || id == AST::ID::LE || id == AST::ID::LT || id == AST::ID::NE) {
-      BinopExp e = ctx->GET_UNSAFE<BinopExp>(_e);
-      TVar lhsTy = unifyExp(e.getLHS());
-      unifyWith(e.getRHS(), lhsTy);
-      e.setTVar(tc.fresh(Type::bool_()));
-      ctx->set(_e, e);
+    else if (auto e = BoolLit::downcast(_e)) {
+      e->setTVar(tc.fresh(Type::bool_()));
     }
 
-    else if (id == AST::ID::FALSE || id == AST::ID::TRUE) {
-      BoolLit e = ctx->GET_UNSAFE<BoolLit>(_e);
-      e.setTVar(tc.fresh(Type::bool_()));
-      ctx->set(_e, e);
+    else if (auto e = IfExp::downcast(_e)) {
+      unifyWith(e->getCondExp(), tc.fresh(Type::bool_()));
+      TVar thenTy = unifyExp(e->getThenExp());
+      unifyWith(e->getElseExp(), thenTy);
+      e->setTVar(thenTy);
     }
 
-    else if (id == AST::ID::IF) {
-      IfExp e = ctx->GET_UNSAFE<IfExp>(_e);
-      unifyWith(e.getCondExp(), tc.fresh(Type::bool_()));
-      TVar thenTy = unifyExp(e.getThenExp());
-      unifyWith(e.getElseExp(), thenTy);
-      e.setTVar(thenTy);
-      ctx->set(_e, e);
-    }
-
-    else if (id == AST::ID::INDEX) {
-      IndexExp e = ctx->GET_UNSAFE<IndexExp>(_e);
-      Type baseTy = tc.resolve(unifyExp(e.getBase())).second;
+    else if (auto e = IndexExp::downcast(_e)) {
+      Type baseTy = tc.resolve(unifyExp(e->getBase())).second;
       Type::ID refTyID = baseTy.getID();
       if (refTyID == Type::ID::RREF || refTyID == Type::ID::WREF) {
         Type innerTy = tc.resolve(baseTy.getInner()).second;
         if (innerTy.isArrayType()) {
-          e.setTVar(refTyID == Type::ID::WREF ?
+          e->setTVar(refTyID == Type::ID::WREF ?
                     tc.fresh(Type::wref(innerTy.getInner())) :
                     tc.fresh(Type::rref(innerTy.getInner())));
         } else {
           std::string errMsg("Must infer that this is a reference to an array");
-          Location loc = ctx->get(e.getBase()).getLocation();
-          errors.push_back(LocatedError(loc, errMsg));
-          e.setTVar(tc.fresh());
+          errors.push_back(LocatedError(e->getBase()->getLocation(), errMsg));
+          e->setTVar(tc.fresh());
         }
       } else {
         std::string errMsg("Couldn't infer that this is a reference");
-        Location loc = ctx->get(e.getBase()).getLocation();
-        errors.push_back(LocatedError(loc, errMsg));
-        e.setTVar(tc.fresh());
+        errors.push_back(LocatedError(e->getBase()->getLocation(), errMsg));
+        e->setTVar(tc.fresh());
       }
-      unifyWith(e.getIndex(), tc.fresh(Type::numeric()));
-      ctx->set(_e, e);
+      unifyWith(e->getIndex(), tc.fresh(Type::numeric()));
     }
 
-    else if (id == AST::ID::INT_LIT) {
-      IntLit e = ctx->GET_UNSAFE<IntLit>(_e);
-      e.setTVar(tc.fresh(Type::numeric()));
-      ctx->set(_e, e);
+    else if (auto e = IntLit::downcast(_e)) {
+      e->setTVar(tc.fresh(Type::numeric()));
     }
 
-    else if (id == AST::ID::LET) {
-      LetExp e = ctx->GET_UNSAFE<LetExp>(_e);
+    else if (auto e = LetExp::downcast(_e)) {
       TVar rhsTy;
-      if (e.getAscrip().exists()) {
-        rhsTy = freshFromTypeExp(e.getAscrip());
-        expectTypeToBe(e.getDefinition(), rhsTy);
+      if (e->getAscrip() != nullptr) {
+        rhsTy = freshFromTypeExp(e->getAscrip());
+        expectTypeToBe(e->getDefinition(), rhsTy);
       } else {
-        rhsTy = unifyExp(e.getDefinition());
+        rhsTy = unifyExp(e->getDefinition());
       }
-      std::string boundIdent = ctx->get(e.getBoundIdent()).asString();
+      std::string boundIdent = e->getBoundIdent()->asStringRef().str();
       localVarTypes.add(boundIdent, rhsTy);
-      e.setTVar(tc.fresh(Type::unit()));
-      ctx->set(_e, e);
+      e->setTVar(tc.fresh(Type::unit()));
     }
 
-    else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
-      RefExp e = ctx->GET_UNSAFE<RefExp>(_e);
-      TVar initializerTy = unifyExp(e.getInitializer());
+    else if (auto e = RefExp::downcast(_e)) {
+      TVar initializerTy = unifyExp(e->getInitializer());
       TVar retTy = id == AST::ID::WREF_EXP ?
                    tc.fresh(Type::wref(initializerTy)) :
                    tc.fresh(Type::rref(initializerTy));
-      e.setTVar(retTy);
-      ctx->set(_e, e);
+      e->setTVar(retTy);
     }
 
-    else if (id == AST::ID::STORE) {
-      StoreExp e = ctx->GET_UNSAFE<StoreExp>(_e);
+    else if (auto e = StoreExp::downcast(_e)) {
       TVar retTy = tc.fresh();
       TVar lhsTy = tc.fresh(Type::wref(retTy));
-      unifyWith(e.getLHS(), lhsTy);
-      unifyWith(e.getRHS(), retTy);
-      e.setTVar(retTy);
-      ctx->set(_e, e);
+      unifyWith(e->getLHS(), lhsTy);
+      unifyWith(e->getRHS(), retTy);
+      e->setTVar(retTy);
     }
 
-    else if (id == AST::ID::STRING_LIT) {
-      StringLit e = ctx->GET_UNSAFE<StringLit>(_e);
-      unsigned int strArrayLen = e.processEscapes().size() + 1;
-      e.setTVar(tc.fresh(Type::rref(tc.fresh(Type::array_sact(strArrayLen,
+    else if (auto e = StringLit::downcast(_e)) {
+      unsigned int strArrayLen = e->processEscapes().size() + 1;
+      e->setTVar(tc.fresh(Type::rref(tc.fresh(Type::array_sact(strArrayLen,
         tc.fresh(Type::i8()))))));
-      ctx->set(_e, e);
     }
 
     else {
       assert(false && "unimplemented");
     }
 
-    return ctx->get(_e).getTVar(); 
+    return _e->getTVar(); 
   }
 
   /// Typechecks a function.
-  void unifyFunc(Addr<FunctionDecl> _funDecl) {
-    FunctionDecl funDecl = ctx->get(_funDecl);
+  void unifyFunc(FunctionDecl* _funDecl) {
     localVarTypes.push();
-    addParamsToLocalVarTypes(funDecl.getParameters());
-    TVar retTy = freshFromTypeExp(funDecl.getReturnType());
-    unifyWith(funDecl.getBody(), retTy);
+    addParamsToLocalVarTypes(_funDecl->getParameters());
+    TVar retTy = freshFromTypeExp(_funDecl->getReturnType());
+    unifyWith(_funDecl->getBody(), retTy);
     localVarTypes.pop();
   }
 
-  void unifyModule(Addr<ModuleDecl> _module) {
-    ModuleDecl module = ctx->get(_module);
-    FQIdent fqName = ctx->GET_UNSAFE<FQIdent>(module.getName());
-    std::string fqNameStr = ont->getName(fqName.getKey());
+  void unifyModule(ModuleDecl* _module) {
+    FQIdent fqName = ctx->GET_UNSAFE<FQIdent>(module->getName());
+    std::string fqNameStr = ont->getName(fqName->getKey());
     relativePathQualifiers.push_back(fqNameStr);
-    unifyDeclList(module.getDecls());
+    unifyDeclList(module->getDecls());
     relativePathQualifiers.pop_back();
   }
 
-  void unifyDecl(Addr<Decl> _decl) {
-    switch (ctx->get(_decl).getID()) {
+  void unifyDecl(Decl* _decl) {
+    switch (ctx->get(_decl)->getID()) {
     case AST::ID::FUNC: unifyFunc(_decl.UNSAFE_CAST<FunctionDecl>()); break;
     case AST::ID::EXTERN_FUNC: break;
     case AST::ID::MODULE: unifyModule(_decl.UNSAFE_CAST<ModuleDecl>()); break;
@@ -479,49 +428,30 @@ public:
     }
   }
 
-  void unifyDeclList(Addr<DeclList> _declList) {
-    DeclList declList = ctx->get(_declList);
-    while (declList.nonEmpty()) {
-      unifyDecl(declList.getHead());
-      declList = ctx->get(declList.getTail());
+  void unifyDeclList(DeclList* _declList) {
+    while (_declList->nonEmpty()) {
+      unifyDecl(_declList->getHead());
+      _declList = _declList->getTail();
     }
   }
 
-  void addParamsToLocalVarTypes(Addr<ParamList> _paramList) {
-    ParamList paramList = ctx->get(_paramList);
-    while (paramList.nonEmpty()) {
-      Ident paramName = ctx->get(paramList.getHeadParamName());
-      TVar paramTy = freshFromTypeExp(paramList.getHeadParamType());
-      localVarTypes.add(paramName.asString(), paramTy);
-      paramList = ctx->get(paramList.getTail());
+  void addParamsToLocalVarTypes(ParamList* paramList) {
+    while (paramList->nonEmpty()) {
+      std::string paramN = paramList->getHeadParamName()->asStringRef().str();
+      TVar paramTy = freshFromTypeExp(paramList->getHeadParamType());
+      localVarTypes.add(paramN, paramTy);
+      paramList = paramList->getTail();
     }
   }
 
-  /// Returns the name as a string (e.g., `MyMod1::MyMod2::myfunc`).
-  std::string nameToString(Addr<Name> _name) {
-    std::string ret;
-    Name name = ctx->get(_name);
-    while (name.isQualified()) {
-      QIdent qident = ctx->GET_UNSAFE<QIdent>(_name);
-      Ident part = ctx->get(qident.getHead());
-      ret.append(part.asString());
-      ret.append("::");
-      _name = qident.getTail();
-      name = ctx->get(qident.getTail());
-    }
-    Ident part = ctx->GET_UNSAFE<Ident>(_name);
-    ret.append(part.asString());
-    return ret;
-  }
-
-  Addr<FunctionDecl> lookupFuncByRelName(std::string relName) {
+  FunctionDecl* lookupFuncByRelName(std::string relName) {
     for (auto iter = relativePathQualifiers.crbegin();
          iter != relativePathQualifiers.crend(); ++iter) {
       std::string fqName = *iter + "::" + relName;
-      Addr<FunctionDecl> a = ont->getFunctionDecl(*iter + "::" + relName);
+      FunctionDecl* a = ont->getFunctionDecl(*iter + "::" + relName);
       if (a.exists()) return a;
     }
-    return Addr<FunctionDecl>::none();
+    return nullptr;
   }
 };
 

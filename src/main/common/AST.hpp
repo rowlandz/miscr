@@ -3,7 +3,7 @@
 
 #include <cstdio>
 #include <string>
-#include "common/ASTContext.hpp"
+#include <llvm/ADT/StringRef.h>
 #include "common/Location.hpp"
 
 class Exp;
@@ -11,12 +11,7 @@ class IntLit;
 
 /// @brief An AST node is any syntactic form that appears in source code. All
 /// AST nodes have an `id`, which is used to downcast to subclasses, and a
-/// source code `location`. AST nodes may contain pseudo-pointers (instances
-/// of `Addr`) to other nodes. An `ASTContext` manages these nodes including,
-/// creation and dereferencing.
-///
-/// All subclasses must fit within 32 bytes (including the 10 taken up by the
-/// location and ID).
+/// source code `location`.
 class AST {
 public:
   enum ID : unsigned short {
@@ -33,8 +28,8 @@ public:
     i64_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, WREF_TEXP, 
 
     // other
-    DECLLIST_CONS, DECLLIST_NIL, EXPLIST_CONS, EXPLIST_NIL, FQIDENT, IDENT,
-    PARAMLIST_CONS, PARAMLIST_NIL, QIDENT,
+    DECLLIST_CONS, DECLLIST_NIL, EXPLIST_CONS, EXPLIST_NIL, NAME,
+    PARAMLIST_CONS, PARAMLIST_NIL,
   };
 
 private:
@@ -108,13 +103,13 @@ public:
   };
 private:
   Type::ID id;
-  union { unsigned int compileTime; Addr<Exp> runtime; } arraySize;
+  union { unsigned int compileTime; Exp* runtime; } arraySize;
   TVar inner;
   Type(Type::ID id) : arraySize({.compileTime=0}) { this->id = id; }
   Type(Type::ID id, TVar inner) : arraySize({.compileTime=0}) {
     this->id = id; this->inner = inner;
   }
-  Type(Addr<Exp> arraySize, TVar of) : arraySize({.runtime = arraySize}) {
+  Type(Exp* arraySize, TVar of) : arraySize({.runtime = arraySize}) {
     this->id = ID::ARRAY_SART; this->inner = of;
   }
   Type(unsigned int arrSize, TVar of) : arraySize({.compileTime = arrSize}) {
@@ -122,7 +117,7 @@ private:
   }
 public:
   /// @brief Construct an array type sized at runtime. 
-  static Type array_sart(Addr<Exp> sz, TVar of) { return Type(sz, of); }
+  static Type array_sart(Exp* sz, TVar of) { return Type(sz, of); }
   static Type array_sact(unsigned int sz, TVar of) { return Type(sz, of); }
   static Type bool_() { return Type(ID::BOOL); }
   static Type f32() { return Type(ID::f32); }
@@ -145,51 +140,17 @@ public:
   ID getID() const { return id; }
   TVar getInner() const { return inner; }
   unsigned int getCompileTimeArraySize() const { return arraySize.compileTime; }
-  Addr<Exp> getRuntimeArraySize() const { return arraySize.runtime; }
+  Exp* getRuntimeArraySize() const { return arraySize.runtime; }
 };
 
-////////////////////////////////////////////////////////////////////////////////
-// NAMES
-////////////////////////////////////////////////////////////////////////////////
-
-/// @brief A qualified, unqualified, or fully qualified identifier
-/// (QIDENT, IDENT, FQIDENT).
 class Name : public AST {
-protected:
-  Name(ID id, Location loc) : AST(id, loc) {}
+  std::string s;
 public:
-  bool isQualified() { return getID() == QIDENT; }
-  bool isUnqualified() { return getID() == IDENT; }
-};
-
-/// @brief An unqualified name.
-class Ident : public Name {
-  const char* ptr;
-public:
-  Ident(Location loc, const char* ptr) : Name(IDENT, loc) {
-    this->ptr = ptr;
+  Name(Location loc, std::string s) : AST(NAME, loc), s(s) {}
+  static Name* downcast(AST* ast) {
+    return ast->getID() == NAME ? static_cast<Name*>(ast) : nullptr;
   }
-  std::string asString() { return std::string(ptr, getLocation().sz); }
-};
-
-/// @brief A name with at least one qualifier (the head).
-class QIdent : public Name {
-  Addr<Ident> head;
-  Addr<Name> tail;
-public:
-  QIdent(Location loc, Addr<Ident> head, Addr<Name> tail) : Name(QIDENT, loc) {
-    this->head = head; this->tail = tail;
-  }
-  Addr<Ident> getHead() const { return head; }
-  Addr<Name> getTail() const { return tail; }
-};
-
-/// @brief A fully qualified name.
-class FQIdent : public Name {
-  FQNameKey key;
-public:
-  FQIdent(Location loc, FQNameKey key) : Name(FQIDENT, loc), key(key) {}
-  FQNameKey getKey() { return key; }
+  llvm::StringRef asStringRef() const { return s; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -201,47 +162,55 @@ class TypeExp : public AST {
 protected:
   TypeExp(ID id, Location loc) : AST(id, loc) {}
 public:
-  static TypeExp mkUnit(Location loc) { return TypeExp(UNIT_TEXP, loc); }
-  static TypeExp mkBool(Location loc) { return TypeExp(BOOL_TEXP, loc); }
-  static TypeExp mkI8(Location loc) { return TypeExp(i8_TEXP, loc); }
-  static TypeExp mkI16(Location loc) { return TypeExp(i16_TEXP, loc); }
-  static TypeExp mkI32(Location loc) { return TypeExp(i32_TEXP, loc); }
-  static TypeExp mkI64(Location loc) { return TypeExp(i64_TEXP, loc); }
-  static TypeExp mkF32(Location loc) { return TypeExp(f32_TEXP, loc); }
-  static TypeExp mkF64(Location loc) { return TypeExp(f64_TEXP, loc); }
-  static TypeExp mkStr(Location loc) { return TypeExp(STR_TEXP, loc); }
+  static TypeExp* newUnit(Location loc) { return new TypeExp(UNIT_TEXP, loc); }
+  static TypeExp* newBool(Location loc) { return new TypeExp(BOOL_TEXP, loc); }
+  static TypeExp* newI8(Location loc) { return new TypeExp(i8_TEXP, loc); }
+  static TypeExp* newI16(Location loc) { return new TypeExp(i16_TEXP, loc); }
+  static TypeExp* newI32(Location loc) { return new TypeExp(i32_TEXP, loc); }
+  static TypeExp* newI64(Location loc) { return new TypeExp(i64_TEXP, loc); }
+  static TypeExp* newF32(Location loc) { return new TypeExp(f32_TEXP, loc); }
+  static TypeExp* newF64(Location loc) { return new TypeExp(f64_TEXP, loc); }
+  static TypeExp* newStr(Location loc) { return new TypeExp(STR_TEXP, loc); }
 };
 
 /// @brief A read-only or writable reference type expression.
 class RefTypeExp : public TypeExp {
-  Addr<TypeExp> pointeeType;
+  TypeExp* pointeeType;
   bool writable;
 public:
-  RefTypeExp(Location loc, Addr<TypeExp> pointeeType, bool writable)
+  RefTypeExp(Location loc, TypeExp* pointeeType, bool writable)
       : TypeExp(writable ? WREF_TEXP : REF_TEXP, loc) {
     this->pointeeType = pointeeType;
     this->writable = writable;
   }
-  Addr<TypeExp> getPointeeType() const { return pointeeType; }
+  static RefTypeExp* downcast(AST* ast) {
+    return (ast->getID() == REF_TEXP || ast->getID() == WREF_TEXP) ?
+           static_cast<RefTypeExp*>(ast) : nullptr;
+  }
+  TypeExp* getPointeeType() const { return pointeeType; }
   bool isWritable() const { return writable; }
 };
 
 /// @brief Type expression of a constant-size array `[20 of i32]` or
 /// unknown-size array `[n of i32]` or `[_ of i32]`.
 class ArrayTypeExp : public TypeExp {
-  Addr<Exp> size;
-  Addr<TypeExp> innerType;
+  Exp* size;
+  TypeExp* innerType;
 public:
   /// @brief If `size` is an error address, then an underscore was used to
   /// indicate the array size. 
-  ArrayTypeExp(Location loc, Addr<Exp> size, Addr<TypeExp> innerType)
+  ArrayTypeExp(Location loc, Exp* size, TypeExp* innerType)
       : TypeExp(ARRAY_TEXP, loc) {
     this->size = size; this->innerType = innerType;
   }
-  /// @brief This returns an error address if size is unknown.
-  Addr<Exp> getSize() const { return size; }
-  Addr<TypeExp> getInnerType() const { return innerType; }
-  bool hasUnderscoreSize() const { return size.isError(); }
+  static ArrayTypeExp* downcast(AST* ast) {
+    return ast->getID() == ARRAY_TEXP ?
+           static_cast<ArrayTypeExp*>(ast) : nullptr;
+  }
+  /// @brief This returns nullptr if size is unknown.
+  Exp* getSize() const { return size; }
+  TypeExp* getInnerType() const { return innerType; }
+  bool hasUnderscoreSize() const { return size == nullptr; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -254,20 +223,23 @@ protected:
   TVar type = TVar::none();
   Exp(ID id, Location loc) : AST(id, loc) {}
 public:
+  static Exp* downcast(AST* ast) {
+    return ast->isExp() ? static_cast<Exp*>(ast) : nullptr;
+  }
   TVar getTVar() const { return type; };
   void setTVar(TVar type) { this->type = type; }
 };
 
 /// @brief A linked-list of expressions.
 class ExpList : public AST {
-  Addr<Exp> head;
-  Addr<ExpList> tail;
+  Exp* head;
+  ExpList* tail;
 public:
   ExpList(Location loc) : AST(EXPLIST_NIL, loc) {
-    this->head = Addr<Exp>::none();
-    this->tail = Addr<ExpList>::none();
+    this->head = nullptr;
+    this->tail = nullptr;
   }
-  ExpList(Location loc, Addr<Exp> head, Addr<ExpList> tail)
+  ExpList(Location loc, Exp* head, ExpList* tail)
       : AST(EXPLIST_CONS, loc) {
     this->head = head;
     this->tail = tail;
@@ -277,11 +249,11 @@ public:
 
   /// Returns the first expression in this list. This is only safe to call
   /// if `isEmpty` returns false.
-  Addr<Exp> getHead() const { return head; }
+  Exp* getHead() const { return head; }
 
   /// Returns the tail of this expression list. This is only safe to call
   /// if `isEmpty` returns false;
-  Addr<ExpList> getTail() const { return tail; }
+  ExpList* getTail() const { return tail; }
 };
 
 /// @brief A boolean literal (`true` or `false`).
@@ -290,6 +262,10 @@ class BoolLit : public Exp {
 public:
   BoolLit(Location loc, bool value) : Exp(value ? TRUE : FALSE, loc) {
     this->value = value;
+  }
+  static BoolLit* downcast(AST* ast) {
+    return ast->getID() == TRUE || ast->getID() == FALSE ?
+           static_cast<BoolLit*>(ast) : nullptr;
   }
   bool getValue() const { return value; }
 };
@@ -300,6 +276,9 @@ class IntLit : public Exp {
 public:
   IntLit(Location loc, const char* ptr) : Exp(INT_LIT, loc) {
     this->ptr = ptr;
+  }
+  static IntLit* downcast(AST* ast) {
+    return ast->getID() == INT_LIT ? static_cast<IntLit*>(ast) : nullptr;
   }
   long asLong() const {
     return atol(std::string(ptr, getLocation().sz).c_str());
@@ -317,6 +296,9 @@ public:
   DecimalLit(Location loc, const char* ptr) : Exp(DEC_LIT, loc) {
     this->ptr = ptr;
   }
+  static DecimalLit* downcast(AST* ast) {
+    return ast->getID() == DEC_LIT ? static_cast<DecimalLit*>(ast) : nullptr;
+  }
   std::string asString() const { return std::string(ptr, getLocation().sz); }
   double asDouble() const {
     return atof(std::string(ptr, getLocation().sz).c_str());
@@ -331,6 +313,9 @@ public:
   /// quote of the string literal. 
   StringLit(Location loc, const char* ptr) : Exp(STRING_LIT, loc) {
     this->ptr = ptr;
+  }
+  static StringLit* downcast(AST* ast) {
+    return ast->getID() == STRING_LIT ? static_cast<StringLit*>(ast) : nullptr;
   }
   /// Returns the contents of the string (excluding surrounding quotes).
   std::string asString() const {
@@ -357,179 +342,224 @@ public:
 
 /// @brief A name used as an expression.
 class NameExp : public Exp {
-  Addr<Name> name;
+  Name* name;
 public:
-  NameExp(Location loc, Addr<Name> name) : Exp(ENAME, loc) {
+  NameExp(Location loc, Name* name) : Exp(ENAME, loc) {
     this->name = name;
   }
-  Addr<Name> getName() const { return name; }
+  static NameExp* downcast(AST* ast) {
+    return ast->getID() == ENAME ? static_cast<NameExp*>(ast) : nullptr;
+  }
+  Name* getName() const { return name; }
 };
 
 /// @brief A binary operator expression.
 class BinopExp : public Exp {
-  Addr<Exp> lhs;
-  Addr<Exp> rhs;
+  Exp* lhs;
+  Exp* rhs;
 public:
-  BinopExp(ID id, Location loc, Addr<Exp> lhs, Addr<Exp> rhs) : Exp(id, loc) {
+  BinopExp(ID id, Location loc, Exp* lhs, Exp* rhs) : Exp(id, loc) {
     this->lhs = lhs;
     this->rhs = rhs;
   }
-  Addr<Exp> getLHS() const { return lhs; }
-  Addr<Exp> getRHS() const { return rhs; }
+  static BinopExp* downcast(AST* ast) {
+    return ast->isBinopExp() ? static_cast<BinopExp*>(ast) : nullptr;
+  }
+  Exp* getLHS() const { return lhs; }
+  Exp* getRHS() const { return rhs; }
 };
 
 /// @brief An if-then-else expression.
 class IfExp : public Exp {
-  Addr<Exp> condExp;
-  Addr<Exp> thenExp;
-  Addr<Exp> elseExp;
+  Exp* condExp;
+  Exp* thenExp;
+  Exp* elseExp;
 public:
-  IfExp(Location loc, Addr<Exp> condExp, Addr<Exp> thenExp, Addr<Exp> elseExp)
+  IfExp(Location loc, Exp* condExp, Exp* thenExp, Exp* elseExp)
       : Exp(IF, loc) {
     this->condExp = condExp;
     this->thenExp = thenExp;
     this->elseExp = elseExp;
   }
-  Addr<Exp> getCondExp() const { return condExp; }
-  Addr<Exp> getThenExp() const { return thenExp; }
-  Addr<Exp> getElseExp() const { return elseExp; }
+  static IfExp* downcast(AST* ast) {
+    return ast->getID() == IF ? static_cast<IfExp*>(ast) : nullptr;
+  }
+  Exp* getCondExp() const { return condExp; }
+  Exp* getThenExp() const { return thenExp; }
+  Exp* getElseExp() const { return elseExp; }
 };
 
 /// @brief A block expression.
 class BlockExp : public Exp {
-  Addr<ExpList> statements;
+  ExpList* statements;
 public:
-  BlockExp(Location loc, Addr<ExpList> statements) : Exp(BLOCK, loc) {
+  BlockExp(Location loc, ExpList* statements) : Exp(BLOCK, loc) {
     this->statements = statements;
   }
-  Addr<ExpList> getStatements() const { return statements; }
+  static BlockExp* downcast(AST* ast) {
+    return ast->getID() == BLOCK ? static_cast<BlockExp*>(ast) : nullptr;
+  }
+  ExpList* getStatements() const { return statements; }
 };
 
 /// @brief A function call expression.
 class CallExp : public Exp {
-  Addr<Name> function;
-  Addr<ExpList> arguments;
+  Name* function;
+  ExpList* arguments;
 public:
-  CallExp(Location loc, Addr<Name> function, Addr<ExpList> arguments)
+  CallExp(Location loc, Name* function, ExpList* arguments)
       : Exp(CALL, loc) {
     this->function = function;
     this->arguments = arguments;
   }
-  Addr<Name> getFunction() const { return function; }
-  Addr<ExpList> getArguments() const { return arguments; }
-  void setFunction(Addr<Name> function) { this->function = function; }
+  static CallExp* downcast(AST* ast) {
+    return ast->getID() == CALL ? static_cast<CallExp*>(ast) : nullptr;
+  }
+  Name* getFunction() const { return function; }
+  ExpList* getArguments() const { return arguments; }
+  void setFunction(Name* function) { this->function = function; }
 };
 
 /// @brief A type ascription expression.
 class AscripExp : public Exp {
-  Addr<Exp> ascriptee;
-  Addr<TypeExp> ascripter;
+  Exp* ascriptee;
+  TypeExp* ascripter;
 public:
-  AscripExp(Location loc, Addr<Exp> ascriptee, Addr<TypeExp> ascripter)
+  AscripExp(Location loc, Exp* ascriptee, TypeExp* ascripter)
       : Exp(ASCRIP, loc) {
     this->ascriptee = ascriptee;
     this->ascripter = ascripter;
   }
-  Addr<Exp> getAscriptee() const { return ascriptee; }
-  Addr<TypeExp> getAscripter() const { return ascripter; }
+  static AscripExp* downcast(AST* ast) {
+    return ast->getID() == ASCRIP ? static_cast<AscripExp*>(ast) : nullptr;
+  }
+  Exp* getAscriptee() const { return ascriptee; }
+  TypeExp* getAscripter() const { return ascripter; }
 };
 
 /// @brief A let statement. The type ascription is optional.
 class LetExp : public Exp {
-  Addr<Ident> boundIdent;
-  Addr<TypeExp> ascrip;
-  Addr<Exp> definition;
+  Name* boundIdent;
+  TypeExp* ascrip;
+  Exp* definition;
 public:
-  LetExp(Location loc, Addr<Ident> boundIdent, Addr<TypeExp> ascrip,
-      Addr<Exp> definition) : Exp(LET, loc) {
+  LetExp(Location loc, Name* boundIdent, TypeExp* ascrip,
+      Exp* definition) : Exp(LET, loc) {
     this->boundIdent = boundIdent;
     this->ascrip = ascrip;
     this->definition = definition;
   }
-  Addr<Ident> getBoundIdent() const { return boundIdent; }
-  Addr<TypeExp> getAscrip() const { return ascrip; }
-  Addr<Exp> getDefinition() const { return definition; }
+  static LetExp* downcast(AST* ast) {
+    return ast->getID() == LET ? static_cast<LetExp*>(ast) : nullptr;
+  }
+  Name* getBoundIdent() const { return boundIdent; }
+  TypeExp* getAscrip() const { return ascrip; }
+  Exp* getDefinition() const { return definition; }
 };
 
 /// @brief A return statement.
 class ReturnExp : public Exp {
-  Addr<Exp> returnee;
+  Exp* returnee;
 public:
-  ReturnExp(Location loc, Addr<Exp> returnee) : Exp(RETURN, loc) {
+  ReturnExp(Location loc, Exp* returnee) : Exp(RETURN, loc) {
     this->returnee = returnee;
   }
-  Addr<Exp> getReturnee() const { return returnee; }
+  static ReturnExp* downcast(AST* ast) {
+    return ast->getID() == RETURN ? static_cast<ReturnExp*>(ast) : nullptr;
+  }
+  Exp* getReturnee() const { return returnee; }
 };
 
 /// @brief A store statement (e.g., `x := 42`).
 class StoreExp : public Exp {
-  Addr<Exp> lhs;
-  Addr<Exp> rhs;
+  Exp* lhs;
+  Exp* rhs;
 public:
-  StoreExp(Location loc, Addr<Exp> lhs, Addr<Exp> rhs) : Exp(STORE, loc) {
+  StoreExp(Location loc, Exp* lhs, Exp* rhs) : Exp(STORE, loc) {
     this->lhs = lhs;
     this->rhs = rhs;
   }
-  Addr<Exp> getLHS() const { return lhs; }
-  Addr<Exp> getRHS() const { return rhs; }
+  static StoreExp* downcast(AST* ast) {
+    return ast->getID() == STORE ? static_cast<StoreExp*>(ast) : nullptr;
+  }
+  Exp* getLHS() const { return lhs; }
+  Exp* getRHS() const { return rhs; }
 };
 
 /// @brief A read-only or writable reference constructor expression.
 class RefExp : public Exp {
-  Addr<Exp> initializer;
+  Exp* initializer;
 public:
-  RefExp(Location loc, Addr<Exp> initializer, bool writable)
+  RefExp(Location loc, Exp* initializer, bool writable)
       : Exp(writable ? WREF_EXP : REF_EXP, loc) {
     this->initializer = initializer;
   }
-  Addr<Exp> getInitializer() const { return initializer; }
+  static RefExp* downcast(AST* ast) {
+    return (ast->getID() == REF_EXP || ast->getID() == WREF_EXP) ?
+           static_cast<RefExp*>(ast) : nullptr;
+  }
+  Exp* getInitializer() const { return initializer; }
 };
 
 /// @brief A dereference expression.
 class DerefExp : public Exp {
-  Addr<Exp> of;
+  Exp* of;
 public:
-  DerefExp(Location loc, Addr<Exp> of) : Exp(DEREF, loc) { this->of = of; }
-  Addr<Exp> getOf() const { return of; }
+  DerefExp(Location loc, Exp* of) : Exp(DEREF, loc) { this->of = of; }
+  static DerefExp* downcast(AST* ast) {
+    return ast->getID() == DEREF ? static_cast<DerefExp*>(ast) : nullptr;
+  }
+  Exp* getOf() const { return of; }
 };
 
 /// @brief An array constructor that lists out the array contents.
 /// e.g., `[42, x, y+1]`
 class ArrayListExp : public Exp {
-  Addr<ExpList> content;
+  ExpList* content;
 public:
-  ArrayListExp(Location loc, Addr<ExpList> content) : Exp(ARRAY_LIST, loc) {
+  ArrayListExp(Location loc, ExpList* content) : Exp(ARRAY_LIST, loc) {
     this->content = content;
   }
-  Addr<ExpList> getContent() const { return content; }
+  static ArrayListExp* downcast(AST* ast) {
+    return ast->getID() == ARRAY_LIST ?
+           static_cast<ArrayListExp*>(ast) : nullptr;
+  }
+  ExpList* getContent() const { return content; }
 };
 
 /// @brief An expression that constructs an array by specifying a size and
 /// an element to fill all the spots. e.g., `[10 of 0]`
 class ArrayInitExp : public Exp {
-  Addr<Exp> size;
-  Addr<Exp> initializer;
+  Exp* size;
+  Exp* initializer;
 public:
-  ArrayInitExp(Location loc, Addr<Exp> size, Addr<Exp> initializer)
+  ArrayInitExp(Location loc, Exp* size, Exp* initializer)
       : Exp(ARRAY_INIT, loc) {
     this->size = size;
     this->initializer = initializer;
   }
-  Addr<Exp> getSize() const { return size; }
-  Addr<Exp> getInitializer() const { return initializer; }
+  static ArrayInitExp* downcast(AST* ast) {
+    return ast->getID() == ARRAY_INIT ?
+           static_cast<ArrayInitExp*>(ast) : nullptr;
+  }
+  Exp* getSize() const { return size; }
+  Exp* getInitializer() const { return initializer; }
 };
 
 /// @brief An expression that calculates an address from a base reference and
 /// offset (e.g., `myarrayref[3]`).
 class IndexExp : public Exp {
-  Addr<Exp> base;
-  Addr<Exp> index;
+  Exp* base;
+  Exp* index;
 public:
-  IndexExp(Location loc, Addr<Exp> base, Addr<Exp> index) : Exp(INDEX, loc) {
+  IndexExp(Location loc, Exp* base, Exp* index) : Exp(INDEX, loc) {
     this->base = base; this->index = index;
   }
-  Addr<Exp> getBase() const { return base; }
-  Addr<Exp> getIndex() const { return index; }
+  static IndexExp* downcast(AST* ast) {
+    return ast->getID() == INDEX ? static_cast<IndexExp*>(ast) : nullptr;
+  }
+  Exp* getBase() const { return base; }
+  Exp* getIndex() const { return index; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -539,69 +569,68 @@ public:
 /// @brief A declaration.
 class Decl : public AST {
 protected:
-  Addr<Name> name;
-  Decl(ID id, Location loc, Addr<Name> name) : AST(id, loc) {
+  Name* name;
+  Decl(ID id, Location loc, Name* name) : AST(id, loc) {
     this->name = name;
   }
 public:
-  Addr<Name> getName() const { return name; }
-  void setName(Addr<FQIdent> fqName) { name = fqName.upcast<Name>(); }
+  Name* getName() const { return name; }
 };
 
 /// @brief A list of declarations.
 class DeclList : public AST {
-  Addr<Decl> head;
-  Addr<DeclList> tail;
+  Decl* head;
+  DeclList* tail;
 public:
   DeclList(Location loc) : AST(DECLLIST_NIL, loc) {
-    this->head = Addr<Decl>::none();
-    this->tail = Addr<DeclList>::none();
+    this->head = nullptr;
+    this->tail = nullptr;
   }
-  DeclList(Location loc, Addr<Decl> head, Addr<DeclList> tail)
+  DeclList(Location loc, Decl* head, DeclList* tail)
       : AST(DECLLIST_CONS, loc) {
     this->head = head;
     this->tail = tail;
   }
   bool isEmpty() { return getID() == DECLLIST_NIL; }
   bool nonEmpty() { return getID() == DECLLIST_CONS; }
-  Addr<Decl> getHead() const { return head; }
-  Addr<DeclList> getTail() const { return tail; }
+  Decl* getHead() const { return head; }
+  DeclList* getTail() const { return tail; }
 };
 
 class ModuleDecl : public Decl {
-  Addr<DeclList> decls;
+  DeclList* decls;
 public:
-  ModuleDecl(Location loc, Addr<Name> name, Addr<DeclList> decls)
+  ModuleDecl(Location loc, Name* name, DeclList* decls)
       : Decl(MODULE, loc, name) {
     this->decls = decls;
   }
-  Addr<DeclList> getDecls() const { return decls; }
+  DeclList* getDecls() const { return decls; }
 };
 
 class NamespaceDecl : public Decl {
-  Addr<DeclList> decls;
+  DeclList* decls;
 public:
-  NamespaceDecl(Location loc, Addr<Name> name, Addr<DeclList> decls)
+  NamespaceDecl(Location loc, Name* name, DeclList* decls)
       : Decl(NAMESPACE, loc, name) {
     this->decls = decls;
   }
-  Addr<DeclList> getDecls() const { return decls; }
+  DeclList* getDecls() const { return decls; }
 };
 
 /// @brief A list of parameters in a function signature, or a list of
 /// fields in a data type.
 class ParamList : public AST {
-  Addr<Ident> headParamName;
-  Addr<TypeExp> headParamType;
-  Addr<ParamList> tail;
+  Name* headParamName;
+  TypeExp* headParamType;
+  ParamList* tail;
 public:
   ParamList(Location loc) : AST(PARAMLIST_NIL, loc) {
-    this->headParamName = Addr<Ident>::none();
-    this->headParamType = Addr<TypeExp>::none();
-    this->tail = Addr<ParamList>::none();
+    this->headParamName = nullptr;
+    this->headParamType = nullptr;
+    this->tail = nullptr;
   }
-  ParamList(Location loc, Addr<Ident> headParamName,
-      Addr<TypeExp> headParamType, Addr<ParamList> tail)
+  ParamList(Location loc, Name* headParamName,
+      TypeExp* headParamType, ParamList* tail)
       : AST(PARAMLIST_CONS, loc) {
     this->headParamName = headParamName;
     this->headParamType = headParamType;
@@ -609,41 +638,41 @@ public:
   }
   bool isEmpty() { return getID() == PARAMLIST_NIL; }
   bool nonEmpty() { return getID() == PARAMLIST_CONS; }
-  Addr<Ident> getHeadParamName() const { return headParamName; }
-  Addr<TypeExp> getHeadParamType() const { return headParamType; }
-  Addr<ParamList> getTail() const { return tail; }
+  Name* getHeadParamName() const { return headParamName; }
+  TypeExp* getHeadParamType() const { return headParamType; }
+  ParamList* getTail() const { return tail; }
 };
 
 /// @brief A function or extern function (FUNC/EXTERN_FUNC).
 class FunctionDecl : public Decl {
-  Addr<ParamList> parameters;
-  Addr<TypeExp> returnType;
-  Addr<Exp> body;
+  ParamList* parameters;
+  TypeExp* returnType;
+  Exp* body;
 public:
-  FunctionDecl(Location loc, Addr<Name> name, Addr<ParamList> parameters,
-      Addr<TypeExp> returnType, Addr<Exp> body) : Decl(FUNC, loc, name) {
+  FunctionDecl(Location loc, Name* name, ParamList* parameters,
+      TypeExp* returnType, Exp* body) : Decl(FUNC, loc, name) {
     this->parameters = parameters;
     this->returnType = returnType;
     this->body = body;
   }
-  FunctionDecl(Location loc, Addr<Name> name, Addr<ParamList> parameters,
-      Addr<TypeExp> returnType) : Decl(EXTERN_FUNC, loc, name) {
+  FunctionDecl(Location loc, Name* name, ParamList* parameters,
+      TypeExp* returnType) : Decl(EXTERN_FUNC, loc, name) {
     this->parameters = parameters;
     this->returnType = returnType;
-    this->body = Addr<Exp>::none();
+    this->body = nullptr;
   }
-  Addr<ParamList> getParameters() const { return parameters; }
-  Addr<TypeExp> getReturnType() const { return returnType; }
-  Addr<Exp> getBody() const { return body; }
+  ParamList* getParameters() const { return parameters; }
+  TypeExp* getReturnType() const { return returnType; }
+  Exp* getBody() const { return body; }
 };
 
 /// @brief The declaration of a data type.
 class DataDecl : public Decl {
-  Addr<ParamList> fields;
+  ParamList* fields;
 public:
-  DataDecl(Location loc, Addr<Name> name, Addr<ParamList> fields)
+  DataDecl(Location loc, Name* name, ParamList* fields)
       : Decl(DATA, loc, name) { this->fields = fields; }
-  Addr<ParamList> getFields() const { return fields; }
+  ParamList* getFields() const { return fields; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -703,11 +732,9 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::DECLLIST_NIL:       return "DECLLIST_NIL";
   case AST::ID::EXPLIST_CONS:       return "EXPLIST_CONS";
   case AST::ID::EXPLIST_NIL:        return "EXPLIST_NIL";
-  case AST::ID::FQIDENT:            return "FQIDENT";
-  case AST::ID::IDENT:              return "IDENT";
+  case AST::ID::NAME:               return "NAME";
   case AST::ID::PARAMLIST_CONS:     return "PARAMLIST_CONS";
   case AST::ID::PARAMLIST_NIL:      return "PARAMLIST_NIL";
-  case AST::ID::QIDENT:             return "QIDENT";
   }
 }
 
@@ -765,123 +792,116 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "DECLLIST_NIL")        return AST::ID::DECLLIST_NIL;
   else if (str == "EXPLIST_CONS")        return AST::ID::EXPLIST_CONS;
   else if (str == "EXPLIST_NIL")         return AST::ID::EXPLIST_NIL;
-  else if (str == "FQIDENT")             return AST::ID::FQIDENT;
-  else if (str == "IDENT")               return AST::ID::IDENT;
+  else if (str == "NAME")                return AST::ID::NAME;
   else if (str == "PARAMLIST_CONS")      return AST::ID::PARAMLIST_CONS;
   else if (str == "PARAMLIST_NIL")       return AST::ID::PARAMLIST_NIL;
-  else if (str == "QIDENT")              return AST::ID::QIDENT;
 
   else { printf("Invalid AST::ID string: %s\n", str.c_str()); exit(1); }
 }
 
 /** Returns the sub-ASTs of `node`. This is only used for testing purposes. */
-std::vector<Addr<AST>> getSubnodes(const ASTContext& ctx, Addr<AST> node) {
-  const AST* nodePtr = ctx.getConstPtr(node);
-  AST::ID id = nodePtr->getID();
-  std::vector<Addr<AST>> ret;
+std::vector<AST*> getSubnodes(AST* ast) {
+  AST::ID id = ast->getID();
+  std::vector<AST*> ret;
 
   // TODO: make this a switch statement
-  if (nodePtr->isBinopExp()) {
-    auto n = reinterpret_cast<const BinopExp*>(nodePtr);
-    ret.push_back(n->getLHS().upcast<AST>());
-    ret.push_back(n->getRHS().upcast<AST>());
+  if (ast->isBinopExp()) {
+    auto n = reinterpret_cast<const BinopExp*>(ast);
+    ret.push_back(n->getLHS());
+    ret.push_back(n->getRHS());
   } else if (id == AST::ID::ARRAY_INIT) {
-    auto n = reinterpret_cast<const ArrayInitExp*>(nodePtr);
-    ret.push_back(n->getSize().upcast<AST>());
-    ret.push_back(n->getInitializer().upcast<AST>());
+    auto n = reinterpret_cast<const ArrayInitExp*>(ast);
+    ret.push_back(n->getSize());
+    ret.push_back(n->getInitializer());
   } else if (id == AST::ID::ARRAY_LIST) {
-    auto n = reinterpret_cast<const ArrayListExp*>(nodePtr);
-    ret.push_back(n->getContent().upcast<AST>());
+    auto n = reinterpret_cast<const ArrayListExp*>(ast);
+    ret.push_back(n->getContent());
   } else if (id == AST::ID::ARRAY_TEXP) {
-    auto n = reinterpret_cast<const ArrayTypeExp*>(nodePtr);
-    if (n->getSize().exists())
-      ret.push_back(n->getSize().upcast<AST>());
-    ret.push_back(n->getInnerType().upcast<AST>());
+    auto n = reinterpret_cast<const ArrayTypeExp*>(ast);
+    if (n->getSize() != nullptr)
+      ret.push_back(n->getSize());
+    ret.push_back(n->getInnerType());
   } else if (id == AST::ID::ASCRIP) {
-    auto n = reinterpret_cast<const AscripExp*>(nodePtr);
-    ret.push_back(n->getAscriptee().upcast<AST>());
-    ret.push_back(n->getAscripter().upcast<AST>());
+    auto n = reinterpret_cast<const AscripExp*>(ast);
+    ret.push_back(n->getAscriptee());
+    ret.push_back(n->getAscripter());
   } else if (id == AST::ID::BLOCK) {
-    auto n = reinterpret_cast<const BlockExp*>(nodePtr);
-    ret.push_back(n->getStatements().upcast<AST>());
+    auto n = reinterpret_cast<const BlockExp*>(ast);
+    ret.push_back(n->getStatements());
   } else if (id == AST::ID::CALL) {
-    auto n = reinterpret_cast<const CallExp*>(nodePtr);
-    ret.push_back(n->getFunction().upcast<AST>());
-    ret.push_back(n->getArguments().upcast<AST>());
+    auto n = reinterpret_cast<const CallExp*>(ast);
+    ret.push_back(n->getFunction());
+    ret.push_back(n->getArguments());
   } else if (id == AST::ID::DATA) {
-    auto n = reinterpret_cast<const DataDecl*>(nodePtr);
-    ret.push_back(n->getName().upcast<AST>());
-    ret.push_back(n->getFields().upcast<AST>());
+    auto n = reinterpret_cast<const DataDecl*>(ast);
+    ret.push_back(n->getName());
+    ret.push_back(n->getFields());
   } else if (id == AST::ID::DECLLIST_CONS) {
-    auto n = reinterpret_cast<const DeclList*>(nodePtr);
-    ret.push_back(n->getHead().upcast<AST>());
-    ret.push_back(n->getTail().upcast<AST>());
+    auto n = reinterpret_cast<const DeclList*>(ast);
+    ret.push_back(n->getHead());
+    ret.push_back(n->getTail());
   } else if (id == AST::ID::DEREF) {
-    auto n = reinterpret_cast<const DerefExp*>(nodePtr);
-    ret.push_back(n->getOf().upcast<AST>());
+    auto n = reinterpret_cast<const DerefExp*>(ast);
+    ret.push_back(n->getOf());
   } else if (id == AST::ID::ENAME) {
-    auto n = reinterpret_cast<const NameExp*>(nodePtr);
-    ret.push_back(n->getName().upcast<AST>());
+    auto n = reinterpret_cast<const NameExp*>(ast);
+    ret.push_back(n->getName());
   } else if (id == AST::ID::EXPLIST_CONS) {
-    auto n = reinterpret_cast<const ExpList*>(nodePtr);
-    ret.push_back(n->getHead().upcast<AST>());
-    ret.push_back(n->getTail().upcast<AST>());
+    auto n = reinterpret_cast<const ExpList*>(ast);
+    ret.push_back(n->getHead());
+    ret.push_back(n->getTail());
   } else if (id == AST::ID::EXTERN_FUNC) {
-    auto n = reinterpret_cast<const FunctionDecl*>(nodePtr);
-    ret.push_back(n->getName().upcast<AST>());
-    ret.push_back(n->getParameters().upcast<AST>());
-    ret.push_back(n->getReturnType().upcast<AST>());
+    auto n = reinterpret_cast<const FunctionDecl*>(ast);
+    ret.push_back(n->getName());
+    ret.push_back(n->getParameters());
+    ret.push_back(n->getReturnType());
   } else if (id == AST::ID::FUNC) {
-    auto n = reinterpret_cast<const FunctionDecl*>(nodePtr);
-    ret.push_back(n->getName().upcast<AST>());
-    ret.push_back(n->getParameters().upcast<AST>());
-    ret.push_back(n->getReturnType().upcast<AST>());
-    ret.push_back(n->getBody().upcast<AST>());
+    auto n = reinterpret_cast<const FunctionDecl*>(ast);
+    ret.push_back(n->getName());
+    ret.push_back(n->getParameters());
+    ret.push_back(n->getReturnType());
+    ret.push_back(n->getBody());
   } else if (id == AST::ID::IF) {
-    auto n = reinterpret_cast<const IfExp*>(nodePtr);
-    ret.push_back(n->getCondExp().upcast<AST>());
-    ret.push_back(n->getThenExp().upcast<AST>());
-    ret.push_back(n->getElseExp().upcast<AST>());
+    auto n = reinterpret_cast<const IfExp*>(ast);
+    ret.push_back(n->getCondExp());
+    ret.push_back(n->getThenExp());
+    ret.push_back(n->getElseExp());
   } else if (id == AST::ID::INDEX) {
-    auto n = reinterpret_cast<const IndexExp*>(nodePtr);
-    ret.push_back(n->getBase().upcast<AST>());
-    ret.push_back(n->getIndex().upcast<AST>());
+    auto n = reinterpret_cast<const IndexExp*>(ast);
+    ret.push_back(n->getBase());
+    ret.push_back(n->getIndex());
   } else if (id == AST::ID::LET) {
-    auto n = reinterpret_cast<const LetExp*>(nodePtr);
-    ret.push_back(n->getBoundIdent().upcast<AST>());
-    if (n->getAscrip().exists())
-      ret.push_back(n->getAscrip().upcast<AST>());
-    ret.push_back(n->getDefinition().upcast<AST>());
+    auto n = reinterpret_cast<const LetExp*>(ast);
+    ret.push_back(n->getBoundIdent());
+    if (n->getAscrip() != nullptr)
+      ret.push_back(n->getAscrip());
+    ret.push_back(n->getDefinition());
   } else if (id == AST::ID::MODULE) {
-    auto n = reinterpret_cast<const ModuleDecl*>(nodePtr);
-    ret.push_back(n->getName().upcast<AST>());
-    ret.push_back(n->getDecls().upcast<AST>());
+    auto n = reinterpret_cast<const ModuleDecl*>(ast);
+    ret.push_back(n->getName());
+    ret.push_back(n->getDecls());
   } else if (id == AST::ID::NAMESPACE) {
-    auto n = reinterpret_cast<const NamespaceDecl*>(nodePtr);
-    ret.push_back(n->getName().upcast<AST>());
-    ret.push_back(n->getDecls().upcast<AST>());
+    auto n = reinterpret_cast<const NamespaceDecl*>(ast);
+    ret.push_back(n->getName());
+    ret.push_back(n->getDecls());
   } else if (id == AST::ID::PARAMLIST_CONS) {
-    auto n = reinterpret_cast<const ParamList*>(nodePtr);
-    ret.push_back(n->getHeadParamName().upcast<AST>());
-    ret.push_back(n->getHeadParamType().upcast<AST>());
-    ret.push_back(n->getTail().upcast<AST>());
-  } else if (id == AST::ID::QIDENT) {
-    auto n = reinterpret_cast<const QIdent*>(nodePtr);
-    ret.push_back(n->getHead().upcast<AST>());
-    ret.push_back(n->getTail().upcast<AST>());
+    auto n = reinterpret_cast<const ParamList*>(ast);
+    ret.push_back(n->getHeadParamName());
+    ret.push_back(n->getHeadParamType());
+    ret.push_back(n->getTail());
   } else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
-    auto n = reinterpret_cast<const RefExp*>(nodePtr);
-    ret.push_back(n->getInitializer().upcast<AST>());
+    auto n = reinterpret_cast<const RefExp*>(ast);
+    ret.push_back(n->getInitializer());
   } else if (id == AST::ID::REF_TEXP || id == AST::ID::WREF_TEXP) {
-    auto n = reinterpret_cast<const RefTypeExp*>(nodePtr);
-    ret.push_back(n->getPointeeType().upcast<AST>());
+    auto n = reinterpret_cast<const RefTypeExp*>(ast);
+    ret.push_back(n->getPointeeType());
   } else if (id == AST::ID::RETURN) {
-    auto n = reinterpret_cast<const ReturnExp*>(nodePtr);
-    ret.push_back(n->getReturnee().upcast<AST>());
+    auto n = reinterpret_cast<const ReturnExp*>(ast);
+    ret.push_back(n->getReturnee());
   } else if (id == AST::ID::STORE) {
-    auto n = reinterpret_cast<const StoreExp*>(nodePtr);
-    ret.push_back(n->getLHS().upcast<AST>());
-    ret.push_back(n->getRHS().upcast<AST>());
+    auto n = reinterpret_cast<const StoreExp*>(ast);
+    ret.push_back(n->getLHS());
+    ret.push_back(n->getRHS());
   }
   return ret;
 }

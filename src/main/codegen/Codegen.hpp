@@ -3,7 +3,6 @@
 
 #include <llvm/IR/IRBuilder.h>
 #include "common/ScopeStack.hpp"
-#include "common/ASTContext.hpp"
 #include "common/TypeContext.hpp"
 #include "common/Ontology.hpp"
 

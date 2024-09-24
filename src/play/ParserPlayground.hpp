@@ -7,9 +7,9 @@
 #include "parser/Parser.hpp"
 #include "printers.hpp"
 
-Addr<AST> parse_function(Parser& p, const char* whatToParse) {
-  if (!strcmp(whatToParse, "decl")) return p.decl().upcast<AST>();
-  if (!strcmp(whatToParse, "exp")) return p.exp().upcast<AST>();
+AST* parse_function(Parser& p, const char* whatToParse) {
+  if (!strcmp(whatToParse, "decl")) return p.decl();
+  if (!strcmp(whatToParse, "exp")) return p.exp();
   std::cout << "I don't know how to parse a " << whatToParse << std::endl;
   exit(1);
 }
@@ -34,12 +34,12 @@ next_line:
 check_input:
   Lexer lexer(usrInput.c_str());
   if (lexer.run()) {
-    ASTContext m;
-    Parser parser(&m, lexer.getTokens());
-    Addr<AST> parsed = parse_function(parser, grammarElement);
-    if (!parsed.isError()) {
+    Parser parser(lexer.getTokens());
+    AST* parsed = parse_function(parser, grammarElement);
+    if (parsed != nullptr) {
       std::vector<bool> indents;
-      print_parse_tree(m, parsed, indents);
+      print_parse_tree(parsed, indents);
+      // TODO TODO TODO: FREE PARSED AST MEMORY!!!!!!!!!
       goto next_input;
     } else if (line.size() == 0) {
       std::cout << parser.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;

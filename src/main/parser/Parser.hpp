@@ -3,33 +3,42 @@
 
 #include <cassert>
 #include "common/Token.hpp"
-#include "common/ASTContext.hpp"
 #include "common/LocatedError.hpp"
 #include "common/AST.hpp"
 
 #define CHOMP_ELSE_ARREST(tokenTy, expected, element) if (p->ty == tokenTy) \
   ++p; else { errTryingToParse = element; expectedTokens = expected; \
-  return ARRESTING_ERROR; }
+  error = ARREST; return nullptr; }
 
-/// If the address is an error, return the error.
-#define RETURN_IF_ERROR(a) if (a.isEpsilon()) \
-  { return EPSILON_ERROR; } else if (a.isArrest()) \
-  { return ARRESTING_ERROR; }
+#define EPSILON_ERROR { error = EPSILON; return nullptr; }
 
-/// If the address is an error, return an arresting error.
-#define ARREST_IF_ERROR(a) if (a.isError()) { return ARRESTING_ERROR; }
+#define ARRESTING_ERROR { error = ARREST; return nullptr; }
 
-/// @brief The parser populates an `ASTContext` based on a `Token` vector.
-/// Parser functions are named after the AST element that they parse (e.g.,
-/// `name`, `exp`, `decl`). The parse tree itself is stored in the `ASTContext`
-/// and the pseudo-address (`Addr`) of the parsed element is returned. If the
-/// parse was unsuccessful, the returned address will satisfy its `.isError()`
-/// predicate and `getError` will construct a printable error message.
+/// If an error occurred, leave the error the same and return.
+#define RETURN_IF_ERROR if (error != NOERROR) { return nullptr; }
+
+/// If an error occurred, promote the error to an ARREST and return.
+#define ARREST_IF_ERROR if (error != NOERROR){error = ARREST; return nullptr;}
+
+/// @brief Return `r` following an arresting error or successful parse.
+/// Otherwise reset `error` and continue this parse function. Used to implement
+/// non-backtracking choice.
+#define CONTINUE_ON_EPSILON(r) if (error != EPSILON) { return r; } else\
+  { error = NOERROR; }
+
+
+
+/// @brief The parser builds an AST on heap memory based on a vector of
+/// `Token`s. Parser functions are named after the AST element that they parse
+/// (e.g., `name`, `exp`, `decl`). If the parse was unsuccessful, `nullptr` is
+/// returned and `getError` will construct a printable error message.
 class Parser {
-  ASTContext* ctx;
   const std::vector<Token>* tokens;
   std::vector<Token>::const_iterator p;
   std::vector<Token>::const_iterator end;
+
+  /// Set when an error occurs.
+  enum { NOERROR, EPSILON, ARREST } error = NOERROR;
 
   /// Set when an error occurs.
   const char* errTryingToParse = nullptr;
@@ -38,9 +47,8 @@ class Parser {
   const char* expectedTokens = nullptr;
 
 public:
-  Parser(ASTContext* ctx, const std::vector<Token>* _tokens) {
-    this->ctx = ctx;
-    tokens = _tokens;
+  Parser(const std::vector<Token>* tokens) {
+    this->tokens = tokens;
     p = tokens->begin();
     end = tokens->end();
   }
@@ -65,157 +73,148 @@ public:
 
   // ---------- Idents and QIdents ----------
 
-  /// @brief Parses a single unqualified identifier. 
-  Addr<Ident> ident() {
-    if (p->ty == TOK_IDENT) return ctx->add(Ident(tokToLoc(p), (p++)->ptr));
-    return EPSILON_ERROR;
+  /// Parses an identifier (i.e., an unqualified name). 
+  Name* ident() {
+    if (p->ty == TOK_IDENT) return new Name(tokToLoc(p), (p++)->asString());
+    EPSILON_ERROR
   }
 
-  /// Parses a name (either IDENT or QIDENT).
-  Addr<Name> name() {
+  /// Same as `ident` except the result is returned as an `std::string`.
+  std::string namePart() {
+    if (p->ty == TOK_IDENT) return (p++)->asString();
+    error = EPSILON;
+    return std::string();
+  }
+
+  /// Parses a name (e.g., `MyModule::AnotherModule::myfunc`).
+  Name* name() {
     Token t = *p;
-    Addr<Ident> head = ident();
-    if (head.isError()) return head.upcast<Name>();
-    if (p->ty == COLON_COLON) {
+    std::string s = namePart(); RETURN_IF_ERROR
+    while (p->ty == COLON_COLON) {
       ++p;
-      Addr<Name> tail = name();
-      if (tail.isError()) return ARRESTING_ERROR;
-      Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return ctx->add(QIdent(loc, head, tail)).upcast<Name>();
-    } else {
-      return head.upcast<Name>();
+      std::string s2 = namePart(); ARREST_IF_ERROR
+      s.append("::");
+      s.append(s2);
     }
+    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+    return new Name(loc, s);
   }
 
   // ---------- Expressions ----------
 
-  Addr<BoolLit> boolLit() {
-    if (p->ty == KW_FALSE) return ctx->add(BoolLit(tokToLoc(p++), false));
-    if (p->ty == KW_TRUE) return ctx->add(BoolLit(tokToLoc(p++), true));
-    return EPSILON_ERROR;
+  BoolLit* boolLit() {
+    if (p->ty == KW_FALSE) return new BoolLit(tokToLoc(p++), false);
+    if (p->ty == KW_TRUE) return new BoolLit(tokToLoc(p++), true);
+    EPSILON_ERROR
   }
 
-  Addr<IntLit> intLit() {
-    if (p->ty != LIT_INT) return EPSILON_ERROR;
-    auto ret = ctx->add(IntLit(tokToLoc(p), p->ptr));
-    ++p;
-    return ret;
+  IntLit* intLit() {
+    if (p->ty == LIT_INT) return new IntLit(tokToLoc(p), (p++)->ptr);
+    EPSILON_ERROR
   }
 
-  Addr<DecimalLit> decimalLit() {
-    if (p->ty != LIT_DEC) return EPSILON_ERROR;
-    auto ret = ctx->add(DecimalLit(tokToLoc(p), p->ptr));
-    ++p;
-    return ret;
+  DecimalLit* decimalLit() {
+    if (p->ty == LIT_DEC) return new DecimalLit(tokToLoc(p), (p++)->ptr);
+    EPSILON_ERROR
   }
 
-  Addr<StringLit> stringLit() {
-    if (p->ty != LIT_STRING) return EPSILON_ERROR;
-    auto ret = ctx->add(StringLit(tokToLoc(p), p->ptr));
-    ++p;
-    return ret;
+  StringLit* stringLit() {
+    if (p->ty == LIT_STRING) return new StringLit(tokToLoc(p), (p++)->ptr);
+    EPSILON_ERROR
   }
 
-  Addr<Exp> parensExp() {
-    if (p->ty == LPAREN) ++p; else return EPSILON_ERROR;
-    Addr<Exp> ret = exp();
-    if (ret.isError()) return ARRESTING_ERROR;
+  Exp* parensExp() {
+    if (p->ty == LPAREN) ++p; else EPSILON_ERROR
+    Exp* ret = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(RPAREN, ")", "parentheses expression")
     return ret;
   }
 
-  Addr<Exp> nameOrCallExp() {
+  Exp* nameOrCallExp() {
     Token t = *p;
-    Addr<Name> n = name();
-    RETURN_IF_ERROR(n)
+    Name* n = name(); RETURN_IF_ERROR
     if (p->ty == LPAREN) {
       ++p;
-      Addr<ExpList> argList = expListWotc0();
+      ExpList* argList = expListWotc0();
       CHOMP_ELSE_ARREST(RPAREN, ")", "function call")
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return ctx->add(CallExp(loc, n, argList)).upcast<Exp>();
+      return new CallExp(loc, n, argList);
     } else {
-      return ctx->add(NameExp(ctx->get(n).getLocation(), n)).upcast<Exp>();
+      return new NameExp(n->getLocation(), n);  // TODO: reduce to only one argument
     }
   }
 
-  Addr<BlockExp> blockExp() {
+  BlockExp* blockExp() {
     Token t = *p;
-    if (p->ty == LBRACE) ++p; else return EPSILON_ERROR;
-    Addr<ExpList> statements = stmts0();
-    ARREST_IF_ERROR(statements)
+    if (p->ty == LBRACE) ++p; else EPSILON_ERROR
+    ExpList* statements = stmts0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(RBRACE, "}", "block expression")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(BlockExp(loc, statements));
+    return new BlockExp(loc, statements);
   }
 
   /// @brief Parses an array list or array init expression. 
-  Addr<Exp> arrayListOrInitExp() {
+  Exp* arrayListOrInitExp() {
     Token t0 = *p;
-    if (p->ty == LBRACKET) ++p; else return EPSILON_ERROR;
+    if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
     Token t1 = *p;
-    Addr<Exp> firstExp = exp();
-    ARREST_IF_ERROR(firstExp)
+    Exp* firstExp = exp(); ARREST_IF_ERROR
     if (p->ty == KW_OF) {
       ++p;
-      Addr<Exp> initializer = exp();
-      ARREST_IF_ERROR(initializer)
+      Exp* initializer = exp(); ARREST_IF_ERROR
       CHOMP_ELSE_ARREST(RBRACKET, "]", "array init expression")
       Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-      return ctx->add(ArrayInitExp(loc, firstExp, initializer)).upcast<Exp>();
+      return new ArrayInitExp(loc, firstExp, initializer);
     } else if (p->ty == COMMA) {
       ++p;
-      Addr<ExpList> contentTail = expListWotc0();
-      ARREST_IF_ERROR(contentTail)
+      ExpList* contentTail = expListWotc0(); ARREST_IF_ERROR
       Location loc(t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr));
-      Addr<ExpList> content = ctx->add(ExpList(loc, firstExp, contentTail));
+      ExpList* content = new ExpList(loc, firstExp, contentTail);
       CHOMP_ELSE_ARREST(RBRACKET, "]", "array list constructor")
       loc = Location(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-      return ctx->add(ArrayListExp(loc, content)).upcast<Exp>();
+      return new ArrayListExp(loc, content);
     } else if (p->ty == RBRACKET) {
-      Addr<ExpList> content = ctx->add(ExpList(Location(p->row, p->col, 0)));
+      ExpList* content = new ExpList(Location(p->row, p->col, 0));
       ++p;
       Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-      return ctx->add(ArrayListExp(loc, content)).upcast<Exp>();
+      return new ArrayListExp(loc, content);
     } else {
       errTryingToParse = "array init or list expression";
       expectedTokens = "of , ]";
-      return ARRESTING_ERROR;
+      ARRESTING_ERROR
     }
   }
 
-  Addr<Exp> expLv0() {
-    Addr<Exp> ret;
-    if ((ret = nameOrCallExp()).notEpsilon()) return ret;
-    if ((ret = boolLit().upcast<Exp>()).notEpsilon()) return ret;
-    if ((ret = intLit().upcast<Exp>()).notEpsilon()) return ret;
-    if ((ret = decimalLit().upcast<Exp>()).notEpsilon()) return ret;
-    if ((ret = stringLit().upcast<Exp>()).notEpsilon()) return ret;
-    if ((ret = parensExp()).notEpsilon()) return ret;
-    if ((ret = blockExp().upcast<Exp>()).notEpsilon()) return ret;
-    if ((ret = arrayListOrInitExp()).notEpsilon()) return ret;
-    return EPSILON_ERROR;
+  Exp* expLv0() {
+    Exp* ret;
+    ret = nameOrCallExp(); CONTINUE_ON_EPSILON(ret)
+    ret = boolLit(); CONTINUE_ON_EPSILON(ret)
+    ret = intLit(); CONTINUE_ON_EPSILON(ret)
+    ret = decimalLit(); CONTINUE_ON_EPSILON(ret)
+    ret = stringLit(); CONTINUE_ON_EPSILON(ret)
+    ret = parensExp(); CONTINUE_ON_EPSILON(ret)
+    ret = blockExp(); CONTINUE_ON_EPSILON(ret)
+    ret = arrayListOrInitExp(); CONTINUE_ON_EPSILON(ret)
+    EPSILON_ERROR
   }
 
-  Addr<Exp> expLv1() {
+  Exp* expLv1() {
     Token t = *p;
-    Addr<Exp> e = expLv0();
-    RETURN_IF_ERROR(e)
+    Exp* e = expLv0(); RETURN_IF_ERROR
     for (;;) {
       switch(p->ty) {
       case EXCLAIM: {
         Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-        e = ctx->add(DerefExp(loc, e)).upcast<Exp>();
+        e = new DerefExp(loc, e);
         ++p;
         break;
       }
       case LBRACKET: {
         ++p;
-        Addr<Exp> indexExp = exp();
-        ARREST_IF_ERROR(indexExp)
+        Exp* indexExp = exp(); ARREST_IF_ERROR
         CHOMP_ELSE_ARREST(RBRACKET, "]", "index expression")
         Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-        e = ctx->add(IndexExp(loc, e, indexExp)).upcast<Exp>();
+        e = new IndexExp(loc, e, indexExp);
         break;
       }
       default: return e;
@@ -223,67 +222,60 @@ public:
     }
   }
 
-  Addr<Exp> expLv2() {
+  Exp* expLv2() {
     Token t = *p;
     if (t.ty == AMP || t.ty == HASH) {
       ++p;
-      Addr<Exp> e = expLv2();
-      ARREST_IF_ERROR(e)
+      Exp* e = expLv2(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return ctx->add(RefExp(loc, e, t.ty == HASH)).upcast<Exp>();
+      return new RefExp(loc, e, t.ty == HASH);
     } else {
       return expLv1();
     }
   }
 
-  Addr<Exp> expLv3() {
+  Exp* expLv3() {
     Token t = *p;
-    Addr<Exp> e = expLv2();
-    RETURN_IF_ERROR(e)
+    Exp* e = expLv2(); RETURN_IF_ERROR
     while (p->ty == COLON) {
       ++p;
-      Addr<TypeExp> tyAscrip = typeExp();
-      ARREST_IF_ERROR(tyAscrip)
+      TypeExp* tyAscrip = typeExp(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      e = ctx->add(AscripExp(loc, e, tyAscrip)).upcast<Exp>();
+      e = new AscripExp(loc, e, tyAscrip);
     }
     return e;
   }
 
-  Addr<Exp> expLv4() {
+  Exp* expLv4() {
     Token t = *p;
-    Addr<Exp> lhs = expLv3();
-    RETURN_IF_ERROR(lhs)
+    Exp* lhs = expLv3();
+    RETURN_IF_ERROR
     while (p->ty == OP_MUL || p->ty == OP_DIV) {
       AST::ID op = (p->ty == OP_MUL) ? AST::ID::MUL : AST::ID::DIV;
       ++p;
-      Addr<Exp> rhs = expLv3();
-      ARREST_IF_ERROR(rhs)
+      Exp* rhs = expLv3(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
+      lhs = new BinopExp(op, loc, lhs, rhs);
     }
     return lhs;
   }
 
-  Addr<Exp> expLv5() {
+  Exp* expLv5() {
     Token t = *p;
-    Addr<Exp> lhs = expLv4();
-    RETURN_IF_ERROR(lhs)
+    Exp* lhs = expLv4(); RETURN_IF_ERROR
     while (p->ty == OP_ADD || p->ty == OP_SUB) {
       AST::ID op = (p->ty == OP_ADD) ? AST::ID::ADD : AST::ID::SUB;
       ++p;
-      Addr<Exp> rhs = expLv4();
-      ARREST_IF_ERROR(rhs)
+      Exp* rhs = expLv4(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
+      lhs = new BinopExp(op, loc, lhs, rhs);
     }
     return lhs;
   }
 
-  Addr<Exp> expLv6() {
+  Exp* expLv6() {
     Token t = *p;
-    Addr<Exp> lhs = expLv5();
-    RETURN_IF_ERROR(lhs)
+    Exp* lhs = expLv5(); RETURN_IF_ERROR
     while (p->ty == OP_EQ || p->ty == OP_NEQ || p->ty == OP_GE
     || p->ty == OP_GT || p->ty == OP_LE || p->ty == OP_LT) {
       AST::ID op = p->ty == OP_EQ ? AST::ID::EQ :
@@ -293,286 +285,266 @@ public:
                    p->ty == OP_LE ? AST::ID::LE :
                                     AST::ID::LT;
       ++p;
-      Addr<Exp> rhs = expLv5();
-      ARREST_IF_ERROR(rhs)
+      Exp* rhs = expLv5(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      lhs = ctx->add(BinopExp(op, loc, lhs, rhs)).upcast<Exp>();
+      lhs = new BinopExp(op, loc, lhs, rhs);
     }
     return lhs;
   }
 
-  Addr<Exp> expLv7() {
+  Exp* expLv7() {
     Token t = *p;
-    Addr<Exp> lhs = expLv6();
-    RETURN_IF_ERROR(lhs)
+    Exp* lhs = expLv6(); RETURN_IF_ERROR
     while (p->ty == COLON_EQUAL) {
       ++p;
-      Addr<Exp> rhs = expLv6();
-      ARREST_IF_ERROR(rhs)
+      Exp* rhs = expLv6(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      lhs = ctx->add(StoreExp(loc, lhs, rhs)).upcast<Exp>();
+      lhs = new StoreExp(loc, lhs, rhs);
     }
     return lhs;
   }
 
-  Addr<IfExp> ifExp() {
+  IfExp* ifExp() {
     Token t = *p;
-    if (p->ty == KW_IF) ++p; else return EPSILON_ERROR;
-    Addr<Exp> condExp = exp();
-    ARREST_IF_ERROR(condExp)
+    if (p->ty == KW_IF) ++p; else EPSILON_ERROR
+    Exp* condExp = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(KW_THEN, "then", "if expression")
-    Addr<Exp> thenExp = exp();
-    ARREST_IF_ERROR(thenExp)
+    Exp* thenExp = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(KW_ELSE, "else", "if expression")
-    Addr<Exp> elseExp = exp();
-    ARREST_IF_ERROR(elseExp)
+    Exp* elseExp = exp(); ARREST_IF_ERROR
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(IfExp(loc, condExp, thenExp, elseExp));
+    return new IfExp(loc, condExp, thenExp, elseExp);
   }
 
-  Addr<Exp> exp() {
-    Addr<Exp> ret = ifExp().upcast<Exp>();
-    if (ret.notEpsilon()) return ret;
+  Exp* exp() {
+    Exp* ret = ifExp(); CONTINUE_ON_EPSILON(ret)
     return expLv7();
   }
 
   /// Zero or more comma-separated expressions with optional trailing comma
   /// (wotc). Never epsilon fails.
-  Addr<ExpList> expListWotc0() {
+  ExpList* expListWotc0() {
     Token t = *p;
-    Addr<Exp> head = exp();
-    if (head.isArrest()) return ARRESTING_ERROR;
-    if (head.isEpsilon()) return ctx->add(ExpList(Location(t.row, t.col, 0)));
-    Addr<ExpList> tail;
+    Exp* head = exp();
+    if (error == ARREST) ARRESTING_ERROR
+    if (error == EPSILON) {
+      error = NOERROR;
+      return new ExpList(Location(t.row, t.col, 0));
+    }
+    ExpList* tail;
     if (p->ty == COMMA) {
       ++p;
-      tail = expListWotc0();
-      ARREST_IF_ERROR(tail)
+      tail = expListWotc0(); ARREST_IF_ERROR
     } else {
-      tail = ctx->add(ExpList(Location(p->row, p->col, 0)));
+      tail = new ExpList(Location(p->row, p->col, 0));
     }
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(ExpList(loc, head, tail));
+    return new ExpList(loc, head, tail);
   }
 
   // ---------- Type Expressions ----------
 
-  Addr<TypeExp> typeExpLv0() {
-    if (p->ty == KW_f32) return ctx->add(TypeExp::mkF32(tokToLoc(p++)));
-    if (p->ty == KW_f64) return ctx->add(TypeExp::mkF64(tokToLoc(p++)));
-    if (p->ty == KW_i8) return ctx->add(TypeExp::mkI8(tokToLoc(p++)));
-    if (p->ty == KW_i16) return ctx->add(TypeExp::mkI16(tokToLoc(p++)));
-    if (p->ty == KW_i32) return ctx->add(TypeExp::mkI32(tokToLoc(p++)));
-    if (p->ty == KW_i64) return ctx->add(TypeExp::mkI64(tokToLoc(p++)));
-    if (p->ty == KW_BOOL) return ctx->add(TypeExp::mkBool(tokToLoc(p++)));
-    if (p->ty == KW_STR) return ctx->add(TypeExp::mkStr(tokToLoc(p++)));
-    if (p->ty == KW_UNIT) return ctx->add(TypeExp::mkUnit(tokToLoc(p++)));
-    Addr<TypeExp> ret;
-    if ((ret = arrayTypeExp().upcast<TypeExp>()).notEpsilon()) return ret;
-    return EPSILON_ERROR;
+  TypeExp* typeExpLv0() {
+    if (p->ty == KW_f32) return TypeExp::newF32(tokToLoc(p++));
+    if (p->ty == KW_f64) return TypeExp::newF64(tokToLoc(p++));
+    if (p->ty == KW_i8) return TypeExp::newI8(tokToLoc(p++));
+    if (p->ty == KW_i16) return TypeExp::newI16(tokToLoc(p++));
+    if (p->ty == KW_i32) return TypeExp::newI32(tokToLoc(p++));
+    if (p->ty == KW_i64) return TypeExp::newI64(tokToLoc(p++));
+    if (p->ty == KW_BOOL) return TypeExp::newBool(tokToLoc(p++));
+    if (p->ty == KW_STR) return TypeExp::newStr(tokToLoc(p++));
+    if (p->ty == KW_UNIT) return TypeExp::newUnit(tokToLoc(p++));
+    TypeExp* ret = arrayTypeExp(); CONTINUE_ON_EPSILON(ret)
+    EPSILON_ERROR
   }
 
-  Addr<TypeExp> typeExp() {
+  TypeExp* typeExp() {
     Token t = *p;
     if (t.ty == AMP || t.ty == HASH) {
       ++p;
-      Addr<TypeExp> n1 = typeExp();
-      ARREST_IF_ERROR(n1)
+      TypeExp* n1 = typeExp(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return ctx->add(RefTypeExp(loc, n1, t.ty == HASH)).upcast<TypeExp>();
+      return new RefTypeExp(loc, n1, t.ty == HASH);
     } else {
       return typeExpLv0();
     }
   }
 
-  Addr<ArrayTypeExp> arrayTypeExp() {
+  ArrayTypeExp* arrayTypeExp() {
     Token t = *p;
-    if (p->ty == LBRACKET) ++p; else return EPSILON_ERROR;
-    Addr<Exp> size = Addr<Exp>::none();
+    if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
+    Exp* size = nullptr;
     if (p->ty == UNDERSCORE) {
       ++p;
     } else {
-      size = exp();
-      ARREST_IF_ERROR(size)
+      size = exp(); ARREST_IF_ERROR
     }
     CHOMP_ELSE_ARREST(KW_OF, "of", "array type expression")
-    Addr<TypeExp> innerType = typeExp();
-    ARREST_IF_ERROR(innerType)
+    TypeExp* innerType = typeExp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(RBRACKET, "]", "array type expression")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(ArrayTypeExp(loc, size, innerType));
+    return new ArrayTypeExp(loc, size, innerType);
   }
 
   // ---------- Statements ----------
 
-  Addr<LetExp> letStmt() {
+  LetExp* letStmt() {
     Token t = *p;
-    if (p->ty == KW_LET) ++p; else return EPSILON_ERROR;
-    Addr<Ident> boundIdent = ident();
-    ARREST_IF_ERROR(boundIdent)
-    Addr<TypeExp> ascrip = Addr<TypeExp>::none();
+    if (p->ty == KW_LET) ++p; else EPSILON_ERROR
+    Name* boundIdent = ident(); ARREST_IF_ERROR
+    TypeExp* ascrip = nullptr;
     if (p->ty == COLON) {
       ++p;
-      ascrip = typeExp();
-      ARREST_IF_ERROR(ascrip)
+      ascrip = typeExp(); ARREST_IF_ERROR
       CHOMP_ELSE_ARREST(EQUAL, "=", "let statement")
     } else {
       CHOMP_ELSE_ARREST(EQUAL, ": =", "let statement")
     }
-    Addr<Exp> definition = exp();
-    ARREST_IF_ERROR(definition)
+    Exp* definition = exp(); ARREST_IF_ERROR
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(LetExp(loc, boundIdent, ascrip, definition));
+    return new LetExp(loc, boundIdent, ascrip, definition);
   }
 
-  Addr<ReturnExp> returnStmt() {
+  ReturnExp* returnStmt() {
     Token t = *p;
-    if (p->ty == KW_RETURN) ++p; else return EPSILON_ERROR;
-    Addr<Exp> returnee = exp();
-    ARREST_IF_ERROR(returnee)
+    if (p->ty == KW_RETURN) ++p; else EPSILON_ERROR
+    Exp* returnee = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(SEMICOLON, ";", "return statement")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(ReturnExp(loc, returnee));
+    return new ReturnExp(loc, returnee);
   }
 
-  Addr<Exp> stmt() {
-    Addr<Exp> ret;
-    if ((ret = letStmt().upcast<Exp>()).notEpsilon()) return ret;
-    if ((ret = returnStmt().upcast<Exp>()).notEpsilon()) return ret;
-    if ((ret = exp().upcast<Exp>()).notEpsilon()) return ret;
-    return ret;
+  Exp* stmt() {
+    Exp* ret;
+    ret = letStmt(); CONTINUE_ON_EPSILON(ret)
+    ret = returnStmt(); CONTINUE_ON_EPSILON(ret)
+    ret = exp(); CONTINUE_ON_EPSILON(ret)
+    EPSILON_ERROR
   }
 
   /// Zero or more statements separated by semicolons Never epsilon fails.
-  Addr<ExpList> stmts0() {
+  ExpList* stmts0() {
     Token t = *p;
-    Addr<Exp> head = stmt();
-    if (head.isArrest()) return ARRESTING_ERROR;
-    if (head.isEpsilon()) return ctx->add(ExpList(Location(t.row, t.col, 0)));
-    Addr<ExpList> tail;
+    Exp* head = stmt();
+    if (error == ARREST) ARRESTING_ERROR
+    if (error == EPSILON) {
+      error = NOERROR;
+      return new ExpList(Location(t.row, t.col, 0));
+    }
+    ExpList* tail;
     if (p->ty == SEMICOLON) {
       ++p;
-      tail = stmts0();
-      ARREST_IF_ERROR(tail)
+      tail = stmts0(); ARREST_IF_ERROR
     } else {
-      tail = ctx->add(ExpList(Location(p->row, p->col, 0)));
+      tail = new ExpList(Location(p->row, p->col, 0));
     }
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(ExpList(loc, head, tail));
+    return new ExpList(loc, head, tail);
   }
 
   // ---------- Declarations ----------
 
   /// Parses parameter list of length zero or higher with optional terminal
   /// comma (wotc). This parser never returns an epsilon error.
-  Addr<ParamList> paramListWotc0() {
+  ParamList* paramListWotc0() {
     Token t = *p;
-    Addr<Ident> paramName = ident();
-    if (paramName.isArrest())
-      return ARRESTING_ERROR;
-    if (paramName.isEpsilon())
-      return ctx->add(ParamList(Location(t.row, t.col, 0)));
+    Name* paramName = ident();
+    if (error == ARREST) return nullptr;
+    if (error == EPSILON) {
+      error = NOERROR;
+      return new ParamList(Location(t.row, t.col, 0));
+    }
     CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
-    Addr<TypeExp> paramType = typeExp();
-    ARREST_IF_ERROR(paramType)
-    Addr<ParamList> tail;
+    TypeExp* paramType = typeExp(); ARREST_IF_ERROR
+    ParamList* tail;
     if (p->ty == COMMA) { ++p; tail = paramListWotc0(); }
-    else tail = ctx->add(ParamList(Location(p->row, p->col, 0)));
+    else tail = new ParamList(Location(p->row, p->col, 0));
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(ParamList(loc, paramName, paramType, tail));
+    return new ParamList(loc, paramName, paramType, tail);
   }
 
-  Addr<DataDecl> dataDecl() {
+  DataDecl* dataDecl() {
     Token t = *p;
-    if (p->ty == KW_DATA) ++p; else return EPSILON_ERROR;
-    Addr<Name> name = ident().upcast<Name>();
-    ARREST_IF_ERROR(name)
+    if (p->ty == KW_DATA) ++p; else EPSILON_ERROR
+    Name* name = ident(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(LPAREN, "(", "data")
-    Addr<ParamList> fields = paramListWotc0();
-    ARREST_IF_ERROR(fields)
+    ParamList* fields = paramListWotc0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(RPAREN, ")", "data")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(DataDecl(loc, name, fields));
+    return new DataDecl(loc, name, fields);
   }
 
-  Addr<FunctionDecl> functionDecl() {
+  FunctionDecl* functionDecl() {
     Token t = *p;
-    if (p->ty == KW_FUNC) ++p; else return EPSILON_ERROR;
-    Addr<Name> name = ident().upcast<Name>();
-    ARREST_IF_ERROR(name)
+    if (p->ty == KW_FUNC) ++p; else EPSILON_ERROR
+    Name* name = ident(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(LPAREN, "(", "function")
-    Addr<ParamList> params = paramListWotc0();
-    ARREST_IF_ERROR(params)
+    ParamList* params = paramListWotc0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(RPAREN, ")", "function")
     CHOMP_ELSE_ARREST(COLON, ":", "function")
-    Addr<TypeExp> retType = typeExp();
-    ARREST_IF_ERROR(retType)
+    TypeExp* retType = typeExp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(EQUAL, "=", "function")
-    Addr<Exp> body = exp();
-    ARREST_IF_ERROR(body)
+    Exp* body = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(SEMICOLON, ";", "function")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(FunctionDecl(loc, name, params, retType, body));
+    return new FunctionDecl(loc, name, params, retType, body);
   }
 
-  Addr<FunctionDecl> externFunctionDecl() {
+  FunctionDecl* externFunctionDecl() {
     Token t = *p;
-    if (p->ty == KW_EXTERN) ++p; else return EPSILON_ERROR;
+    if (p->ty == KW_EXTERN) ++p; else EPSILON_ERROR
     CHOMP_ELSE_ARREST(KW_FUNC, "func", "extern function")
-    Addr<Name> name = ident().upcast<Name>();
-    ARREST_IF_ERROR(name)
+    Name* name = ident(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(LPAREN, "(", "extern function")
-    Addr<ParamList> params = paramListWotc0();
-    if (params.isError()) return ARRESTING_ERROR;
+    ParamList* params = paramListWotc0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(RPAREN, ")", "extern function")
     CHOMP_ELSE_ARREST(COLON, ":", "extern function")
-    Addr<TypeExp> retType = typeExp();
-    ARREST_IF_ERROR(retType)
+    TypeExp* retType = typeExp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(SEMICOLON, ";", "extern function")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(FunctionDecl(loc, name, params, retType));
+    return new FunctionDecl(loc, name, params, retType);
   }
 
   /** Parses a module or namespace with brace-syntax. */
-  Addr<Decl> moduleOrNamespace() {
+  Decl* moduleOrNamespace() {
     Token t = *p;
     AST::ID ty;
     if (p->ty == KW_MODULE) { ty = AST::ID::MODULE; ++p; }
     else if (p->ty == KW_NAMESPACE) { ty = AST::ID::NAMESPACE; ++p; }
-    else return EPSILON_ERROR;
+    else EPSILON_ERROR
     const char* whatThisIs = ty == AST::ID::MODULE ? "module" : "namespace";
-    Addr<Name> n1 = ident().upcast<Name>();
-    ARREST_IF_ERROR(n1)
+    Name* n1 = ident(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(LBRACE, "{", whatThisIs)
-    Addr<DeclList> n2 = decls0();
-    ARREST_IF_ERROR(n2)
+    DeclList* n2 = decls0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(RBRACE, "}", whatThisIs)
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return ty == AST::ID::MODULE ?
-           ctx->add(ModuleDecl(loc, n1, n2)).upcast<Decl>() :
-           ctx->add(NamespaceDecl(loc, n1, n2)).upcast<Decl>();
+           static_cast<Decl*>(new ModuleDecl(loc, n1, n2)) :
+           new NamespaceDecl(loc, n1, n2);
   }
 
   /** A declaration is a func, proc, data type, module, or namespace. */
-  Addr<Decl> decl() {
-    Addr<Decl> ret;
-    if ((ret = dataDecl().upcast<Decl>()).notEpsilon()) return ret;
-    if ((ret = functionDecl().upcast<Decl>()).notEpsilon()) return ret;
-    if ((ret = externFunctionDecl().upcast<Decl>()).notEpsilon()) return ret;
-    if ((ret = moduleOrNamespace()).notEpsilon()) return ret;
-    return EPSILON_ERROR;
+  Decl* decl() {
+    Decl* ret;
+    ret = dataDecl(); CONTINUE_ON_EPSILON(ret)
+    ret = functionDecl(); CONTINUE_ON_EPSILON(ret)
+    ret = externFunctionDecl(); CONTINUE_ON_EPSILON(ret)
+    ret = moduleOrNamespace(); CONTINUE_ON_EPSILON(ret)
+    EPSILON_ERROR
   }
 
   /// Parses zero or more declarations into a DECLLIST.
-  Addr<DeclList> decls0() {
+  DeclList* decls0() {
     Token t = *p;
-    Addr<Decl> head = decl();
-    if (head.isArrest()) return ARRESTING_ERROR;
-    if (head.isEpsilon()) return ctx->add(DeclList(Location(t.row, t.col, 0)));
-    Addr<DeclList> tail = decls0();
-    ARREST_IF_ERROR(tail)
+    Decl* head = decl();
+    if (error == ARREST) return nullptr;
+    if (error == EPSILON) {
+      error = NOERROR;
+      return new DeclList(Location(t.row, t.col, 0));
+    }
+    DeclList* tail = decls0(); ARREST_IF_ERROR
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return ctx->add(DeclList(loc, head, tail));
+    return new DeclList(loc, head, tail);
   }
 
   // ----------

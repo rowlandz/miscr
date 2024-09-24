@@ -85,12 +85,15 @@ const char* TokenTyToString(TokenTy ty) {
 
 /// A single "unit of meaning." The lexer turns a program into a sequence of
 /// these and the parser turns that sequence into an AST.
-typedef struct {
+class Token {
+public:
   const char* ptr;
   unsigned short row;
   unsigned short col;
   unsigned short sz;
   TokenTy ty;
-} Token;
+
+  std::string asString() const { return std::string(ptr, sz); }
+};
 
 #endif

@@ -216,3 +216,25 @@ The address of a field can be calculated from the address of a struct:
 let bob: &Person("Bob", 40);
 let bobsage: &i32 = bob[age];
 ```
+
+## Benchmarking
+
+This Program:
+
+module IO {
+  extern func scanf(format: &str, n: #i32): i32;
+  extern func printf(format: &str, n: i32): i32;
+}
+
+func main(): i32 = {
+  let n = #(0: i32);
+  IO::scanf("%d", n);
+  IO::printf("The number was %d\n", n!);
+  0
+};
+
+Takes about this long:
+
+real    0m0.025s
+user    0m0.008s
+sys     0m0.015s

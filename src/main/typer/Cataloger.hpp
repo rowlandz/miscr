@@ -2,7 +2,6 @@
 #define TYPER_CATALOGER
 
 #include "common/AST.hpp"
-#include "common/ASTContext.hpp"
 #include "common/Ontology.hpp"
 
 /// @brief First of the two type checking phases. Fully qualifies all decl names
