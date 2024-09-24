@@ -273,11 +273,11 @@ public:
 
     else if (auto e = CallExp::downcast(_e)) {
       std::string calleeRelName = e->getFunction()->asStringRef().str();
-      FunctionDecl* _callee = lookupFuncByRelName(calleeRelName);
-      if (_callee != nullptr) {
+      FunctionDecl* callee = lookupFuncByRelName(calleeRelName);
+      if (callee != nullptr) {
         /*** unify each argument with corresponding parameter ***/
         ExpList* expList = e->getArguments();
-        ParamList* paramList = _callee->getParameters();
+        ParamList* paramList = callee->getParameters();
         while (expList->nonEmpty() && paramList->nonEmpty()) {
           TVar paramType = freshFromTypeExp(paramList->getHeadParamType());
           expectTypeToBe(expList->getHead(), paramType);
@@ -285,13 +285,13 @@ public:
           paramList = paramList->getTail();
         }
         if (expList->nonEmpty() || paramList->nonEmpty()) {
-          Name* calleeFQIdent = _callee->getName();
-          std::string errMsg("Arity mismatch for function ");
-          errMsg.append(ont->getName(calleeFQIdent->getKey()) + ".");
-          errors.push_back(LocatedError(e->getLocation(), errMsg));
+          Name* calleeFQIdent = callee->getName();
+          llvm::Twine errMsg = "Arity mismatch for function " +
+            callee->getName()->asStringRef() + ".";
+          errors.push_back(LocatedError(e->getLocation(), errMsg.str()));
         }
         /*** set this expression's type to the callee's return type ***/
-        e->setTVar(freshFromTypeExp(_callee->getReturnType()));
+        e->setTVar(freshFromTypeExp(callee->getReturnType()));
         /*** fully qualify the callee name ***/
         e->setFunction(callee->getName());
       } else {
@@ -403,35 +403,34 @@ public:
   }
 
   /// Typechecks a function.
-  void unifyFunc(FunctionDecl* _funDecl) {
+  void unifyFunc(FunctionDecl* func) {
+    if (func->getID() == AST::ID::EXTERN_FUNC) return;
     localVarTypes.push();
-    addParamsToLocalVarTypes(_funDecl->getParameters());
-    TVar retTy = freshFromTypeExp(_funDecl->getReturnType());
-    unifyWith(_funDecl->getBody(), retTy);
+    addParamsToLocalVarTypes(func->getParameters());
+    TVar retTy = freshFromTypeExp(func->getReturnType());
+    unifyWith(func->getBody(), retTy);
     localVarTypes.pop();
   }
 
-  void unifyModule(ModuleDecl* _module) {
-    FQIdent fqName = ctx->GET_UNSAFE<FQIdent>(module->getName());
-    std::string fqNameStr = ont->getName(fqName->getKey());
-    relativePathQualifiers.push_back(fqNameStr);
-    unifyDeclList(module->getDecls());
+  void unifyModule(ModuleDecl* mod) {
+    relativePathQualifiers.push_back(mod->getName()->asStringRef().str());
+    unifyDeclList(mod->getDecls());
     relativePathQualifiers.pop_back();
   }
 
   void unifyDecl(Decl* _decl) {
-    switch (ctx->get(_decl)->getID()) {
-    case AST::ID::FUNC: unifyFunc(_decl.UNSAFE_CAST<FunctionDecl>()); break;
-    case AST::ID::EXTERN_FUNC: break;
-    case AST::ID::MODULE: unifyModule(_decl.UNSAFE_CAST<ModuleDecl>()); break;
-    default: assert(false && "unimplemented");
-    }
+    if (auto func = FunctionDecl::downcast(_decl))
+      unifyFunc(func);
+    else if (auto mod = ModuleDecl::downcast(_decl))
+      unifyModule(mod);
+    else
+      llvm_unreachable("Didn't recognize decl");
   }
 
-  void unifyDeclList(DeclList* _declList) {
-    while (_declList->nonEmpty()) {
-      unifyDecl(_declList->getHead());
-      _declList = _declList->getTail();
+  void unifyDeclList(DeclList* declList) {
+    while (declList->nonEmpty()) {
+      unifyDecl(declList->getHead());
+      declList = declList->getTail();
     }
   }
 
@@ -448,8 +447,8 @@ public:
     for (auto iter = relativePathQualifiers.crbegin();
          iter != relativePathQualifiers.crend(); ++iter) {
       std::string fqName = *iter + "::" + relName;
-      FunctionDecl* a = ont->getFunctionDecl(*iter + "::" + relName);
-      if (a.exists()) return a;
+      FunctionDecl* a = ont->getFunction(*iter + "::" + relName);
+      if (a != nullptr) return a;
     }
     return nullptr;
   }

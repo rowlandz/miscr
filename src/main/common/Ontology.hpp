@@ -20,6 +20,8 @@ class Ontology {
   llvm::StringMap<FunctionDecl*> functionSpace;
   llvm::StringMap<ModuleDecl*> moduleSpace;
 
+  llvm::StringMap<std::string> mappedFuncNames;
+
 public:
 
   /// The fully-qualified name of the "main" entry point procedure.
@@ -32,6 +34,16 @@ public:
 
   void record(ModuleDecl* decl) {
     moduleSpace[decl->getName()->asStringRef().str()] = decl;
+  }
+
+  void record(FunctionDecl* decl) {
+    functionSpace[decl->getName()->asStringRef().str()] = decl;
+  }
+
+  void recordMapName(FunctionDecl* decl, llvm::StringRef mappedName) {
+    std::string declName = decl->getName()->asStringRef().str();
+    functionSpace[declName] = decl;
+    mappedFuncNames[declName] = mappedName.str();
   }
 
 
@@ -55,6 +67,11 @@ public:
     auto res2 = typeSpace.lookup(name);
     if (res2 != nullptr) return res2;
     return nullptr;
+  }
+
+  /// @brief Looks for a module in the module space with the given name.
+  ModuleDecl* getModule(llvm::StringRef name) const {
+    return moduleSpace.lookup(name);
   }
 
 };

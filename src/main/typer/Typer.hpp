@@ -17,20 +17,20 @@ public:
   Cataloger cataloger;
   Unifier unifier;
 
-  Typer(ASTContext* m) : cataloger(m, &ont), unifier(m, &ont) {}
+  Typer() : cataloger(&ont), unifier(&ont) {}
 
   const TypeContext* getTypeContext() const { return unifier.getTypeContext(); }
 
-  void typeExp(Addr<Exp> _exp) {
+  void typeExp(Exp* _exp) {
     unifier.unifyExp(_exp);
   }
 
-  void typeDecl(Addr<Decl> _decl) {
+  void typeDecl(Decl* _decl) {
     cataloger.catalog(std::string("global"), _decl);
     unifier.unifyDecl(_decl);
   }
 
-  void typeDeclList(Addr<DeclList> _declList) {
+  void typeDeclList(DeclList* _declList) {
     cataloger.catalogDeclList(std::string("global"), _declList);
     unifier.unifyDeclList(_declList);
   }

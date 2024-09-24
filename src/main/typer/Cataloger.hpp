@@ -1,98 +1,80 @@
 #ifndef TYPER_CATALOGER
 #define TYPER_CATALOGER
 
+#include "llvm/ADT/Twine.h"
 #include "common/AST.hpp"
 #include "common/Ontology.hpp"
 
 /// @brief First of the two type checking phases. Fully qualifies all decl names
 /// and builds an `Ontology`.
 class Cataloger {
-  ASTContext* ctx;
   Ontology* ont;
   std::vector<std::string> errors;
 
 public:
-  Cataloger(ASTContext* ctx, Ontology* ont) {
-    this->ctx = ctx;
+  Cataloger(Ontology* ont) {
     this->ont = ont;
   }
 
   /// Catalogs a decl. `scope` is the scope that `_decl` appears in.
-  void catalog(const std::string& scope, Addr<Decl> _decl) {
-    AST::ID id = ctx->get(_decl).getID();
+  void catalog(llvm::StringRef scope, Decl* _decl) {
+    
+    if (auto mod = ModuleDecl::downcast(_decl)) {
+      llvm::StringRef relName = mod->getName()->asStringRef();
+      std::string fqNameStr = (scope + "::" + relName).str();
 
-    if (id == AST::ID::MODULE) {
-      Addr<ModuleDecl> _module = _decl.UNSAFE_CAST<ModuleDecl>();
-      ModuleDecl module = ctx->get(_module);
-      Ident relName = ctx->GET_UNSAFE<Ident>(module.getName());
-      std::string fqNameStr = scope + "::" + relName.asString();
-
-      if (ont->getModule(fqNameStr).isError()) {
-        FQNameKey key = ont->recordModule(fqNameStr, _module);
-        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
-        module.setName(fqName);
-        ctx->set(_module, module);
-      } else {
+      if (auto existingModule = ont->getModule(fqNameStr)) {
         moduleNameCollisionError(fqNameStr);
-      }
-
-      catalogDeclList(fqNameStr, module.getDecls());
-    }
-
-    else if (id == AST::ID::DATA) {
-      Addr<DataDecl> _dataDecl = _decl.UNSAFE_CAST<DataDecl>();
-      DataDecl dataDecl = ctx->get(_dataDecl);
-      Ident relName = ctx->GET_UNSAFE<Ident>(dataDecl.getName());
-      std::string fqNameStr = scope + "::" + relName.asString();
-      if (ont->getTypeDecl(fqNameStr).isError()) {
-        FQNameKey key = ont->recordType(fqNameStr, _dataDecl);
-        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
-        dataDecl.setName(fqName);
-        ctx->set(_dataDecl, dataDecl);
       } else {
-        typeNameCollisionError(fqNameStr);
+        mod->setName(fqNameStr);
+        ont->record(mod);
+      }
+
+      catalogDeclList(fqNameStr, mod->getDecls());
+    }
+
+    else if (auto data = DataDecl::downcast(_decl)) {
+      llvm::StringRef relName = data->getName()->asStringRef();
+      std::string fqName = (scope + "::" + relName).str();
+
+      if (auto collidingDecl = ont->getFunctionOrConstructor(fqName)) {
+        typeNameCollisionError(fqName);
+      } else {
+        data->setName(fqName);
+        ont->record(data);
       }
     }
 
-    else if (id == AST::ID::FUNC || id == AST::ID::EXTERN_FUNC) {
-      Addr<FunctionDecl> _funcDecl = _decl.UNSAFE_CAST<FunctionDecl>();
-      FunctionDecl funcDecl = ctx->get(_funcDecl);
-      Ident relName = ctx->GET_UNSAFE<Ident>(funcDecl.getName());
-      std::string relNameStr = relName.asString();
-      std::string fqNameStr = scope + "::" + relNameStr;
+    else if (auto func = FunctionDecl::downcast(_decl)) {
+      llvm::StringRef relName = func->getName()->asStringRef();
+      std::string fqName = (scope + "::" + relName).str();
 
-      if (ont->getFunctionDecl(fqNameStr).exists()) {
-        functionNameCollisionError(fqNameStr);
-        return;
+      if (auto collidingDecl = ont->getFunctionOrConstructor(fqName)) {
+        functionNameCollisionError(fqName);
       }
 
-      if (relNameStr == "main") {
+      func->setName(fqName);
+
+      if (relName == "main") {
         if (!ont->entryPoint.empty()) {
           multipleEntryPointsError();
           return;
         }
-        FQNameKey key = ont->recordMainProc(fqNameStr, _funcDecl);
-        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
-        funcDecl.setName(fqName);
-        ctx->set(_funcDecl, funcDecl);
+        ont->recordMapName(func, "main");
+      } else if (func->getID() == AST::ID::EXTERN_FUNC) {
+        ont->recordMapName(func, relName);
       } else {
-        FQNameKey key = id == AST::ID::EXTERN_FUNC ?
-                        ont->recordExtern(fqNameStr, relNameStr, _funcDecl) :
-                        ont->recordFunction(fqNameStr, _funcDecl);
-        Addr<FQIdent> fqName = ctx->add(FQIdent(relName.getLocation(), key));
-        funcDecl.setName(fqName);
-        ctx->set(_funcDecl, funcDecl);
+        ont->record(func);
       }
     }
   }
 
   /// Catalogs the decls in a decl list. `scope` is the scope that the decls
   /// appear in.
-  void catalogDeclList(const std::string& scope, Addr<DeclList> _declList) {
-    DeclList declList = ctx->get(_declList);
-    while (declList.getID() == AST::ID::DECLLIST_CONS) {
-      catalog(scope, declList.getHead());
-      declList = ctx->get(declList.getTail());
+  void catalogDeclList(llvm::StringRef scope, DeclList* declList) {
+    while (declList->nonEmpty()) {
+      catalog(scope, declList->getHead());
+      declList = declList->getTail();
     }
   }
   

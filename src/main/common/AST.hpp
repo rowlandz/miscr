@@ -151,6 +151,8 @@ public:
     return ast->getID() == NAME ? static_cast<Name*>(ast) : nullptr;
   }
   llvm::StringRef asStringRef() const { return s; }
+  /// @brief Sets this name to `s`.
+  void set(llvm::StringRef s) { this->s.assign(s.data(), s.size()); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -417,6 +419,7 @@ public:
   }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
+  /// TODO: should this copy the name or can it just store the pointer?
   void setFunction(Name* function) { this->function = function; }
 };
 
@@ -575,6 +578,8 @@ protected:
   }
 public:
   Name* getName() const { return name; }
+  /// @brief Safely sets the name of this decl to `name`. 
+  void setName(llvm::StringRef name) { this->name->set(name); }
 };
 
 /// @brief A list of declarations.
@@ -604,6 +609,9 @@ public:
       : Decl(MODULE, loc, name) {
     this->decls = decls;
   }
+  static ModuleDecl* downcast(AST* ast) {
+    return ast->getID() == MODULE ? static_cast<ModuleDecl*>(ast) : nullptr;
+  }
   DeclList* getDecls() const { return decls; }
 };
 
@@ -613,6 +621,9 @@ public:
   NamespaceDecl(Location loc, Name* name, DeclList* decls)
       : Decl(NAMESPACE, loc, name) {
     this->decls = decls;
+  }
+  static NamespaceDecl* downcast(AST* ast) {
+    return ast->getID() == NAMESPACE ? static_cast<NamespaceDecl*>(ast) : nullptr;
   }
   DeclList* getDecls() const { return decls; }
 };
@@ -661,6 +672,10 @@ public:
     this->returnType = returnType;
     this->body = nullptr;
   }
+  static FunctionDecl* downcast(AST* ast) {
+    return ast->getID() == FUNC || ast->getID() == EXTERN_FUNC ?
+           static_cast<FunctionDecl*>(ast) : nullptr;
+  }
   ParamList* getParameters() const { return parameters; }
   TypeExp* getReturnType() const { return returnType; }
   Exp* getBody() const { return body; }
@@ -672,6 +687,9 @@ class DataDecl : public Decl {
 public:
   DataDecl(Location loc, Name* name, ParamList* fields)
       : Decl(DATA, loc, name) { this->fields = fields; }
+  static DataDecl* downcast(AST* ast) {
+    return ast->getID() == DATA ? static_cast<DataDecl*>(ast) : nullptr;
+  }
   ParamList* getFields() const { return fields; }
 };
 
