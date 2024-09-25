@@ -1,4 +1,3 @@
-#include <cstdio>
 #include <llvm/Support/MemoryBuffer.h>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
@@ -25,7 +24,7 @@ int main(int argc, char* argv[]) {
   Parser parser(lexer.getTokens());
   DeclList* parsedDeclList = parser.decls0();
   if (parsedDeclList == nullptr) {
-    printf("%s", parser.getError().render(text, lexer.getLocationTable()).c_str());
+    llvm::outs() << parser.getError().render(text, lexer.getLocationTable());
     exit(1);
   }
 
@@ -33,7 +32,7 @@ int main(int argc, char* argv[]) {
   typer.typeDeclList(parsedDeclList);
   if (typer.unifier.getErrors()->size() > 0) {
     for (auto err : *typer.unifier.getErrors()) {
-      printf("%s", err.render(text, lexer.getLocationTable()).c_str());
+      llvm::outs() << err.render(text, lexer.getLocationTable());
     }
     exit(1);
   }

@@ -96,31 +96,26 @@ namespace ParserTests {
   TEST(block_expression) {
     expParseTreeShouldBe("{ let x = 10; x; }", {
       "BLOCK",
-      "    EXPLIST_CONS",
+      "    EXPLIST",
       "        LET",
       "            NAME",
       "            INT_LIT",
-      "        EXPLIST_CONS",
-      "            ENAME",
-      "                NAME",
-      "            EXPLIST_NIL",
+      "        ENAME",
+      "            NAME",
     });
   }
 
   TEST(array_list_exp) {
     expParseTreeShouldBe("[42, x, y+1]", {
       "ARRAY_LIST",
-      "    EXPLIST_CONS",
+      "    EXPLIST",
       "        INT_LIT",
-      "        EXPLIST_CONS",
+      "        ENAME",
+      "            NAME",
+      "        ADD",
       "            ENAME",
       "                NAME",
-      "            EXPLIST_CONS",
-      "                ADD",
-      "                    ENAME",
-      "                        NAME",
-      "                    INT_LIT",
-      "                EXPLIST_NIL",
+      "            INT_LIT",
     });
   }
 
@@ -136,16 +131,14 @@ namespace ParserTests {
     declParseTreeShouldBe("func main(): i32 = { println(\"Hello World\"); };", {
       "FUNC",
       "    NAME",
-      "    PARAMLIST_NIL",
+      "    PARAMLIST",
       "    i32_TEXP",
       "    BLOCK",
-      "        EXPLIST_CONS",
+      "        EXPLIST",
       "            CALL",
       "                NAME",
-      "                EXPLIST_CONS",
+      "                EXPLIST",
       "                    STRING_LIT",
-      "                    EXPLIST_NIL",
-      "            EXPLIST_NIL",
     });
   }
 
@@ -153,7 +146,7 @@ namespace ParserTests {
     declParseTreeShouldBe("module M {}", {
       "MODULE",
       "    NAME",
-      "    DECLLIST_NIL",
+      "    DECLLIST",
     });
   }
 
@@ -168,21 +161,18 @@ namespace ParserTests {
     , {
       "MODULE",
       "    NAME",
-      "    DECLLIST_CONS",
+      "    DECLLIST",
       "        EXTERN_FUNC",
       "            NAME",
-      "            PARAMLIST_NIL",
+      "            PARAMLIST",
       "            UNIT_TEXP",
-      "        DECLLIST_CONS",
-      "            NAMESPACE",
-      "                NAME",
-      "                DECLLIST_CONS",
-      "                    EXTERN_FUNC",
-      "                        NAME",
-      "                        PARAMLIST_NIL",
-      "                        UNIT_TEXP",
-      "                    DECLLIST_NIL",
-      "            DECLLIST_NIL",
+      "        NAMESPACE",
+      "            NAME",
+      "            DECLLIST",
+      "                EXTERN_FUNC",
+      "                    NAME",
+      "                    PARAMLIST",
+      "                    UNIT_TEXP",
     });
   }
 

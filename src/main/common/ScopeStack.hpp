@@ -1,7 +1,6 @@
 #ifndef COMMON_SCOPESTACK
 #define COMMON_SCOPESTACK
 
-#include <string>
 #include <vector>
 #include "llvm/ADT/StringMap.h"
 

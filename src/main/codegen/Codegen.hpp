@@ -97,9 +97,9 @@ public:
 
   llvm::FunctionType* makeFunctionType(ParamList* paramList, TypeExp* retTy) {
     std::vector<llvm::Type*> paramTys;
-    while (paramList->nonEmpty()) {
-      paramTys.push_back(genType(paramList->getHeadParamType()));
-      paramList = paramList->getTail();
+    paramTys.reserve(paramList->asArrayRef().size());
+    for (auto param : paramList->asArrayRef()) {
+      paramTys.push_back(genType(param.second));
     }
     llvm::Type* retType = genType(retTy);
     return llvm::FunctionType::get(retType, paramTys, false);
@@ -108,11 +108,13 @@ public:
   /// Adds the parameters to the topmost scope in the scope stack. Also sets
   /// argument names in the LLVM IR.
   void addParamsToScope(llvm::Function* f, ParamList* paramList) {
+    auto params = paramList->asArrayRef();
+    unsigned int i = 0;
     for (llvm::Argument &arg : f->args()) {
-      auto paramName = paramList->getHeadParamName()->asStringRef();
+      auto paramName = params[i].first->asStringRef();
       varValues.add(paramName, &arg);
       arg.setName(paramName);
-      paramList = paramList->getTail();
+      ++i;
     }
   }
 
@@ -165,17 +167,15 @@ public:
       return llvm::ConstantArray::get(arrTy, vals);
     }
     else if (auto e = ArrayListExp::downcast(_exp)) {
-      unsigned int arrSize = expListLength(e->getContent());
+      unsigned int arrSize = e->getContent()->asArrayRef().size();
       TVar elemTy = tyctx->resolve(e->getTVar()).second.getInner();
       auto arrTy = llvm::ArrayType::get(genType(elemTy), arrSize);
       llvm::Value* ret = llvm::ConstantAggregateZero::get(arrTy);
-      ExpList* expList = e->getContent();
-      unsigned int idx = 0;
-      while (expList->nonEmpty()) {
-        llvm::Value* v = genExp(expList->getHead());
+      llvm::ArrayRef<Exp*> expList = e->getContent()->asArrayRef();
+      for (unsigned int idx = 0; idx < expList.size(); ++idx) {
+        llvm::Value* v = genExp(expList[idx]);
         ret = b->CreateInsertValue(ret, v, idx);
         ++idx;
-        expList = expList->getTail();
       }
       return ret;
     }
@@ -183,11 +183,10 @@ public:
       return genExp(e->getAscriptee());
     }
     else if (auto e = BlockExp::downcast(_exp)) {
-      ExpList* stmtList = e->getStatements();
+      llvm::ArrayRef<Exp*> stmtList = e->getStatements()->asArrayRef();
       llvm::Value* lastStmtVal = nullptr;
-      while (stmtList->nonEmpty()) {
-        lastStmtVal = genExp(stmtList->getHead());
-        stmtList = stmtList->getTail();
+      for (Exp* stmt : stmtList) {
+        lastStmtVal = genExp(stmt);
       }
       return lastStmtVal;
     }
@@ -197,14 +196,11 @@ public:
       llvm::FunctionType* calleeType = callee->getFunctionType();
 
       std::vector<llvm::Value*> args;
-      ExpList* expList = e->getArguments();
-      unsigned int paramIdx = 0;
-      while (expList->nonEmpty()) {
-        llvm::Value* arg = genExp(expList->getHead());
+      llvm::ArrayRef<Exp*> expList = e->getArguments()->asArrayRef();
+      for (unsigned int paramIdx = 0; paramIdx < expList.size(); ++paramIdx) {
+        llvm::Value* arg = genExp(expList[paramIdx]);
         arg = b->CreateBitCast(arg, calleeType->getParamType(paramIdx));
         args.push_back(arg);
-        ++paramIdx;
-        expList = expList->getTail();
       }
       return b->CreateCall(callee, args);
     }
@@ -304,16 +300,14 @@ public:
     else if (auto e = ArrayListExp::downcast(_exp)) {
       auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e->getTVar()));
       auto elemTy = arrTy->getArrayElementType();
-      unsigned int arrayLen = expListLength(e->getContent());
+      unsigned int arrayLen = e->getContent()->asArrayRef().size();
       llvm::Value* ret = b->CreateAlloca(elemTy, b->getInt32(arrayLen));
-      ExpList* expList = e->getContent();
-      unsigned int idx = 0;
-      while (expList->nonEmpty()) {
-        llvm::Value* elem = genExp(expList->getHead());
+      llvm::ArrayRef<Exp*> expList = e->getContent()->asArrayRef();
+      for (unsigned int idx = 0; idx < expList.size(); ++idx) {
+        llvm::Value* elem = genExp(expList[idx]);
         llvm::Value* ptr = b->CreateGEP(elemTy, ret, b->getInt32(idx) );
         b->CreateStore(elem, ptr);
         ++idx;
-        expList = expList->getTail();
       }
       // return ret;
       arrTy = llvm::ArrayType::get(elemTy, arrayLen);
@@ -325,15 +319,6 @@ public:
       llvm::errs() << ASTIDToString(_exp->getID()) << "\n";
       exit(1);
     }
-  }
-
-  unsigned int expListLength(ExpList* expList) {
-    unsigned int ret = 0;
-    while (expList->nonEmpty()) {
-      ++ret;
-      expList = expList->getTail();
-    }
-    return ret;
   }
 
   /** Codegens a `func`, `extern func`. */
@@ -375,9 +360,8 @@ public:
   }
 
   void genDeclList(DeclList* declList) {
-    while (declList->nonEmpty()) {
-      genDecl(declList->getHead());
-      declList = declList->getTail();
+    for (Decl* decl : declList->asArrayRef()) {
+      genDecl(decl);
     }
   }
 

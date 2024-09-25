@@ -4,16 +4,12 @@
 #include "llvm/ADT/StringMap.h"
 #include "common/AST.hpp"
 
-/// Holds the fully qualified names of all decls and maps them to their
-/// definitions in an `ASTContext`. An ontology is produced by the `Cataloger`
-/// phase of typechecking and should not be modified thereafter.
+/// Maps the fully qualified names of all decls to their definitions in the AST.
 ///
 /// There are three distinct "spaces" of fully-qualified names (type space,
 /// function space, and module space). The type space and function space must
 /// be disjoint since every data type also has a constructor function of the
 /// same name. However, either can overlap with the module space.
-///
-/// The decls and `FQNameKey`s are in one-to-one correspondence.
 class Ontology {
 
   llvm::StringMap<DataDecl*> typeSpace;
@@ -29,19 +25,19 @@ public:
   std::string entryPoint;
 
   void record(DataDecl* decl) {
-    typeSpace[decl->getName()->asStringRef().str()] = decl;
+    typeSpace[decl->getName()->asStringRef()] = decl;
   }
 
   void record(ModuleDecl* decl) {
-    moduleSpace[decl->getName()->asStringRef().str()] = decl;
+    moduleSpace[decl->getName()->asStringRef()] = decl;
   }
 
   void record(FunctionDecl* decl) {
-    functionSpace[decl->getName()->asStringRef().str()] = decl;
+    functionSpace[decl->getName()->asStringRef()] = decl;
   }
 
   void recordMapName(FunctionDecl* decl, llvm::StringRef mappedName) {
-    std::string declName = decl->getName()->asStringRef().str();
+    llvm::StringRef declName = decl->getName()->asStringRef();
     functionSpace[declName] = decl;
     mappedFuncNames[declName] = mappedName.str();
   }

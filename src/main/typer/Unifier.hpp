@@ -243,14 +243,9 @@ public:
 
     else if (auto e = ArrayListExp::downcast(_e)) {
       TVar ofTy = tc.fresh();
-      ExpList* expList = e->getContent();
-      unsigned int numExps = 0;
-      while (expList->nonEmpty()) {
-        ++numExps;
-        unifyWith(expList->getHead(), ofTy);
-        expList = expList->getTail();
-      }
-      e->setTVar(tc.fresh(Type::array_sact(numExps, ofTy)));
+      llvm::ArrayRef<Exp*> content = e->getContent()->asArrayRef();
+      for (Exp* innerE : content) unifyWith(innerE, ofTy);
+      e->setTVar(tc.fresh(Type::array_sact(content.size(), ofTy)));
     }
 
     else if (auto e = AscripExp::downcast(_e)) {
@@ -260,13 +255,10 @@ public:
     }
 
     else if (auto e = BlockExp::downcast(_e)) {
-      ExpList* stmtList = e->getStatements();
+      llvm::ArrayRef<Exp*> stmtList = e->getStatements()->asArrayRef();
       TVar lastStmtTy = tc.fresh(Type::unit());  // TODO: no need to freshen unit
       localVarTypes.push();
-      while (stmtList->nonEmpty()) {
-        lastStmtTy = unifyExp(stmtList->getHead());
-        stmtList = stmtList->getTail();
-      }
+      for (Exp* stmt : stmtList) lastStmtTy = unifyExp(stmt);
       localVarTypes.pop();
       e->setTVar(lastStmtTy);
     }
@@ -276,15 +268,15 @@ public:
       FunctionDecl* callee = lookupFuncByRelName(calleeRelName);
       if (callee != nullptr) {
         /*** unify each argument with corresponding parameter ***/
-        ExpList* expList = e->getArguments();
-        ParamList* paramList = callee->getParameters();
-        while (expList->nonEmpty() && paramList->nonEmpty()) {
-          TVar paramType = freshFromTypeExp(paramList->getHeadParamType());
-          expectTypeToBe(expList->getHead(), paramType);
-          expList = expList->getTail();
-          paramList = paramList->getTail();
+        auto expList = e->getArguments()->asArrayRef();
+        auto paramList = callee->getParameters()->asArrayRef();
+        int idx = 0;
+        while (idx < expList.size() && idx < paramList.size()) {
+          TVar paramType = freshFromTypeExp(paramList[idx].second);
+          expectTypeToBe(expList[idx], paramType);
+          ++idx;
         }
-        if (expList->nonEmpty() || paramList->nonEmpty()) {
+        if (idx < expList.size() || idx < paramList.size()) {
           Name* calleeFQIdent = callee->getName();
           llvm::Twine errMsg = "Arity mismatch for function " +
             callee->getName()->asStringRef() + ".";
@@ -428,18 +420,14 @@ public:
   }
 
   void unifyDeclList(DeclList* declList) {
-    while (declList->nonEmpty()) {
-      unifyDecl(declList->getHead());
-      declList = declList->getTail();
-    }
+    for (Decl* decl : declList->asArrayRef()) unifyDecl(decl);
   }
 
   void addParamsToLocalVarTypes(ParamList* paramList) {
-    while (paramList->nonEmpty()) {
-      std::string paramN = paramList->getHeadParamName()->asStringRef().str();
-      TVar paramTy = freshFromTypeExp(paramList->getHeadParamType());
-      localVarTypes.add(paramN, paramTy);
-      paramList = paramList->getTail();
+    for (auto param : paramList->asArrayRef()) {
+      std::string paramName = param.first->asStringRef().str();
+      TVar paramTy = freshFromTypeExp(param.second);
+      localVarTypes.add(paramName, paramTy);
     }
   }
 

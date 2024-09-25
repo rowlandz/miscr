@@ -74,9 +74,8 @@ public:
   /// Catalogs the decls in a decl list. `scope` is the scope that the decls
   /// appear in.
   void catalogDeclList(llvm::StringRef scope, DeclList* declList) {
-    while (declList->nonEmpty()) {
-      catalog(scope, declList->getHead());
-      declList = declList->getTail();
+    for (auto decl : declList->asArrayRef()) {
+      catalog(scope, decl);
     }
   }
   

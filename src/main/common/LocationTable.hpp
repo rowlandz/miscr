@@ -2,7 +2,6 @@
 #define COMMON_LOCATIONINDEX
 
 #include <map>
-#include <cstdio>
 
 /// Maps (some) row numbers to char pointers so that the entire text
 /// doesn't need to be scanned to find a location.

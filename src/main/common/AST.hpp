@@ -1,9 +1,10 @@
 #ifndef COMMON_AST
 #define COMMON_AST
 
-#include <cstdio>
 #include <string>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/SmallVector.h>
 #include "common/Location.hpp"
 
 class Exp;
@@ -28,8 +29,7 @@ public:
     i64_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, WREF_TEXP, 
 
     // other
-    DECLLIST_CONS, DECLLIST_NIL, EXPLIST_CONS, EXPLIST_NIL, NAME,
-    PARAMLIST_CONS, PARAMLIST_NIL,
+    DECLLIST, EXPLIST, NAME, PARAMLIST,
   };
 
 private:
@@ -62,15 +62,6 @@ public:
     default: return false;
     }
   }
-};
-
-/// TODO: can we include the pointer to the ontology in this struct? 
-class FQNameKey {
-  unsigned int value;
-public:
-  FQNameKey() { value = -1; }
-  FQNameKey(unsigned int value) { this->value = value; }
-  unsigned int getValue() const { return value; }
 };
 
 /// @brief A type variable that annotates an expression. Type variables are
@@ -234,28 +225,23 @@ public:
 
 /// @brief A linked-list of expressions.
 class ExpList : public AST {
-  Exp* head;
-  ExpList* tail;
+  llvm::SmallVector<Exp*, 4> exps;
 public:
-  ExpList(Location loc) : AST(EXPLIST_NIL, loc) {
-    this->head = nullptr;
-    this->tail = nullptr;
+  ExpList(Location loc) : AST(EXPLIST, loc) {}
+  ExpList(Location loc, llvm::SmallVector<Exp*, 4> exps)
+      : AST(EXPLIST, loc), exps(exps) {}
+  /// @brief Builds a new expression list from a head and tail. The tail is
+  /// consumed and deleted and thus should not be used again. 
+  ExpList(Location loc, Exp* head, ExpList* tail) : AST(EXPLIST, loc) {
+    auto rest = tail->asArrayRef();
+    exps.reserve(rest.size() + 1);
+    exps.push_back(head);
+    for (auto elem : rest) exps.push_back(elem);
+    delete tail;
   }
-  ExpList(Location loc, Exp* head, ExpList* tail)
-      : AST(EXPLIST_CONS, loc) {
-    this->head = head;
-    this->tail = tail;
-  }
-  bool isEmpty() const { return getID() == EXPLIST_NIL; }
-  bool nonEmpty() const { return getID() == EXPLIST_CONS; }
-
-  /// Returns the first expression in this list. This is only safe to call
-  /// if `isEmpty` returns false.
-  Exp* getHead() const { return head; }
-
-  /// Returns the tail of this expression list. This is only safe to call
-  /// if `isEmpty` returns false;
-  ExpList* getTail() const { return tail; }
+  bool isEmpty() const { return exps.empty(); }
+  bool nonEmpty() const { return !exps.empty(); }
+  llvm::ArrayRef<Exp*> asArrayRef() const { return exps; }
 };
 
 /// @brief A boolean literal (`true` or `false`).
@@ -584,22 +570,11 @@ public:
 
 /// @brief A list of declarations.
 class DeclList : public AST {
-  Decl* head;
-  DeclList* tail;
+  llvm::SmallVector<Decl*, 0> decls;
 public:
-  DeclList(Location loc) : AST(DECLLIST_NIL, loc) {
-    this->head = nullptr;
-    this->tail = nullptr;
-  }
-  DeclList(Location loc, Decl* head, DeclList* tail)
-      : AST(DECLLIST_CONS, loc) {
-    this->head = head;
-    this->tail = tail;
-  }
-  bool isEmpty() { return getID() == DECLLIST_NIL; }
-  bool nonEmpty() { return getID() == DECLLIST_CONS; }
-  Decl* getHead() const { return head; }
-  DeclList* getTail() const { return tail; }
+  DeclList(Location loc, llvm::SmallVector<Decl*, 0> decls)
+      : AST(DECLLIST, loc), decls(decls) {}
+  llvm::ArrayRef<Decl*> asArrayRef() const { return decls; }
 };
 
 class ModuleDecl : public Decl {
@@ -631,27 +606,12 @@ public:
 /// @brief A list of parameters in a function signature, or a list of
 /// fields in a data type.
 class ParamList : public AST {
-  Name* headParamName;
-  TypeExp* headParamType;
-  ParamList* tail;
+  llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> params;
 public:
-  ParamList(Location loc) : AST(PARAMLIST_NIL, loc) {
-    this->headParamName = nullptr;
-    this->headParamType = nullptr;
-    this->tail = nullptr;
-  }
-  ParamList(Location loc, Name* headParamName,
-      TypeExp* headParamType, ParamList* tail)
-      : AST(PARAMLIST_CONS, loc) {
-    this->headParamName = headParamName;
-    this->headParamType = headParamType;
-    this->tail = tail;
-  }
-  bool isEmpty() { return getID() == PARAMLIST_NIL; }
-  bool nonEmpty() { return getID() == PARAMLIST_CONS; }
-  Name* getHeadParamName() const { return headParamName; }
-  TypeExp* getHeadParamType() const { return headParamType; }
-  ParamList* getTail() const { return tail; }
+  ParamList(Location loc, llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> ps)
+      : AST(PARAMLIST, loc), params(ps) {}
+  llvm::ArrayRef<std::pair<Name*, TypeExp*>> asArrayRef() const
+      { return params; }
 };
 
 /// @brief A function or extern function (FUNC/EXTERN_FUNC).
@@ -746,13 +706,10 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::UNIT_TEXP:          return "UNIT_TEXP";
   case AST::ID::WREF_TEXP:          return "WREF_TEXP";
   
-  case AST::ID::DECLLIST_CONS:      return "DECLLIST_CONS";
-  case AST::ID::DECLLIST_NIL:       return "DECLLIST_NIL";
-  case AST::ID::EXPLIST_CONS:       return "EXPLIST_CONS";
-  case AST::ID::EXPLIST_NIL:        return "EXPLIST_NIL";
+  case AST::ID::DECLLIST:           return "DECLLIST";
+  case AST::ID::EXPLIST:            return "EXPLIST";
   case AST::ID::NAME:               return "NAME";
-  case AST::ID::PARAMLIST_CONS:     return "PARAMLIST_CONS";
-  case AST::ID::PARAMLIST_NIL:      return "PARAMLIST_NIL";
+  case AST::ID::PARAMLIST:          return "PARAMLIST";
   }
 }
 
@@ -806,15 +763,12 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "UNIT_TEXP")           return AST::ID::UNIT_TEXP;
   else if (str == "WREF_TEXP")           return AST::ID::WREF_TEXP;
   
-  else if (str == "DECLLIST_CONS")       return AST::ID::DECLLIST_CONS;
-  else if (str == "DECLLIST_NIL")        return AST::ID::DECLLIST_NIL;
-  else if (str == "EXPLIST_CONS")        return AST::ID::EXPLIST_CONS;
-  else if (str == "EXPLIST_NIL")         return AST::ID::EXPLIST_NIL;
+  else if (str == "DECLLIST")            return AST::ID::DECLLIST;
+  else if (str == "EXPLIST")             return AST::ID::EXPLIST;
   else if (str == "NAME")                return AST::ID::NAME;
-  else if (str == "PARAMLIST_CONS")      return AST::ID::PARAMLIST_CONS;
-  else if (str == "PARAMLIST_NIL")       return AST::ID::PARAMLIST_NIL;
+  else if (str == "PARAMLIST")           return AST::ID::PARAMLIST;
 
-  else { printf("Invalid AST::ID string: %s\n", str.c_str()); exit(1); }
+  else llvm_unreachable(("Invalid AST::ID string: " + str).c_str());
 }
 
 /** Returns the sub-ASTs of `node`. This is only used for testing purposes. */
@@ -854,20 +808,18 @@ std::vector<AST*> getSubnodes(AST* ast) {
     auto n = reinterpret_cast<const DataDecl*>(ast);
     ret.push_back(n->getName());
     ret.push_back(n->getFields());
-  } else if (id == AST::ID::DECLLIST_CONS) {
+  } else if (id == AST::ID::DECLLIST) {
     auto n = reinterpret_cast<const DeclList*>(ast);
-    ret.push_back(n->getHead());
-    ret.push_back(n->getTail());
+    for (auto elem : n->asArrayRef()) ret.push_back(elem);
   } else if (id == AST::ID::DEREF) {
     auto n = reinterpret_cast<const DerefExp*>(ast);
     ret.push_back(n->getOf());
   } else if (id == AST::ID::ENAME) {
     auto n = reinterpret_cast<const NameExp*>(ast);
     ret.push_back(n->getName());
-  } else if (id == AST::ID::EXPLIST_CONS) {
+  } else if (id == AST::ID::EXPLIST) {
     auto n = reinterpret_cast<const ExpList*>(ast);
-    ret.push_back(n->getHead());
-    ret.push_back(n->getTail());
+    for (auto elem : n->asArrayRef()) ret.push_back(elem);
   } else if (id == AST::ID::EXTERN_FUNC) {
     auto n = reinterpret_cast<const FunctionDecl*>(ast);
     ret.push_back(n->getName());
@@ -902,11 +854,12 @@ std::vector<AST*> getSubnodes(AST* ast) {
     auto n = reinterpret_cast<const NamespaceDecl*>(ast);
     ret.push_back(n->getName());
     ret.push_back(n->getDecls());
-  } else if (id == AST::ID::PARAMLIST_CONS) {
+  } else if (id == AST::ID::PARAMLIST) {
     auto n = reinterpret_cast<const ParamList*>(ast);
-    ret.push_back(n->getHeadParamName());
-    ret.push_back(n->getHeadParamType());
-    ret.push_back(n->getTail());
+    for (auto param : n->asArrayRef()) {
+      ret.push_back(param.first);
+      ret.push_back(param.second);
+    }
   } else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
     auto n = reinterpret_cast<const RefExp*>(ast);
     ret.push_back(n->getInitializer());

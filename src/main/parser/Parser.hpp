@@ -325,21 +325,23 @@ public:
   /// (wotc). Never epsilon fails.
   ExpList* expListWotc0() {
     Token t = *p;
-    Exp* head = exp();
-    if (error == ARREST) ARRESTING_ERROR
-    if (error == EPSILON) {
-      error = NOERROR;
-      return new ExpList(Location(t.row, t.col, 0));
-    }
-    ExpList* tail;
-    if (p->ty == COMMA) {
+    llvm::SmallVector<Exp*, 4> es;
+    Exp* e;
+    for (;;) {
+      e = exp();
+      if (error == ARREST) ARRESTING_ERROR
+      if (error == EPSILON) {
+        error = NOERROR;
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        return new ExpList(loc, es);
+      }
+      es.push_back(e);
+      if (p->ty != COMMA) {
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        return new ExpList(loc, es);
+      }
       ++p;
-      tail = expListWotc0(); ARREST_IF_ERROR
-    } else {
-      tail = new ExpList(Location(p->row, p->col, 0));
     }
-    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return new ExpList(loc, head, tail);
   }
 
   // ---------- Type Expressions ----------
@@ -425,21 +427,23 @@ public:
   /// Zero or more statements separated by semicolons Never epsilon fails.
   ExpList* stmts0() {
     Token t = *p;
-    Exp* head = stmt();
-    if (error == ARREST) ARRESTING_ERROR
-    if (error == EPSILON) {
-      error = NOERROR;
-      return new ExpList(Location(t.row, t.col, 0));
-    }
-    ExpList* tail;
-    if (p->ty == SEMICOLON) {
+    llvm::SmallVector<Exp*, 4> ss;
+    Exp* s;
+    for (;;) {
+      s = stmt();
+      if (error == ARREST) ARRESTING_ERROR
+      if (error == EPSILON) {
+        error = NOERROR;
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        return new ExpList(loc, ss);
+      }
+      ss.push_back(s);
+      if (p->ty != SEMICOLON) {
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        return new ExpList(loc, ss);
+      }
       ++p;
-      tail = stmts0(); ARREST_IF_ERROR
-    } else {
-      tail = new ExpList(Location(p->row, p->col, 0));
     }
-    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return new ExpList(loc, head, tail);
   }
 
   // ---------- Declarations ----------
@@ -448,19 +452,26 @@ public:
   /// comma (wotc). This parser never returns an epsilon error.
   ParamList* paramListWotc0() {
     Token t = *p;
-    Name* paramName = ident();
-    if (error == ARREST) return nullptr;
-    if (error == EPSILON) {
-      error = NOERROR;
-      return new ParamList(Location(t.row, t.col, 0));
+    llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> params;
+    Name* paramName;
+    TypeExp* paramType;
+    for (;;) {
+      paramName = ident();
+      if (error == ARREST) return nullptr;
+      if (error == EPSILON) {
+        error = NOERROR;
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        return new ParamList(loc, params);
+      }
+      CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
+      paramType = typeExp(); ARREST_IF_ERROR
+      params.push_back(std::pair<Name*, TypeExp*>(paramName, paramType));
+      if (p->ty != COMMA) {
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        return new ParamList(loc, params);
+      }
+      ++p;
     }
-    CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
-    TypeExp* paramType = typeExp(); ARREST_IF_ERROR
-    ParamList* tail;
-    if (p->ty == COMMA) { ++p; tail = paramListWotc0(); }
-    else tail = new ParamList(Location(p->row, p->col, 0));
-    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return new ParamList(loc, paramName, paramType, tail);
   }
 
   DataDecl* dataDecl() {
@@ -536,15 +547,18 @@ public:
   /// Parses zero or more declarations into a DECLLIST.
   DeclList* decls0() {
     Token t = *p;
-    Decl* head = decl();
-    if (error == ARREST) return nullptr;
-    if (error == EPSILON) {
-      error = NOERROR;
-      return new DeclList(Location(t.row, t.col, 0));
+    llvm::SmallVector<Decl*, 0> ds;
+    Decl* d;
+    for (;;) {
+      d = decl();
+      if (error == ARREST) ARRESTING_ERROR
+      if (error == EPSILON) {
+        error = NOERROR;
+        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+        return new DeclList(loc, ds);
+      }
+      ds.push_back(d);
     }
-    DeclList* tail = decls0(); ARREST_IF_ERROR
-    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return new DeclList(loc, head, tail);
   }
 
   // ----------
