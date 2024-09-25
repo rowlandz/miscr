@@ -11,11 +11,10 @@
 /// @brief Second of the two type checking phases. Performs Hindley-Milner
 /// type inference and unification. More specifically,
 ///
-/// - Sets the type variables of expressions. The type
+/// - Sets the type variables of expressions in the AST. The type
 ///   variables can be resolved using the `TypeContext` built by the unifier.
 /// 
-/// - Fully qualifies the function names in `CALL` expressions (i.e. replaces
-///   the name with a `FQIdent` with associated info stored in an `Ontology`).
+/// - Fully qualifies the function names in `CALL` expressions.
 class Unifier {
  
   /// Maps decls to their definitions or declarations.
@@ -367,7 +366,7 @@ public:
 
     else if (auto e = RefExp::downcast(_e)) {
       TVar initializerTy = unifyExp(e->getInitializer());
-      TVar retTy = id == AST::ID::WREF_EXP ?
+      TVar retTy = e->isWritable() ?
                    tc.fresh(Type::wref(initializerTy)) :
                    tc.fresh(Type::rref(initializerTy));
       e->setTVar(retTy);

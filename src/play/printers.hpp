@@ -1,6 +1,8 @@
 #ifndef PRINTERS
 #define PRINTERS
 
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/FormatVariadic.h>
 #include "common/AST.hpp"
 #include "common/TypeContext.hpp"
 
@@ -10,26 +12,27 @@ void print_parse_tree(
       const TypeContext* tc = nullptr) {
   assert(n != nullptr && "Tried to print nullptr AST node!");
   Location loc = n->getLocation();
-  printf("ln%3d, col%3d, sz%3d   ", loc.row, loc.col, loc.sz);
+  llvm::outs() <<
+    llvm::formatv("ln{0,3}, col{1,3}, sz{2,3}   ", loc.row, loc.col, loc.sz);
   if (indents.size() > 0) {
     for (auto i = 0; i < indents.size() - 1; i++) {
-      printf("%s   ", indents[i] ? "│" : " ");
+      llvm::outs() << (indents[i] ? "│" : " ") << "   ";
     }
-    printf("%s── ", *(indents.end()-1) ? "├" : "└");
+    llvm::outs() << (indents.back() ? "├" : "└") << "── ";
   }
-  printf("%s", ASTIDToString(n->getID()));
+  llvm::outs() << ASTIDToString(n->getID());
 
   // print optional extra information depending on the node type
   if (auto name = Name::downcast(n))
-    printf("  (%s)", name->asStringRef().data());
+    llvm::outs() << "  (" << name->asStringRef() << ")";
   if (auto intLit = IntLit::downcast(n))
-    printf(" (%s)", intLit->asString().c_str());     // TODO: change to asStringRef
+    llvm::outs() << "  (" << intLit->asStringRef() << ")";
   if (auto exp = Exp::downcast(n)) {
     if (tc != nullptr)
-      printf(" : %s", tc->TVarToString(exp->getTVar()).c_str());
+      llvm::outs() << " : " << tc->TVarToString(exp->getTVar());
   }
 
-  printf("\n");
+  llvm::outs() << "\n";
 
   auto subnodes = getSubnodes(n);
   if (subnodes.size() == 1) {

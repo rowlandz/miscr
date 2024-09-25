@@ -190,6 +190,9 @@ public:
       }
       return lastStmtVal;
     }
+    else if (auto e = BoolLit::downcast(_exp)) {
+      return b->getInt1(e->getValue());
+    }
     else if (auto e = CallExp::downcast(_exp)) {
       llvm::StringRef funName = ont->mapName(e->getFunction()->asStringRef());
       llvm::Function* callee = mod->getFunction(funName);

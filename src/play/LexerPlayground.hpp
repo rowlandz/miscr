@@ -1,7 +1,6 @@
 #ifndef LEXERPLAYGROUND
 #define LEXERPLAYGROUND
 
-#include <iostream>
 #include "lexer/Lexer.hpp"
 
 void print_tokens(const std::vector<Token>* tokens) {

@@ -27,16 +27,16 @@ class AST {
 public:
   enum ID : unsigned short {
     // expressions and statements
-    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, CALL, DEC_LIT, DEREF, DIV,
-    ENAME, EQ, FALSE, GE, GT, IF, INDEX, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP,
-    RETURN, STORE, STRING_LIT, SUB, TRUE, WREF_EXP,
+    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, BOOL_LIT, CALL, DEC_LIT, DEREF,
+    DIV, ENAME, EQ, GE, GT, IF, INDEX, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP,
+    RETURN, STORE, STRING_LIT, SUB,
 
     // declarations
     DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
 
     // type expressions
     ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i16_TEXP, i32_TEXP,
-    i64_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, WREF_TEXP, 
+    i64_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, 
 
     // other
     DECLLIST, EXPLIST, NAME, PARAMLIST,
@@ -57,10 +57,10 @@ public:
   bool isExp() const {
     switch (id) {
     case ADD: case ARRAY_INIT: case ARRAY_LIST: case ASCRIP: case BLOCK:
-    case CALL: case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ:
-    case FALSE: case GE: case GT: case IF: case INDEX: case INT_LIT: case LE:
+    case BOOL_LIT: case CALL: case DEC_LIT: case DEREF: case DIV: case ENAME:
+    case EQ: case GE: case GT: case IF: case INDEX: case INT_LIT: case LE:
     case LET: case LT: case MUL: case NE: case REF_EXP: case RETURN: case STORE:
-    case STRING_LIT: case SUB: case TRUE: case WREF_EXP:
+    case STRING_LIT: case SUB:
       return true;
     default: return false;
     }
@@ -107,18 +107,14 @@ private:
   Type::ID id;
   union { unsigned int compileTime; Exp* runtime; } arraySize;
   TVar inner;
-  Type(Type::ID id) : arraySize({.compileTime=0}) { this->id = id; }
-  Type(Type::ID id, TVar inner) : arraySize({.compileTime=0}) {
-    this->id = id; this->inner = inner;
-  }
-  Type(Exp* arraySize, TVar of) : arraySize({.runtime = arraySize}) {
-    this->id = ID::ARRAY_SART; this->inner = of;
-  }
-  Type(unsigned int arrSize, TVar of) : arraySize({.compileTime = arrSize}) {
-    this->id = ID::ARRAY_SACT; this->inner = of;
-  }
+  Type(Type::ID id) : arraySize({.compileTime=0}), id(id) {}
+  Type(Type::ID id, TVar inner) : arraySize({.compileTime=0}), id(id),
+    inner(inner) {}
+  Type(Exp* arraySize, TVar of) : arraySize({.runtime = arraySize}), inner(of),
+    id(ID::ARRAY_SART) {}
+  Type(unsigned int arrSize, TVar of) : arraySize({.compileTime = arrSize}),
+    inner(of), id(ID::ARRAY_SACT) {}
 public:
-  /// @brief Construct an array type sized at runtime. 
   static Type array_sart(Exp* sz, TVar of) { return Type(sz, of); }
   static Type array_sact(unsigned int sz, TVar of) { return Type(sz, of); }
   static Type bool_() { return Type(ID::BOOL); }
@@ -136,9 +132,8 @@ public:
   static Type numeric() { return Type(ID::NUMERIC); }
   static Type notype() { return Type(ID::NOTYPE); }
   bool isNoType() const { return id == ID::NOTYPE; }
-  bool isArrayType() const {
-    return id == ID::ARRAY_SACT || id == ID::ARRAY_SART;
-  }
+  bool isArrayType() const
+    { return id == ID::ARRAY_SACT || id == ID::ARRAY_SART; }
   ID getID() const { return id; }
   TVar getInner() const { return inner; }
   unsigned int getCompileTimeArraySize() const { return arraySize.compileTime; }
@@ -154,9 +149,8 @@ class Name : public AST {
   std::string s;
 public:
   Name(Location loc, std::string s) : AST(NAME, loc), s(s) {}
-  static Name* downcast(AST* ast) {
-    return ast->getID() == NAME ? static_cast<Name*>(ast) : nullptr;
-  }
+  static Name* downcast(AST* ast)
+    { return ast->getID() == NAME ? static_cast<Name*>(ast) : nullptr; }
   llvm::StringRef asStringRef() const { return s; }
   /// @brief Sets this name to `s`.
   void set(llvm::StringRef s) { this->s.assign(s.data(), s.size()); }
@@ -211,14 +205,10 @@ class RefTypeExp : public TypeExp {
   bool writable;
 public:
   RefTypeExp(Location loc, TypeExp* pointeeType, bool writable)
-      : TypeExp(writable ? WREF_TEXP : REF_TEXP, loc) {
-    this->pointeeType = pointeeType;
-    this->writable = writable;
-  }
+    : TypeExp(REF_TEXP, loc), pointeeType(pointeeType), writable(writable) {}
   ~RefTypeExp() { deleteAST(pointeeType); }
   static RefTypeExp* downcast(AST* ast) {
-    return (ast->getID() == REF_TEXP || ast->getID() == WREF_TEXP) ?
-           static_cast<RefTypeExp*>(ast) : nullptr;
+    return ast->getID() == REF_TEXP ? static_cast<RefTypeExp*>(ast) : nullptr;
   }
   TypeExp* getPointeeType() const { return pointeeType; }
   bool isWritable() const { return writable; }
@@ -233,15 +223,12 @@ public:
   /// @brief If `size` is an error address, then an underscore was used to
   /// indicate the array size. 
   ArrayTypeExp(Location loc, Exp* size, TypeExp* innerType)
-      : TypeExp(ARRAY_TEXP, loc) {
-    this->size = size; this->innerType = innerType;
-  }
-  ~ArrayTypeExp() {
-    deleteAST(reinterpret_cast<AST*>(size)); deleteAST(innerType);
-  }
+    : TypeExp(ARRAY_TEXP, loc), size(size), innerType(innerType) {}
+  ~ArrayTypeExp()
+    { deleteAST(reinterpret_cast<AST*>(size)); deleteAST(innerType); }
   static ArrayTypeExp* downcast(AST* ast) {
     return ast->getID() == ARRAY_TEXP ?
-           static_cast<ArrayTypeExp*>(ast) : nullptr;
+      static_cast<ArrayTypeExp*>(ast) : nullptr;
   }
   /// @brief This returns nullptr if size is unknown.
   Exp* getSize() const { return size; }
@@ -260,9 +247,8 @@ protected:
   Exp(ID id, Location loc) : AST(id, loc) {}
   ~Exp() {}
 public:
-  static Exp* downcast(AST* ast) {
-    return ast->isExp() ? static_cast<Exp*>(ast) : nullptr;
-  }
+  static Exp* downcast(AST* ast)
+    { return ast->isExp() ? static_cast<Exp*>(ast) : nullptr; }
   TVar getTVar() const { return type; };
   void setTVar(TVar type) { this->type = type; }
 };
@@ -273,7 +259,7 @@ class ExpList : public AST {
 public:
   ExpList(Location loc) : AST(EXPLIST, loc) {}
   ExpList(Location loc, llvm::SmallVector<Exp*, 4> exps)
-      : AST(EXPLIST, loc), exps(exps) {}
+    : AST(EXPLIST, loc), exps(exps) {}
   /// @brief Builds a new expression list from a head and tail. The tail is
   /// consumed and deleted and thus should not be used again. 
   ExpList(Location loc, Exp* head, ExpList* tail) : AST(EXPLIST, loc) {
@@ -281,12 +267,12 @@ public:
     exps.reserve(rest.size() + 1);
     exps.push_back(head);
     for (auto elem : rest) exps.push_back(elem);
+    tail->exps.clear();
     delete tail;
   }
   ~ExpList() { for (Exp* e : exps) deleteAST(e); }
-  static ExpList* downcast(AST* ast) {
-    return ast->getID() == EXPLIST ? static_cast<ExpList*>(ast) : nullptr;
-  }
+  static ExpList* downcast(AST* ast)
+    { return ast->getID() == EXPLIST ? static_cast<ExpList*>(ast) : nullptr; }
   bool isEmpty() const { return exps.empty(); }
   bool nonEmpty() const { return !exps.empty(); }
   llvm::ArrayRef<Exp*> asArrayRef() const { return exps; }
@@ -296,13 +282,9 @@ public:
 class BoolLit : public Exp {
   bool value;
 public:
-  BoolLit(Location loc, bool value) : Exp(value ? TRUE : FALSE, loc) {
-    this->value = value;
-  }
-  static BoolLit* downcast(AST* ast) {
-    return ast->getID() == TRUE || ast->getID() == FALSE ?
-           static_cast<BoolLit*>(ast) : nullptr;
-  }
+  BoolLit(Location loc, bool value) : Exp(BOOL_LIT, loc), value(value) {}
+  static BoolLit* downcast(AST* ast)
+    { return ast->getID() == BOOL_LIT ? static_cast<BoolLit*>(ast) : nullptr; }
   bool getValue() const { return value; }
 };
 
@@ -310,35 +292,28 @@ public:
 class IntLit : public Exp {
   const char* ptr;
 public:
-  IntLit(Location loc, const char* ptr) : Exp(INT_LIT, loc) {
-    this->ptr = ptr;
-  }
-  static IntLit* downcast(AST* ast) {
-    return ast->getID() == INT_LIT ? static_cast<IntLit*>(ast) : nullptr;
-  }
-  long asLong() const {
-    return atol(std::string(ptr, getLocation().sz).c_str());
-  }
-  unsigned int asUint() const {
-    return atoi(std::string(ptr, getLocation().sz).c_str());
-  }
-  std::string asString() { return std::string(ptr, getLocation().sz); }
+  IntLit(Location loc, const char* ptr) : Exp(INT_LIT, loc), ptr(ptr) {}
+  static IntLit* downcast(AST* ast)
+    { return ast->getID() == INT_LIT ? static_cast<IntLit*>(ast) : nullptr; }
+  long asLong() const
+    { return atol(std::string(ptr, getLocation().sz).c_str()); }
+  unsigned int asUint() const
+    { return atoi(std::string(ptr, getLocation().sz).c_str()); }
+  llvm::StringRef asStringRef()
+    { return llvm::StringRef(ptr, getLocation().sz); }
 };
 
 /// @brief A decimal literal.
 class DecimalLit : public Exp {
   const char* ptr;
 public:
-  DecimalLit(Location loc, const char* ptr) : Exp(DEC_LIT, loc) {
-    this->ptr = ptr;
-  }
+  DecimalLit(Location loc, const char* ptr) : Exp(DEC_LIT, loc), ptr(ptr) {}
   static DecimalLit* downcast(AST* ast) {
     return ast->getID() == DEC_LIT ? static_cast<DecimalLit*>(ast) : nullptr;
   }
   std::string asString() const { return std::string(ptr, getLocation().sz); }
-  double asDouble() const {
-    return atof(std::string(ptr, getLocation().sz).c_str());
-  }
+  double asDouble() const
+    { return atof(std::string(ptr, getLocation().sz).c_str()); }
 };
 
 /// @brief A string literal.
@@ -347,17 +322,13 @@ class StringLit : public Exp {
 public:
   /// Creates a string literal. The `loc` and `ptr` should point to the open
   /// quote of the string literal. 
-  StringLit(Location loc, const char* ptr) : Exp(STRING_LIT, loc) {
-    this->ptr = ptr;
-  }
+  StringLit(Location loc, const char* ptr) : Exp(STRING_LIT, loc), ptr(ptr) {}
   static StringLit* downcast(AST* ast) {
     return ast->getID() == STRING_LIT ? static_cast<StringLit*>(ast) : nullptr;
   }
   /// Returns the contents of the string (excluding surrounding quotes).
-  std::string asString() const {
-    return std::string(ptr+1, getLocation().sz-2);
-  }
-
+  std::string asString() const
+    { return std::string(ptr+1, getLocation().sz-2); }
   /// Returns the contents of the string with escape sequences processed. 
   std::string processEscapes() const {
     std::string ret;
@@ -380,13 +351,10 @@ public:
 class NameExp : public Exp {
   Name* name;
 public:
-  NameExp(Location loc, Name* name) : Exp(ENAME, loc) {
-    this->name = name;
-  }
+  NameExp(Location loc, Name* name) : Exp(ENAME, loc), name(name) {}
   ~NameExp() { delete name; }
-  static NameExp* downcast(AST* ast) {
-    return ast->getID() == ENAME ? static_cast<NameExp*>(ast) : nullptr;
-  }
+  static NameExp* downcast(AST* ast)
+    { return ast->getID() == ENAME ? static_cast<NameExp*>(ast) : nullptr; }
   Name* getName() const { return name; }
 };
 
@@ -395,14 +363,11 @@ class BinopExp : public Exp {
   Exp* lhs;
   Exp* rhs;
 public:
-  BinopExp(ID id, Location loc, Exp* lhs, Exp* rhs) : Exp(id, loc) {
-    this->lhs = lhs;
-    this->rhs = rhs;
-  }
+  BinopExp(ID id, Location loc, Exp* lhs, Exp* rhs)
+    : Exp(id, loc), lhs(lhs), rhs(rhs) {}
   ~BinopExp() { deleteAST(lhs); deleteAST(rhs); }
-  static BinopExp* downcast(AST* ast) {
-    return ast->isBinopExp() ? static_cast<BinopExp*>(ast) : nullptr;
-  }
+  static BinopExp* downcast(AST* ast)
+    { return ast->isBinopExp() ? static_cast<BinopExp*>(ast) : nullptr; }
   Exp* getLHS() const { return lhs; }
   Exp* getRHS() const { return rhs; }
 };
@@ -414,15 +379,10 @@ class IfExp : public Exp {
   Exp* elseExp;
 public:
   IfExp(Location loc, Exp* condExp, Exp* thenExp, Exp* elseExp)
-      : Exp(IF, loc) {
-    this->condExp = condExp;
-    this->thenExp = thenExp;
-    this->elseExp = elseExp;
-  }
+    : Exp(IF, loc), condExp(condExp), thenExp(thenExp), elseExp(elseExp) {}
   ~IfExp() { deleteAST(condExp); deleteAST(thenExp); deleteAST(elseExp); }
-  static IfExp* downcast(AST* ast) {
-    return ast->getID() == IF ? static_cast<IfExp*>(ast) : nullptr;
-  }
+  static IfExp* downcast(AST* ast)
+    { return ast->getID() == IF ? static_cast<IfExp*>(ast) : nullptr; }
   Exp* getCondExp() const { return condExp; }
   Exp* getThenExp() const { return thenExp; }
   Exp* getElseExp() const { return elseExp; }
@@ -432,13 +392,10 @@ public:
 class BlockExp : public Exp {
   ExpList* statements;
 public:
-  BlockExp(Location loc, ExpList* statements) : Exp(BLOCK, loc) {
-    this->statements = statements;
-  }
+  BlockExp(Location loc, ExpList* stmts) : Exp(BLOCK, loc), statements(stmts) {}
   ~BlockExp() { delete statements; }
-  static BlockExp* downcast(AST* ast) {
-    return ast->getID() == BLOCK ? static_cast<BlockExp*>(ast) : nullptr;
-  }
+  static BlockExp* downcast(AST* ast)
+    { return ast->getID() == BLOCK ? static_cast<BlockExp*>(ast) : nullptr; }
   ExpList* getStatements() const { return statements; }
 };
 
@@ -448,14 +405,10 @@ class CallExp : public Exp {
   ExpList* arguments;
 public:
   CallExp(Location loc, Name* function, ExpList* arguments)
-      : Exp(CALL, loc) {
-    this->function = function;
-    this->arguments = arguments;
-  }
+    : Exp(CALL, loc), function(function), arguments(arguments) {}
   ~CallExp() { delete function; delete arguments; }
-  static CallExp* downcast(AST* ast) {
-    return ast->getID() == CALL ? static_cast<CallExp*>(ast) : nullptr;
-  }
+  static CallExp* downcast(AST* ast)
+    { return ast->getID() == CALL ? static_cast<CallExp*>(ast) : nullptr; }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
   void setFunction(llvm::StringRef name) { function->set(name); }
@@ -467,14 +420,10 @@ class AscripExp : public Exp {
   TypeExp* ascripter;
 public:
   AscripExp(Location loc, Exp* ascriptee, TypeExp* ascripter)
-      : Exp(ASCRIP, loc) {
-    this->ascriptee = ascriptee;
-    this->ascripter = ascripter;
-  }
+    : Exp(ASCRIP, loc), ascriptee(ascriptee), ascripter(ascripter) {}
   ~AscripExp() { deleteAST(ascriptee); deleteAST(ascripter); }
-  static AscripExp* downcast(AST* ast) {
-    return ast->getID() == ASCRIP ? static_cast<AscripExp*>(ast) : nullptr;
-  }
+  static AscripExp* downcast(AST* ast)
+    { return ast->getID() == ASCRIP ? static_cast<AscripExp*>(ast) : nullptr; }
   Exp* getAscriptee() const { return ascriptee; }
   TypeExp* getAscripter() const { return ascripter; }
 };
@@ -485,16 +434,11 @@ class LetExp : public Exp {
   TypeExp* ascrip;
   Exp* definition;
 public:
-  LetExp(Location loc, Name* boundIdent, TypeExp* ascrip,
-      Exp* definition) : Exp(LET, loc) {
-    this->boundIdent = boundIdent;
-    this->ascrip = ascrip;
-    this->definition = definition;
-  }
+  LetExp(Location loc, Name* ident, TypeExp* ascrip, Exp* def)
+    : Exp(LET, loc), boundIdent(ident), ascrip(ascrip), definition(def) {}
   ~LetExp() { delete boundIdent; deleteAST(ascrip); deleteAST(definition); }
-  static LetExp* downcast(AST* ast) {
-    return ast->getID() == LET ? static_cast<LetExp*>(ast) : nullptr;
-  }
+  static LetExp* downcast(AST* ast)
+    { return ast->getID() == LET ? static_cast<LetExp*>(ast) : nullptr; }
   Name* getBoundIdent() const { return boundIdent; }
   TypeExp* getAscrip() const { return ascrip; }
   Exp* getDefinition() const { return definition; }
@@ -504,13 +448,11 @@ public:
 class ReturnExp : public Exp {
   Exp* returnee;
 public:
-  ReturnExp(Location loc, Exp* returnee) : Exp(RETURN, loc) {
-    this->returnee = returnee;
-  }
+  ReturnExp(Location loc, Exp* returnee)
+    : Exp(RETURN, loc), returnee(returnee) {}
   ~ReturnExp() { deleteAST(returnee); }
-  static ReturnExp* downcast(AST* ast) {
-    return ast->getID() == RETURN ? static_cast<ReturnExp*>(ast) : nullptr;
-  }
+  static ReturnExp* downcast(AST* ast)
+    { return ast->getID() == RETURN ? static_cast<ReturnExp*>(ast) : nullptr; }
   Exp* getReturnee() const { return returnee; }
 };
 
@@ -519,14 +461,11 @@ class StoreExp : public Exp {
   Exp* lhs;
   Exp* rhs;
 public:
-  StoreExp(Location loc, Exp* lhs, Exp* rhs) : Exp(STORE, loc) {
-    this->lhs = lhs;
-    this->rhs = rhs;
-  }
+  StoreExp(Location loc, Exp* lhs, Exp* rhs)
+    : Exp(STORE, loc), lhs(lhs), rhs(rhs) {}
   ~StoreExp() { deleteAST(lhs); deleteAST(rhs); }
-  static StoreExp* downcast(AST* ast) {
-    return ast->getID() == STORE ? static_cast<StoreExp*>(ast) : nullptr;
-  }
+  static StoreExp* downcast(AST* ast)
+    { return ast->getID() == STORE ? static_cast<StoreExp*>(ast) : nullptr; }
   Exp* getLHS() const { return lhs; }
   Exp* getRHS() const { return rhs; }
 };
@@ -535,28 +474,25 @@ public:
 /// a reference to that memory (e.g., `&myexp` or `#myexp`).
 class RefExp : public Exp {
   Exp* initializer;
+  bool writable;
 public:
   RefExp(Location loc, Exp* initializer, bool writable)
-      : Exp(writable ? WREF_EXP : REF_EXP, loc) {
-    this->initializer = initializer;
-  }
+    : Exp(REF_EXP, loc), initializer(initializer), writable(writable) {}
   ~RefExp() { deleteAST(initializer); }
-  static RefExp* downcast(AST* ast) {
-    return (ast->getID() == REF_EXP || ast->getID() == WREF_EXP) ?
-           static_cast<RefExp*>(ast) : nullptr;
-  }
+  static RefExp* downcast(AST* ast)
+    { return (ast->getID() == REF_EXP) ? static_cast<RefExp*>(ast) : nullptr; }
   Exp* getInitializer() const { return initializer; }
+  bool isWritable() const { return writable; }
 };
 
 /// @brief A dereference expression.
 class DerefExp : public Exp {
   Exp* of;
 public:
-  DerefExp(Location loc, Exp* of) : Exp(DEREF, loc) { this->of = of; }
+  DerefExp(Location loc, Exp* of) : Exp(DEREF, loc), of(of) {}
   ~DerefExp() { deleteAST(of); }
-  static DerefExp* downcast(AST* ast) {
-    return ast->getID() == DEREF ? static_cast<DerefExp*>(ast) : nullptr;
-  }
+  static DerefExp* downcast(AST* ast)
+    { return ast->getID() == DEREF ? static_cast<DerefExp*>(ast) : nullptr; }
   Exp* getOf() const { return of; }
 };
 
@@ -565,9 +501,8 @@ public:
 class ArrayListExp : public Exp {
   ExpList* content;
 public:
-  ArrayListExp(Location loc, ExpList* content) : Exp(ARRAY_LIST, loc) {
-    this->content = content;
-  }
+  ArrayListExp(Location loc, ExpList* content)
+    : Exp(ARRAY_LIST, loc), content(content) {}
   ~ArrayListExp() { delete content; }
   static ArrayListExp* downcast(AST* ast) {
     return ast->getID() == ARRAY_LIST ?
@@ -583,10 +518,7 @@ class ArrayInitExp : public Exp {
   Exp* initializer;
 public:
   ArrayInitExp(Location loc, Exp* size, Exp* initializer)
-      : Exp(ARRAY_INIT, loc) {
-    this->size = size;
-    this->initializer = initializer;
-  }
+      : Exp(ARRAY_INIT, loc), size(size), initializer(initializer) {}
   ~ArrayInitExp() { deleteAST(size); deleteAST(initializer); }
   static ArrayInitExp* downcast(AST* ast) {
     return ast->getID() == ARRAY_INIT ?
@@ -602,9 +534,8 @@ class IndexExp : public Exp {
   Exp* base;
   Exp* index;
 public:
-  IndexExp(Location loc, Exp* base, Exp* index) : Exp(INDEX, loc) {
-    this->base = base; this->index = index;
-  }
+  IndexExp(Location loc, Exp* base, Exp* index)
+    : Exp(INDEX, loc), base(base), index(index) {}
   ~IndexExp() { deleteAST(base); deleteAST(index); }
   static IndexExp* downcast(AST* ast) {
     return ast->getID() == INDEX ? static_cast<IndexExp*>(ast) : nullptr;
@@ -621,9 +552,7 @@ public:
 class Decl : public AST {
 protected:
   Name* name;
-  Decl(ID id, Location loc, Name* name) : AST(id, loc) {
-    this->name = name;
-  }
+  Decl(ID id, Location loc, Name* name) : AST(id, loc), name(name) {}
   ~Decl() { delete name; }
 public:
   Name* getName() const { return name; }
@@ -636,11 +565,10 @@ class DeclList : public AST {
   llvm::SmallVector<Decl*, 0> decls;
 public:
   DeclList(Location loc, llvm::SmallVector<Decl*, 0> decls)
-      : AST(DECLLIST, loc) { this->decls = decls; }
+      : AST(DECLLIST, loc), decls(decls) {}
   ~DeclList() { for (Decl* d : decls) deleteAST(d); }
-  static DeclList* downcast(AST* ast) {
-    return ast->getID() == DECLLIST ? static_cast<DeclList*>(ast) : nullptr;
-  }
+  static DeclList* downcast(AST* ast)
+    { return ast->getID() == DECLLIST ? static_cast<DeclList*>(ast) : nullptr; }
   llvm::ArrayRef<Decl*> asArrayRef() const { return decls; }
 };
 
@@ -648,13 +576,10 @@ class ModuleDecl : public Decl {
   DeclList* decls;
 public:
   ModuleDecl(Location loc, Name* name, DeclList* decls)
-      : Decl(MODULE, loc, name) {
-    this->decls = decls;
-  }
+      : Decl(MODULE, loc, name), decls(decls) {}
   ~ModuleDecl() { delete decls; }
-  static ModuleDecl* downcast(AST* ast) {
-    return ast->getID() == MODULE ? static_cast<ModuleDecl*>(ast) : nullptr;
-  }
+  static ModuleDecl* downcast(AST* ast)
+    { return ast->getID() == MODULE ? static_cast<ModuleDecl*>(ast) : nullptr; }
   DeclList* getDecls() const { return decls; }
 };
 
@@ -662,12 +587,11 @@ class NamespaceDecl : public Decl {
   DeclList* decls;
 public:
   NamespaceDecl(Location loc, Name* name, DeclList* decls)
-      : Decl(NAMESPACE, loc, name) {
-    this->decls = decls;
-  }
+    : Decl(NAMESPACE, loc, name), decls(decls) {}
   ~NamespaceDecl() { delete decls; }
   static NamespaceDecl* downcast(AST* ast) {
-    return ast->getID() == NAMESPACE ? static_cast<NamespaceDecl*>(ast) : nullptr;
+    return ast->getID() == NAMESPACE ?
+           static_cast<NamespaceDecl*>(ast) : nullptr;
   }
   DeclList* getDecls() const { return decls; }
 };
@@ -678,15 +602,14 @@ class ParamList : public AST {
   llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> params;
 public:
   ParamList(Location loc, llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> ps)
-      : AST(PARAMLIST, loc), params(ps) {}
-  ~ParamList() {
-    for (auto p : params) { delete p.first; deleteAST(p.second); }
-  }
+    : AST(PARAMLIST, loc), params(ps) {}
+  ~ParamList()
+    { for (auto p : params) { delete p.first; deleteAST(p.second); } }
   static ParamList* downcast(AST* ast) {
     return ast->getID() == PARAMLIST ? static_cast<ParamList*>(ast) : nullptr;
   }
   llvm::ArrayRef<std::pair<Name*, TypeExp*>> asArrayRef() const
-      { return params; }
+    { return params; }
 };
 
 /// @brief A function or extern function (FUNC/EXTERN_FUNC).
@@ -695,18 +618,12 @@ class FunctionDecl : public Decl {
   TypeExp* returnType;
   Exp* body;
 public:
-  FunctionDecl(Location loc, Name* name, ParamList* parameters,
-      TypeExp* returnType, Exp* body) : Decl(FUNC, loc, name) {
-    this->parameters = parameters;
-    this->returnType = returnType;
-    this->body = body;
-  }
-  FunctionDecl(Location loc, Name* name, ParamList* parameters,
-      TypeExp* returnType) : Decl(EXTERN_FUNC, loc, name) {
-    this->parameters = parameters;
-    this->returnType = returnType;
-    this->body = nullptr;
-  }
+  FunctionDecl(Location loc, Name* name, ParamList* params, TypeExp* returnType,
+    Exp* body) : Decl(FUNC, loc, name), parameters(params),
+    returnType(returnType), body(body) {}
+  FunctionDecl(Location loc, Name* name, ParamList* params, TypeExp* returnType)
+    : Decl(EXTERN_FUNC, loc, name), parameters(params), returnType(returnType),
+    body(nullptr) {}
   ~FunctionDecl() { delete parameters; deleteAST(returnType); deleteAST(body); }
   static FunctionDecl* downcast(AST* ast) {
     return ast->getID() == FUNC || ast->getID() == EXTERN_FUNC ?
@@ -722,11 +639,10 @@ class DataDecl : public Decl {
   ParamList* fields;
 public:
   DataDecl(Location loc, Name* name, ParamList* fields)
-      : Decl(DATA, loc, name) { this->fields = fields; }
+    : Decl(DATA, loc, name), fields(fields) {}
   ~DataDecl() { delete fields; }
-  static DataDecl* downcast(AST* ast) {
-    return ast->getID() == DATA ? static_cast<DataDecl*>(ast) : nullptr;
-  }
+  static DataDecl* downcast(AST* ast)
+    { return ast->getID() == DATA ? static_cast<DataDecl*>(ast) : nullptr; }
   ParamList* getFields() const { return fields; }
 };
 
@@ -780,13 +696,13 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::ARRAY_LIST:         return "ARRAY_LIST";
   case AST::ID::ASCRIP:             return "ASCRIP";
   case AST::ID::BLOCK:              return "BLOCK";
+  case AST::ID::BOOL_LIT:           return "BOOL_LIT";
   case AST::ID::CALL:               return "CALL";
   case AST::ID::DEC_LIT:            return "DEC_LIT";
   case AST::ID::DEREF:              return "DEREF";
   case AST::ID::DIV:                return "DIV";
   case AST::ID::ENAME:              return "ENAME";
   case AST::ID::EQ:                 return "EQ";
-  case AST::ID::FALSE:              return "FALSE";
   case AST::ID::IF:                 return "IF";
   case AST::ID::GE:                 return "GE";
   case AST::ID::GT:                 return "GT";
@@ -802,8 +718,6 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::STORE:              return "STORE";
   case AST::ID::STRING_LIT:         return "STRING_LIT";
   case AST::ID::SUB:                return "SUB";
-  case AST::ID::TRUE:               return "TRUE";
-  case AST::ID::WREF_EXP:           return "WREF_EXP";
 
   case AST::ID::DATA:               return "DATA";
   case AST::ID::EXTERN_FUNC:        return "EXTERN_FUNC";
@@ -822,7 +736,6 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::REF_TEXP:           return "REF_TEXP";
   case AST::ID::STR_TEXP:           return "STR_TEXP";
   case AST::ID::UNIT_TEXP:          return "UNIT_TEXP";
-  case AST::ID::WREF_TEXP:          return "WREF_TEXP";
   
   case AST::ID::DECLLIST:           return "DECLLIST";
   case AST::ID::EXPLIST:            return "EXPLIST";
@@ -837,13 +750,13 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "ARRAY_LIST")          return AST::ID::ARRAY_LIST;
   else if (str == "ASCRIP")              return AST::ID::ASCRIP;
   else if (str == "BLOCK")               return AST::ID::BLOCK;
+  else if (str == "BOOL_LIT")            return AST::ID::BOOL_LIT;
   else if (str == "CALL")                return AST::ID::CALL;
   else if (str == "DEC_LIT")             return AST::ID::DEC_LIT;
   else if (str == "DEREF")               return AST::ID::DEREF;
   else if (str == "DIV")                 return AST::ID::DIV;
   else if (str == "ENAME")               return AST::ID::ENAME;
   else if (str == "EQ")                  return AST::ID::EQ;
-  else if (str == "FALSE")               return AST::ID::FALSE;
   else if (str == "GE")                  return AST::ID::GE;
   else if (str == "GT")                  return AST::ID::GT;
   else if (str == "IF")                  return AST::ID::IF;
@@ -859,8 +772,6 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "STORE")               return AST::ID::STORE;
   else if (str == "STRING_LIT")          return AST::ID::STRING_LIT;
   else if (str == "SUB")                 return AST::ID::SUB;
-  else if (str == "TRUE")                return AST::ID::TRUE;
-  else if (str == "WREF_EXP")            return AST::ID::WREF_EXP;
 
   else if (str == "DATA")                return AST::ID::DATA;
   else if (str == "EXTERN_FUNC")         return AST::ID::EXTERN_FUNC;
@@ -879,7 +790,6 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "REF_TEXP")            return AST::ID::REF_TEXP;
   else if (str == "STR_TEXP")            return AST::ID::STR_TEXP;
   else if (str == "UNIT_TEXP")           return AST::ID::UNIT_TEXP;
-  else if (str == "WREF_TEXP")           return AST::ID::WREF_TEXP;
   
   else if (str == "DECLLIST")            return AST::ID::DECLLIST;
   else if (str == "EXPLIST")             return AST::ID::EXPLIST;
@@ -978,10 +888,10 @@ std::vector<AST*> getSubnodes(AST* ast) {
       ret.push_back(param.first);
       ret.push_back(param.second);
     }
-  } else if (id == AST::ID::REF_EXP || id == AST::ID::WREF_EXP) {
+  } else if (id == AST::ID::REF_EXP) {
     auto n = reinterpret_cast<const RefExp*>(ast);
     ret.push_back(n->getInitializer());
-  } else if (id == AST::ID::REF_TEXP || id == AST::ID::WREF_TEXP) {
+  } else if (id == AST::ID::REF_TEXP) {
     auto n = reinterpret_cast<const RefTypeExp*>(ast);
     ret.push_back(n->getPointeeType());
   } else if (id == AST::ID::RETURN) {
