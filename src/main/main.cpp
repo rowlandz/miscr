@@ -22,15 +22,14 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  ASTContext ctx;
-  Parser parser(&ctx, lexer.getTokens());
-  Addr<DeclList> parsedDeclList = parser.decls0();
-  if (parsedDeclList.isError()) {
+  Parser parser(lexer.getTokens());
+  DeclList* parsedDeclList = parser.decls0();
+  if (parsedDeclList == nullptr) {
     printf("%s", parser.getError().render(text, lexer.getLocationTable()).c_str());
     exit(1);
   }
 
-  Typer typer(&ctx);
+  Typer typer;
   typer.typeDeclList(parsedDeclList);
   if (typer.unifier.getErrors()->size() > 0) {
     for (auto err : *typer.unifier.getErrors()) {
@@ -39,7 +38,7 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  Codegen codegen(&ctx, typer.getTypeContext(), &typer.ont);
+  Codegen codegen(typer.getTypeContext(), &typer.ont);
   codegen.genDeclList(parsedDeclList);
   codegen.mod->setModuleIdentifier(argv[1]);
   codegen.mod->setSourceFileName(argv[1]);

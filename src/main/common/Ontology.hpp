@@ -74,6 +74,14 @@ public:
     return moduleSpace.lookup(name);
   }
 
+  /// @brief Returns the mapped version of `name` if it exists, otherwise
+  /// just returns `name` itself.
+  llvm::StringRef mapName(llvm::StringRef name) const {
+    auto res = mappedFuncNames.find(name);
+    if (res == mappedFuncNames.end()) return name;
+    else return res->second;
+  }
+
 };
 
 #endif

@@ -12,11 +12,10 @@ namespace TyperTests {
   void expShouldHaveType(const char* expText, const char* expectedTy) {
     Lexer lexer(expText);
     if (!lexer.run()) throw std::runtime_error("Lexer error");
-    ASTContext ctx;
-    Parser parser(&ctx, lexer.getTokens());
-    Addr<Exp> parsed = parser.exp();
-    if (parsed.isError()) throw std::runtime_error("Parser error");
-    Typer typer(&ctx);
+    Parser parser(lexer.getTokens());
+    Exp* parsed = parser.exp();
+    if (parsed == nullptr) throw std::runtime_error("Parser error");
+    Typer typer;
     typer.typeExp(parsed);
     if (typer.unifier.getErrors()->size() > 0) {
       std::string errStr;
@@ -24,7 +23,7 @@ namespace TyperTests {
         errStr.append(err.render(expText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
-    TVar infTy = ctx.get(parsed).getTVar();
+    TVar infTy = parsed->getTVar();
     std::string infTyStr = typer.unifier.getTypeContext()->TVarToString(infTy);
     if (infTyStr != expectedTy) throw std::runtime_error(
       "Inferred " + infTyStr + " but expected " + expectedTy);
@@ -33,11 +32,10 @@ namespace TyperTests {
   void expShouldFailTyper(const char* expText) {
     Lexer lexer(expText);
     if (!lexer.run()) throw std::runtime_error("Lexer error");
-    ASTContext ctx;
-    Parser parser(&ctx, lexer.getTokens());
-    Addr<Exp> parsed = parser.exp();
-    if (parsed.isError()) throw std::runtime_error("Parser error");
-    Typer typer(&ctx);
+    Parser parser(lexer.getTokens());
+    Exp* parsed = parser.exp();
+    if (parsed == nullptr) throw std::runtime_error("Parser error");
+    Typer typer;
     typer.typeExp(parsed);
     if (typer.unifier.getErrors()->size() == 0)
       throw std::runtime_error("Expected failure, but it succeeded.");
@@ -46,11 +44,10 @@ namespace TyperTests {
   void declShouldPass(const char* declText) {
     Lexer lexer(declText);
     if (!lexer.run()) throw std::runtime_error("Lexer error");
-    ASTContext ctx;
-    Parser parser(&ctx, lexer.getTokens());
-    Addr<Decl> parsed = parser.decl();
-    if (parsed.isError()) throw std::runtime_error("Parser error");
-    Typer typer(&ctx);
+    Parser parser(lexer.getTokens());
+    Decl* parsed = parser.decl();
+    if (parsed == nullptr) throw std::runtime_error("Parser error");
+    Typer typer;
     typer.typeDecl(parsed);
     if (typer.unifier.getErrors()->size() > 0) {
       std::string errStr;
@@ -63,11 +60,10 @@ namespace TyperTests {
   void declShouldFail(const char* declText) {
     Lexer lexer(declText);
     if (!lexer.run()) throw std::runtime_error("Lexer error");
-    ASTContext ctx;
-    Parser parser(&ctx, lexer.getTokens());
-    Addr<Decl> parsed = parser.decl();
-    if (parsed.isError()) throw std::runtime_error("Parser error");
-    Typer typer(&ctx);
+    Parser parser(lexer.getTokens());
+    Decl* parsed = parser.decl();
+    if (parsed == nullptr) throw std::runtime_error("Parser error");
+    Typer typer;
     typer.typeDecl(parsed);
     if (typer.unifier.getErrors()->size() == 0)
       throw std::runtime_error("Expected failure, but it succeeded.");

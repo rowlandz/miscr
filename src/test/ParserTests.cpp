@@ -29,8 +29,7 @@ namespace ParserTests {
    * starting indentation `indent` that matches node `_n`. If successful,
    * `currentLine` is updated to point immediately after the detected tree. */
   void expectMatch(
-    const ASTContext& ctx,
-    Addr<AST> _n,
+    AST* n,
     int indent,
     std::vector<const char*>& lines,
     int* currentLine
@@ -38,46 +37,43 @@ namespace ParserTests {
     if (*currentLine >= lines.size()) throw std::runtime_error("Ran out of lines!");
     auto indAndTy = parseLine(lines[*currentLine]);
     if (indAndTy.first != indent) throw std::runtime_error("Unexpected indent");
-    if (!ctx.isValid(_n)) throw std::runtime_error("Invalid node address");
-    AST n = ctx.get(_n);
-    if (n.getID() != indAndTy.second) {
+    if (n == nullptr) throw std::runtime_error("Invalid node address");
+    if (n->getID() != indAndTy.second) {
       std::string errMsg("Node types did not match on line ");
       errMsg.append(std::to_string(*currentLine));
       errMsg.append(". Expected ");
       errMsg.append(ASTIDToString(indAndTy.second));
       errMsg.append(" but got ");
-      errMsg.append(ASTIDToString(n.getID()));
+      errMsg.append(ASTIDToString(n->getID()));
       errMsg.append(".\n");
       throw std::runtime_error(errMsg);
     }
     *currentLine = *currentLine + 1;
 
-    std::vector<Addr<AST>> subnodes = getSubnodes(ctx, _n);
-    for (Addr<AST> subnode : subnodes) {
-      expectMatch(ctx, subnode, indent+4, lines, currentLine);
+    std::vector<AST*> subnodes = getSubnodes(n);
+    for (AST* subnode : subnodes) {
+      expectMatch(subnode, indent+4, lines, currentLine);
     }
   }
 
   void expParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {
     Lexer lexer(text);
     lexer.run();
-    ASTContext ctx;
-    Parser parser(&ctx, lexer.getTokens());
+    Parser parser(lexer.getTokens());
     auto parsed = parser.exp();
-    if (parsed.isError()) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
+    if (parsed == nullptr) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
     int currentLine = 0;
-    expectMatch(ctx, parsed.upcast<AST>(), 0, expectedNodes, &currentLine);
+    expectMatch(parsed, 0, expectedNodes, &currentLine);
   }
 
   void declParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {
     Lexer lexer(text);
     lexer.run();
-    ASTContext ctx;
-    Parser parser(&ctx, lexer.getTokens());
+    Parser parser(lexer.getTokens());
     auto parsed = parser.decl();
-    if (parsed.isError()) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
+    if (parsed == nullptr) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
     int currentLine = 0;
-    expectMatch(ctx, parsed.upcast<AST>(), 0, expectedNodes, &currentLine);
+    expectMatch(parsed, 0, expectedNodes, &currentLine);
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -85,11 +81,7 @@ namespace ParserTests {
   TEST(qident) {
     expParseTreeShouldBe("global::MyModule::myfunc", {
       "ENAME",
-      "    QIDENT",
-      "        IDENT",
-      "        QIDENT",
-      "            IDENT",
-      "            IDENT",
+      "    NAME"
     });
   }
 
@@ -106,11 +98,11 @@ namespace ParserTests {
       "BLOCK",
       "    EXPLIST_CONS",
       "        LET",
-      "            IDENT",
+      "            NAME",
       "            INT_LIT",
       "        EXPLIST_CONS",
       "            ENAME",
-      "                IDENT",
+      "                NAME",
       "            EXPLIST_NIL",
     });
   }
@@ -122,11 +114,11 @@ namespace ParserTests {
       "        INT_LIT",
       "        EXPLIST_CONS",
       "            ENAME",
-      "                IDENT",
+      "                NAME",
       "            EXPLIST_CONS",
       "                ADD",
       "                    ENAME",
-      "                        IDENT",
+      "                        NAME",
       "                    INT_LIT",
       "                EXPLIST_NIL",
     });
@@ -143,13 +135,13 @@ namespace ParserTests {
   TEST(main_prints_hello_world) {
     declParseTreeShouldBe("func main(): i32 = { println(\"Hello World\"); };", {
       "FUNC",
-      "    IDENT",
+      "    NAME",
       "    PARAMLIST_NIL",
       "    i32_TEXP",
       "    BLOCK",
       "        EXPLIST_CONS",
       "            CALL",
-      "                IDENT",
+      "                NAME",
       "                EXPLIST_CONS",
       "                    STRING_LIT",
       "                    EXPLIST_NIL",
@@ -160,7 +152,7 @@ namespace ParserTests {
   TEST(empty_module) {
     declParseTreeShouldBe("module M {}", {
       "MODULE",
-      "    IDENT",
+      "    NAME",
       "    DECLLIST_NIL",
     });
   }
@@ -175,18 +167,18 @@ namespace ParserTests {
       "}\n"
     , {
       "MODULE",
-      "    IDENT",
+      "    NAME",
       "    DECLLIST_CONS",
       "        EXTERN_FUNC",
-      "            IDENT",
+      "            NAME",
       "            PARAMLIST_NIL",
       "            UNIT_TEXP",
       "        DECLLIST_CONS",
       "            NAMESPACE",
-      "                IDENT",
+      "                NAME",
       "                DECLLIST_CONS",
       "                    EXTERN_FUNC",
-      "                        IDENT",
+      "                        NAME",
       "                        PARAMLIST_NIL",
       "                        UNIT_TEXP",
       "                    DECLLIST_NIL",

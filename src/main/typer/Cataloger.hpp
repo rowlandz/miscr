@@ -53,17 +53,19 @@ public:
         functionNameCollisionError(fqName);
       }
 
-      func->setName(fqName);
-
-      if (relName == "main") {
+      if (relName.equals("main")) {
+        func->setName(fqName);
         if (!ont->entryPoint.empty()) {
           multipleEntryPointsError();
           return;
         }
         ont->recordMapName(func, "main");
       } else if (func->getID() == AST::ID::EXTERN_FUNC) {
-        ont->recordMapName(func, relName);
+        std::string relNameString = relName.str();
+        func->setName(fqName);
+        ont->recordMapName(func, relNameString);
       } else {
+        func->setName(fqName);
         ont->record(func);
       }
     }
