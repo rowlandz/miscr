@@ -7,12 +7,22 @@
 #include <llvm/ADT/SmallVector.h>
 #include "common/Location.hpp"
 
+class AST;
 class Exp;
-class IntLit;
+void deleteAST(AST*);
 
 /// @brief An AST node is any syntactic form that appears in source code. All
-/// AST nodes have an `id`, which is used to downcast to subclasses, and a
+/// AST nodes have an `ID`, which is used to downcast to subclasses, and a
 /// source code `location`.
+///
+/// The parser constructs the AST on the heap. After parsing, it is okay to
+/// modify the AST as long as it does not result in allocation or deletion of
+/// AST nodes. For example, fully-qualifying decl names only requires calling
+/// the `set` method of the `Name` class.
+///
+/// Calling the deconstructor on an AST pointer `p` or the `deleteAST` function
+/// should safely delete the entire subtree rooted at `p`. For this reason, the
+/// AST should always truly be a tree structure to avoid double frees.
 class AST {
 public:
   enum ID : unsigned short {
@@ -38,6 +48,7 @@ private:
 
 protected:
   AST(ID id, Location location) : id(id), location(location) {}
+  ~AST() {};
 
 public:
   ID getID() const { return id; }
@@ -134,6 +145,11 @@ public:
   Exp* getRuntimeArraySize() const { return arraySize.runtime; }
 };
 
+/// @brief A qualified or unqualified name. Unqualified names are also called
+/// identifiers. The stored string should always be one or more identifiers
+/// separated by `::` and contain no whitespace. The source text may include
+/// whitespace surrounding the `::` tokens. This whitespace is discarded by
+/// the parser but still accounted for by the name's `location`.
 class Name : public AST {
   std::string s;
 public:
@@ -154,16 +170,39 @@ public:
 class TypeExp : public AST {
 protected:
   TypeExp(ID id, Location loc) : AST(id, loc) {}
+  ~TypeExp() {}
+};
+
+class PrimitiveTypeExp : public TypeExp {
+  PrimitiveTypeExp(ID id, Location loc) : TypeExp(id, loc) {}
 public:
-  static TypeExp* newUnit(Location loc) { return new TypeExp(UNIT_TEXP, loc); }
-  static TypeExp* newBool(Location loc) { return new TypeExp(BOOL_TEXP, loc); }
-  static TypeExp* newI8(Location loc) { return new TypeExp(i8_TEXP, loc); }
-  static TypeExp* newI16(Location loc) { return new TypeExp(i16_TEXP, loc); }
-  static TypeExp* newI32(Location loc) { return new TypeExp(i32_TEXP, loc); }
-  static TypeExp* newI64(Location loc) { return new TypeExp(i64_TEXP, loc); }
-  static TypeExp* newF32(Location loc) { return new TypeExp(f32_TEXP, loc); }
-  static TypeExp* newF64(Location loc) { return new TypeExp(f64_TEXP, loc); }
-  static TypeExp* newStr(Location loc) { return new TypeExp(STR_TEXP, loc); }
+  ~PrimitiveTypeExp() {}
+  static PrimitiveTypeExp* newUnit(Location loc)
+    { return new PrimitiveTypeExp(UNIT_TEXP, loc); }
+  static PrimitiveTypeExp* newBool(Location loc)
+    { return new PrimitiveTypeExp(BOOL_TEXP, loc); }
+  static PrimitiveTypeExp* newI8(Location loc)
+    { return new PrimitiveTypeExp(i8_TEXP, loc); }
+  static PrimitiveTypeExp* newI16(Location loc)
+    { return new PrimitiveTypeExp(i16_TEXP, loc); }
+  static PrimitiveTypeExp* newI32(Location loc)
+    { return new PrimitiveTypeExp(i32_TEXP, loc); }
+  static PrimitiveTypeExp* newI64(Location loc)
+    { return new PrimitiveTypeExp(i64_TEXP, loc); }
+  static PrimitiveTypeExp* newF32(Location loc)
+    { return new PrimitiveTypeExp(f32_TEXP, loc); }
+  static PrimitiveTypeExp* newF64(Location loc)
+    { return new PrimitiveTypeExp(f64_TEXP, loc); }
+  static PrimitiveTypeExp* newStr(Location loc)
+    { return new PrimitiveTypeExp(STR_TEXP, loc); }
+  static PrimitiveTypeExp* downcast(AST* ast) {
+    switch (ast->getID()) {
+    case UNIT_TEXP: case BOOL_TEXP: case i8_TEXP: case i16_TEXP: case i32_TEXP:
+    case i64_TEXP: case f32_TEXP: case f64_TEXP: case STR_TEXP:
+      return static_cast<PrimitiveTypeExp*>(ast);
+    default: return nullptr;
+    }
+  }
 };
 
 /// @brief A read-only or writable reference type expression.
@@ -176,6 +215,7 @@ public:
     this->pointeeType = pointeeType;
     this->writable = writable;
   }
+  ~RefTypeExp() { deleteAST(pointeeType); }
   static RefTypeExp* downcast(AST* ast) {
     return (ast->getID() == REF_TEXP || ast->getID() == WREF_TEXP) ?
            static_cast<RefTypeExp*>(ast) : nullptr;
@@ -196,6 +236,9 @@ public:
       : TypeExp(ARRAY_TEXP, loc) {
     this->size = size; this->innerType = innerType;
   }
+  ~ArrayTypeExp() {
+    deleteAST(reinterpret_cast<AST*>(size)); deleteAST(innerType);
+  }
   static ArrayTypeExp* downcast(AST* ast) {
     return ast->getID() == ARRAY_TEXP ?
            static_cast<ArrayTypeExp*>(ast) : nullptr;
@@ -215,6 +258,7 @@ class Exp : public AST {
 protected:
   TVar type = TVar::none();
   Exp(ID id, Location loc) : AST(id, loc) {}
+  ~Exp() {}
 public:
   static Exp* downcast(AST* ast) {
     return ast->isExp() ? static_cast<Exp*>(ast) : nullptr;
@@ -238,6 +282,10 @@ public:
     exps.push_back(head);
     for (auto elem : rest) exps.push_back(elem);
     delete tail;
+  }
+  ~ExpList() { for (Exp* e : exps) deleteAST(e); }
+  static ExpList* downcast(AST* ast) {
+    return ast->getID() == EXPLIST ? static_cast<ExpList*>(ast) : nullptr;
   }
   bool isEmpty() const { return exps.empty(); }
   bool nonEmpty() const { return !exps.empty(); }
@@ -335,6 +383,7 @@ public:
   NameExp(Location loc, Name* name) : Exp(ENAME, loc) {
     this->name = name;
   }
+  ~NameExp() { delete name; }
   static NameExp* downcast(AST* ast) {
     return ast->getID() == ENAME ? static_cast<NameExp*>(ast) : nullptr;
   }
@@ -350,6 +399,7 @@ public:
     this->lhs = lhs;
     this->rhs = rhs;
   }
+  ~BinopExp() { deleteAST(lhs); deleteAST(rhs); }
   static BinopExp* downcast(AST* ast) {
     return ast->isBinopExp() ? static_cast<BinopExp*>(ast) : nullptr;
   }
@@ -369,6 +419,7 @@ public:
     this->thenExp = thenExp;
     this->elseExp = elseExp;
   }
+  ~IfExp() { deleteAST(condExp); deleteAST(thenExp); deleteAST(elseExp); }
   static IfExp* downcast(AST* ast) {
     return ast->getID() == IF ? static_cast<IfExp*>(ast) : nullptr;
   }
@@ -384,6 +435,7 @@ public:
   BlockExp(Location loc, ExpList* statements) : Exp(BLOCK, loc) {
     this->statements = statements;
   }
+  ~BlockExp() { delete statements; }
   static BlockExp* downcast(AST* ast) {
     return ast->getID() == BLOCK ? static_cast<BlockExp*>(ast) : nullptr;
   }
@@ -400,13 +452,13 @@ public:
     this->function = function;
     this->arguments = arguments;
   }
+  ~CallExp() { delete function; delete arguments; }
   static CallExp* downcast(AST* ast) {
     return ast->getID() == CALL ? static_cast<CallExp*>(ast) : nullptr;
   }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
-  /// TODO: should this copy the name or can it just store the pointer?
-  void setFunction(Name* function) { this->function = function; }
+  void setFunction(llvm::StringRef name) { function->set(name); }
 };
 
 /// @brief A type ascription expression.
@@ -419,6 +471,7 @@ public:
     this->ascriptee = ascriptee;
     this->ascripter = ascripter;
   }
+  ~AscripExp() { deleteAST(ascriptee); deleteAST(ascripter); }
   static AscripExp* downcast(AST* ast) {
     return ast->getID() == ASCRIP ? static_cast<AscripExp*>(ast) : nullptr;
   }
@@ -438,6 +491,7 @@ public:
     this->ascrip = ascrip;
     this->definition = definition;
   }
+  ~LetExp() { delete boundIdent; deleteAST(ascrip); deleteAST(definition); }
   static LetExp* downcast(AST* ast) {
     return ast->getID() == LET ? static_cast<LetExp*>(ast) : nullptr;
   }
@@ -453,6 +507,7 @@ public:
   ReturnExp(Location loc, Exp* returnee) : Exp(RETURN, loc) {
     this->returnee = returnee;
   }
+  ~ReturnExp() { deleteAST(returnee); }
   static ReturnExp* downcast(AST* ast) {
     return ast->getID() == RETURN ? static_cast<ReturnExp*>(ast) : nullptr;
   }
@@ -468,6 +523,7 @@ public:
     this->lhs = lhs;
     this->rhs = rhs;
   }
+  ~StoreExp() { deleteAST(lhs); deleteAST(rhs); }
   static StoreExp* downcast(AST* ast) {
     return ast->getID() == STORE ? static_cast<StoreExp*>(ast) : nullptr;
   }
@@ -475,7 +531,8 @@ public:
   Exp* getRHS() const { return rhs; }
 };
 
-/// @brief A read-only or writable reference constructor expression.
+/// @brief An expression that allocates and initializes stack memory and returns
+/// a reference to that memory (e.g., `&myexp` or `#myexp`).
 class RefExp : public Exp {
   Exp* initializer;
 public:
@@ -483,6 +540,7 @@ public:
       : Exp(writable ? WREF_EXP : REF_EXP, loc) {
     this->initializer = initializer;
   }
+  ~RefExp() { deleteAST(initializer); }
   static RefExp* downcast(AST* ast) {
     return (ast->getID() == REF_EXP || ast->getID() == WREF_EXP) ?
            static_cast<RefExp*>(ast) : nullptr;
@@ -495,6 +553,7 @@ class DerefExp : public Exp {
   Exp* of;
 public:
   DerefExp(Location loc, Exp* of) : Exp(DEREF, loc) { this->of = of; }
+  ~DerefExp() { deleteAST(of); }
   static DerefExp* downcast(AST* ast) {
     return ast->getID() == DEREF ? static_cast<DerefExp*>(ast) : nullptr;
   }
@@ -509,6 +568,7 @@ public:
   ArrayListExp(Location loc, ExpList* content) : Exp(ARRAY_LIST, loc) {
     this->content = content;
   }
+  ~ArrayListExp() { delete content; }
   static ArrayListExp* downcast(AST* ast) {
     return ast->getID() == ARRAY_LIST ?
            static_cast<ArrayListExp*>(ast) : nullptr;
@@ -527,6 +587,7 @@ public:
     this->size = size;
     this->initializer = initializer;
   }
+  ~ArrayInitExp() { deleteAST(size); deleteAST(initializer); }
   static ArrayInitExp* downcast(AST* ast) {
     return ast->getID() == ARRAY_INIT ?
            static_cast<ArrayInitExp*>(ast) : nullptr;
@@ -544,6 +605,7 @@ public:
   IndexExp(Location loc, Exp* base, Exp* index) : Exp(INDEX, loc) {
     this->base = base; this->index = index;
   }
+  ~IndexExp() { deleteAST(base); deleteAST(index); }
   static IndexExp* downcast(AST* ast) {
     return ast->getID() == INDEX ? static_cast<IndexExp*>(ast) : nullptr;
   }
@@ -562,6 +624,7 @@ protected:
   Decl(ID id, Location loc, Name* name) : AST(id, loc) {
     this->name = name;
   }
+  ~Decl() { delete name; }
 public:
   Name* getName() const { return name; }
   /// @brief Safely sets the name of this decl to `name`. 
@@ -573,7 +636,11 @@ class DeclList : public AST {
   llvm::SmallVector<Decl*, 0> decls;
 public:
   DeclList(Location loc, llvm::SmallVector<Decl*, 0> decls)
-      : AST(DECLLIST, loc), decls(decls) {}
+      : AST(DECLLIST, loc) { this->decls = decls; }
+  ~DeclList() { for (Decl* d : decls) deleteAST(d); }
+  static DeclList* downcast(AST* ast) {
+    return ast->getID() == DECLLIST ? static_cast<DeclList*>(ast) : nullptr;
+  }
   llvm::ArrayRef<Decl*> asArrayRef() const { return decls; }
 };
 
@@ -584,6 +651,7 @@ public:
       : Decl(MODULE, loc, name) {
     this->decls = decls;
   }
+  ~ModuleDecl() { delete decls; }
   static ModuleDecl* downcast(AST* ast) {
     return ast->getID() == MODULE ? static_cast<ModuleDecl*>(ast) : nullptr;
   }
@@ -597,6 +665,7 @@ public:
       : Decl(NAMESPACE, loc, name) {
     this->decls = decls;
   }
+  ~NamespaceDecl() { delete decls; }
   static NamespaceDecl* downcast(AST* ast) {
     return ast->getID() == NAMESPACE ? static_cast<NamespaceDecl*>(ast) : nullptr;
   }
@@ -610,6 +679,12 @@ class ParamList : public AST {
 public:
   ParamList(Location loc, llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> ps)
       : AST(PARAMLIST, loc), params(ps) {}
+  ~ParamList() {
+    for (auto p : params) { delete p.first; deleteAST(p.second); }
+  }
+  static ParamList* downcast(AST* ast) {
+    return ast->getID() == PARAMLIST ? static_cast<ParamList*>(ast) : nullptr;
+  }
   llvm::ArrayRef<std::pair<Name*, TypeExp*>> asArrayRef() const
       { return params; }
 };
@@ -632,6 +707,7 @@ public:
     this->returnType = returnType;
     this->body = nullptr;
   }
+  ~FunctionDecl() { delete parameters; deleteAST(returnType); deleteAST(body); }
   static FunctionDecl* downcast(AST* ast) {
     return ast->getID() == FUNC || ast->getID() == EXTERN_FUNC ?
            static_cast<FunctionDecl*>(ast) : nullptr;
@@ -647,11 +723,53 @@ class DataDecl : public Decl {
 public:
   DataDecl(Location loc, Name* name, ParamList* fields)
       : Decl(DATA, loc, name) { this->fields = fields; }
+  ~DataDecl() { delete fields; }
   static DataDecl* downcast(AST* ast) {
     return ast->getID() == DATA ? static_cast<DataDecl*>(ast) : nullptr;
   }
   ParamList* getFields() const { return fields; }
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// DELETE AST
+////////////////////////////////////////////////////////////////////////////////
+
+/// @brief Safely deletes an AST node by first downcasting to the lowest type
+/// in the inheritance hierarchy before calling the destructor. It is safe to
+/// pass `nullptr` to this function.
+void deleteAST(AST* _ast) {
+       if (_ast == nullptr) {}
+  else if (auto ast = Name::downcast(_ast)) delete ast;
+  else if (auto ast = PrimitiveTypeExp::downcast(_ast)) delete ast;
+  else if (auto ast = RefTypeExp::downcast(_ast)) delete ast;
+  else if (auto ast = ArrayTypeExp::downcast(_ast)) delete ast;
+  else if (auto ast = ExpList::downcast(_ast)) delete ast;
+  else if (auto ast = BoolLit::downcast(_ast)) delete ast;
+  else if (auto ast = IntLit::downcast(_ast)) delete ast;
+  else if (auto ast = DecimalLit::downcast(_ast)) delete ast;
+  else if (auto ast = StringLit::downcast(_ast)) delete ast;
+  else if (auto ast = NameExp::downcast(_ast)) delete ast;
+  else if (auto ast = BinopExp::downcast(_ast)) delete ast;
+  else if (auto ast = IfExp::downcast(_ast)) delete ast;
+  else if (auto ast = BlockExp::downcast(_ast)) delete ast;
+  else if (auto ast = CallExp::downcast(_ast)) delete ast;
+  else if (auto ast = AscripExp::downcast(_ast)) delete ast;
+  else if (auto ast = LetExp::downcast(_ast)) delete ast;
+  else if (auto ast = ReturnExp::downcast(_ast)) delete ast;
+  else if (auto ast = StoreExp::downcast(_ast)) delete ast;
+  else if (auto ast = RefExp::downcast(_ast)) delete ast;
+  else if (auto ast = DerefExp::downcast(_ast)) delete ast;
+  else if (auto ast = ArrayListExp::downcast(_ast)) delete ast;
+  else if (auto ast = ArrayInitExp::downcast(_ast)) delete ast;
+  else if (auto ast = IndexExp::downcast(_ast)) delete ast;
+  else if (auto ast = DeclList::downcast(_ast)) delete ast;
+  else if (auto ast = ModuleDecl::downcast(_ast)) delete ast;
+  else if (auto ast = NamespaceDecl::downcast(_ast)) delete ast;
+  else if (auto ast = ParamList::downcast(_ast)) delete ast;
+  else if (auto ast = FunctionDecl::downcast(_ast)) delete ast;
+  else if (auto ast = DataDecl::downcast(_ast)) delete ast;
+  else llvm_unreachable("deleteAST case not supported!");
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 

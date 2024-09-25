@@ -347,15 +347,15 @@ public:
   // ---------- Type Expressions ----------
 
   TypeExp* typeExpLv0() {
-    if (p->ty == KW_f32) return TypeExp::newF32(tokToLoc(p++));
-    if (p->ty == KW_f64) return TypeExp::newF64(tokToLoc(p++));
-    if (p->ty == KW_i8) return TypeExp::newI8(tokToLoc(p++));
-    if (p->ty == KW_i16) return TypeExp::newI16(tokToLoc(p++));
-    if (p->ty == KW_i32) return TypeExp::newI32(tokToLoc(p++));
-    if (p->ty == KW_i64) return TypeExp::newI64(tokToLoc(p++));
-    if (p->ty == KW_BOOL) return TypeExp::newBool(tokToLoc(p++));
-    if (p->ty == KW_STR) return TypeExp::newStr(tokToLoc(p++));
-    if (p->ty == KW_UNIT) return TypeExp::newUnit(tokToLoc(p++));
+    if (p->ty == KW_f32) return PrimitiveTypeExp::newF32(tokToLoc(p++));
+    if (p->ty == KW_f64) return PrimitiveTypeExp::newF64(tokToLoc(p++));
+    if (p->ty == KW_i8) return PrimitiveTypeExp::newI8(tokToLoc(p++));
+    if (p->ty == KW_i16) return PrimitiveTypeExp::newI16(tokToLoc(p++));
+    if (p->ty == KW_i32) return PrimitiveTypeExp::newI32(tokToLoc(p++));
+    if (p->ty == KW_i64) return PrimitiveTypeExp::newI64(tokToLoc(p++));
+    if (p->ty == KW_BOOL) return PrimitiveTypeExp::newBool(tokToLoc(p++));
+    if (p->ty == KW_STR) return PrimitiveTypeExp::newStr(tokToLoc(p++));
+    if (p->ty == KW_UNIT) return PrimitiveTypeExp::newUnit(tokToLoc(p++));
     TypeExp* ret = arrayTypeExp(); CONTINUE_ON_EPSILON(ret)
     EPSILON_ERROR
   }

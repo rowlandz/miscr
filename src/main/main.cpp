@@ -50,5 +50,7 @@ int main(int argc, char* argv[]) {
   outDotLL << *codegen.mod;
   outDotLL.flush();
 
+  delete parsedDeclList;
+
   return 0;
 }

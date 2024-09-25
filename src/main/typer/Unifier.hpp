@@ -285,7 +285,7 @@ public:
         /*** set this expression's type to the callee's return type ***/
         e->setTVar(freshFromTypeExp(callee->getReturnType()));
         /*** fully qualify the callee name ***/
-        e->setFunction(callee->getName());
+        e->setFunction(callee->getName()->asStringRef());
       } else {
         std::string errMsg = "Function " + calleeRelName + " not found.";
         errors.push_back(LocatedError(e->getLocation(), errMsg));

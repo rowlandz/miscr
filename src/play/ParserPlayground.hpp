@@ -39,10 +39,11 @@ check_input:
     if (parsed != nullptr) {
       std::vector<bool> indents;
       print_parse_tree(parsed, indents);
-      // TODO TODO TODO: FREE PARSED AST MEMORY!!!!!!!!!
+      deleteAST(parsed);
       goto next_input;
     } else if (line.size() == 0) {
       std::cout << parser.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
+      deleteAST(parsed);
       goto next_input;
     } else goto next_line;
   } else if (line.size() == 0) {
