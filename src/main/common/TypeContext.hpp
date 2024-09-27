@@ -105,6 +105,7 @@ public:
       case Type::ID::i16: return std::string("i16");
       case Type::ID::i32: return std::string("i32");
       case Type::ID::i64: return std::string("i64");
+      case Type::ID::NAME: return res.second.getName()->asStringRef().str();
       case Type::ID::NUMERIC: return std::string("numeric");
       case Type::ID::UNIT: return std::string("unit");
       default: return std::string("???");

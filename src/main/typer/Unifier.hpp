@@ -18,19 +18,13 @@
 class Unifier {
  
   /// Maps decls to their definitions or declarations.
-  const Ontology* ont;
+  const Ontology& ont;
 
   /// Maps local variable names to type vars.
   ScopeStack<TVar> localVarTypes;
 
-  /// Holds all scopes that could be used to fully-qualify a relative path.
-  /// First scope is always "global", then each successive scope is an extension
-  /// of the one before it. The last one is the "current scope".
-  /// e.g., `{ "global", "global::MyMod", "global::MyMod::MyMod2" }`
-  std::vector<std::string> relativePathQualifiers;
-
   /// Accumulates type checking errors.
-  std::vector<LocatedError> errors;
+  std::vector<LocatedError>& errors;
   
   TypeContext tc;
 
@@ -41,6 +35,9 @@ class Unifier {
     if (auto texp = ArrayTypeExp::downcast(_texp)) {
       return tc.fresh(Type::array_sart(texp->getSize(),
         freshFromTypeExp(texp->getInnerType())));
+    }
+    if (auto texp = NameTypeExp::downcast(_texp)) {
+      return tc.fresh(Type::name(texp->getName()));
     }
     if (auto texp = RefTypeExp::downcast(_texp)) {
       if (texp->isWritable())
@@ -63,10 +60,8 @@ class Unifier {
 
 public:
 
-  Unifier(Ontology* ont) {
-    this->ont = ont;
-    relativePathQualifiers.push_back("global");
-  }
+  Unifier(Ontology& ont, std::vector<LocatedError>& errors)
+    : ont(ont), errors(errors) {}
 
   const TypeContext* getTypeContext() const { return &tc; }
 
@@ -95,6 +90,11 @@ public:
       } else if (ty == Type::ID::REF || ty == Type::ID::RREF
       || ty == Type::ID::WREF) {
         if (!unify(t1.getInner(), t2.getInner())) return false;
+        tc.bind(w1, w2);
+        return true;
+      } else if (ty == Type::ID::NAME) {
+        if (t1.getName()->asStringRef() != t2.getName()->asStringRef())
+          return false;
         tc.bind(w1, w2);
         return true;
       } else if (ty == Type::ID::BOOL || ty == Type::ID::DECIMAL
@@ -263,33 +263,44 @@ public:
     }
 
     else if (auto e = CallExp::downcast(_e)) {
-      std::string calleeRelName = e->getFunction()->asStringRef().str();
-      FunctionDecl* callee = lookupFuncByRelName(calleeRelName);
-      if (callee != nullptr) {
+      llvm::StringRef calleeName = e->getFunction()->asStringRef();
+      Decl* _callee = ont.getDecl(calleeName, Ontology::Space::FUNCTION_OR_TYPE);
+      assert (_callee != nullptr && "Bug in cataloger or canonicalizer.");
+      if (auto callee = FunctionDecl::downcast(_callee)) {
         /*** unify each argument with corresponding parameter ***/
-        auto expList = e->getArguments()->asArrayRef();
+        auto argList = e->getArguments()->asArrayRef();
         auto paramList = callee->getParameters()->asArrayRef();
         int idx = 0;
-        while (idx < expList.size() && idx < paramList.size()) {
+        while (idx < argList.size() && idx < paramList.size()) {
           TVar paramType = freshFromTypeExp(paramList[idx].second);
-          expectTypeToBe(expList[idx], paramType);
+          expectTypeToBe(argList[idx], paramType);
           ++idx;
         }
-        if (idx < expList.size() || idx < paramList.size()) {
-          Name* calleeFQIdent = callee->getName();
+        if (idx < argList.size() || idx < paramList.size()) {
           llvm::Twine errMsg = "Arity mismatch for function " +
             callee->getName()->asStringRef() + ".";
           errors.push_back(LocatedError(e->getLocation(), errMsg.str()));
         }
         /*** set this expression's type to the callee's return type ***/
         e->setTVar(freshFromTypeExp(callee->getReturnType()));
-        /*** fully qualify the callee name ***/
-        e->setFunction(callee->getName()->asStringRef());
-      } else {
-        std::string errMsg = "Function " + calleeRelName + " not found.";
-        errors.push_back(LocatedError(e->getLocation(), errMsg));
-        e->setTVar(tc.fresh());
       }
+      else if (auto callee = DataDecl::downcast(_callee)) {
+        auto args = e->getArguments()->asArrayRef();
+        auto params = callee->getFields()->asArrayRef();
+        int idx = 0;
+        while (idx < args.size() && idx < params.size()) {
+          TVar paramType = freshFromTypeExp(params[idx].second);
+          expectTypeToBe(args[idx], paramType);
+          ++idx;
+        }
+        if (idx < args.size() || idx < params.size()) {
+          llvm::Twine errMsg = "Arity mismatch for constructor " +
+            callee->getName()->asStringRef() + ".";
+          errors.push_back(LocatedError(e->getLocation(), errMsg.str()));
+        }
+        e->setTVar(tc.fresh(Type::name(callee->getName())));
+      }
+      else llvm_unreachable("Unexpected callee");
     }
 
     else if (auto e = DecimalLit::downcast(_e)) {
@@ -404,9 +415,7 @@ public:
   }
 
   void unifyModule(ModuleDecl* mod) {
-    relativePathQualifiers.push_back(mod->getName()->asStringRef().str());
     unifyDeclList(mod->getDecls());
-    relativePathQualifiers.pop_back();
   }
 
   void unifyDecl(Decl* _decl) {
@@ -414,6 +423,8 @@ public:
       unifyFunc(func);
     else if (auto mod = ModuleDecl::downcast(_decl))
       unifyModule(mod);
+    else if (_decl->getID() == AST::ID::DATA)
+      {}
     else
       llvm_unreachable("Didn't recognize decl");
   }
@@ -428,16 +439,6 @@ public:
       TVar paramTy = freshFromTypeExp(param.second);
       localVarTypes.add(paramName, paramTy);
     }
-  }
-
-  FunctionDecl* lookupFuncByRelName(std::string relName) {
-    for (auto iter = relativePathQualifiers.crbegin();
-         iter != relativePathQualifiers.crend(); ++iter) {
-      std::string fqName = *iter + "::" + relName;
-      FunctionDecl* a = ont->getFunction(*iter + "::" + relName);
-      if (a != nullptr) return a;
-    }
-    return nullptr;
   }
 };
 

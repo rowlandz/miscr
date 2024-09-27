@@ -3,70 +3,69 @@
 
 #include "llvm/ADT/Twine.h"
 #include "common/AST.hpp"
+#include "common/LocatedError.hpp"
 #include "common/Ontology.hpp"
 
 /// @brief First of the two type checking phases. Fully qualifies all decl names
 /// and builds an `Ontology`.
 class Cataloger {
-  Ontology* ont;
-  std::vector<std::string> errors;
+  Ontology& ont;
+  std::vector<LocatedError>& errors;
 
 public:
-  Cataloger(Ontology* ont) {
-    this->ont = ont;
+  Cataloger(Ontology& ont, std::vector<LocatedError>& errors)
+    : ont(ont), errors(errors) {}
+  
+  void run(Decl* decl) {
+    catalog("global", decl);
+    canonicalize("global", decl);
   }
 
-  /// Catalogs a decl. `scope` is the scope that `_decl` appears in.
+  void run(DeclList* decls) {
+    catalogDeclList("global", decls);
+    canonicalize("global", decls);
+  }
+
+private:
+
+  /// Recursively catalogs a decl that appears in `scope`.
   void catalog(llvm::StringRef scope, Decl* _decl) {
-    
     if (auto mod = ModuleDecl::downcast(_decl)) {
       llvm::StringRef relName = mod->getName()->asStringRef();
-      std::string fqNameStr = (scope + "::" + relName).str();
-
-      if (auto existingModule = ont->getModule(fqNameStr)) {
-        moduleNameCollisionError(fqNameStr);
+      std::string fqn = (scope + "::" + relName).str();
+      if (auto existingModule = ont.getModule(fqn)) {
+        errors.push_back(LocatedError(_decl->getName()->getLocation(), "Module is already defined"));
       } else {
-        mod->setName(fqNameStr);
-        ont->record(mod);
+        ont.record(fqn, mod);
       }
-
-      catalogDeclList(fqNameStr, mod->getDecls());
+      catalogDeclList(fqn, mod->getDecls());
     }
-
     else if (auto data = DataDecl::downcast(_decl)) {
       llvm::StringRef relName = data->getName()->asStringRef();
-      std::string fqName = (scope + "::" + relName).str();
-
-      if (auto collidingDecl = ont->getFunctionOrConstructor(fqName)) {
-        typeNameCollisionError(fqName);
+      std::string fqn = (scope + "::" + relName).str();
+      if (auto prevDef = ont.getDecl(fqn, Ontology::Space::FUNCTION_OR_TYPE)) {
+        errors.push_back(LocatedError(_decl->getName()->getLocation(), "Data type is already defined:"));
       } else {
-        data->setName(fqName);
-        ont->record(data);
+        ont.record(fqn, data);
       }
     }
-
     else if (auto func = FunctionDecl::downcast(_decl)) {
       llvm::StringRef relName = func->getName()->asStringRef();
-      std::string fqName = (scope + "::" + relName).str();
-
-      if (auto collidingDecl = ont->getFunctionOrConstructor(fqName)) {
-        functionNameCollisionError(fqName);
+      std::string fqn = (scope + "::" + relName).str();
+      if (auto collidingDecl = ont.getFunctionOrConstructor(fqn)) {
+        errors.push_back(LocatedError(_decl->getName()->getLocation(), "Function is already defined: "));
       }
-
       if (relName.equals("main")) {
-        func->setName(fqName);
-        if (!ont->entryPoint.empty()) {
-          multipleEntryPointsError();
+        if (!ont.entryPoint.empty()) {
+          errors.push_back(LocatedError(_decl->getName()->getLocation(), "There are multiple program entry points"));
           return;
         }
-        ont->recordMapName(func, "main");
+        ont.recordMapName(fqn, func, "main");
       } else if (func->getID() == AST::ID::EXTERN_FUNC) {
         std::string relNameString = relName.str();
-        func->setName(fqName);
-        ont->recordMapName(func, relNameString);
+        ont.recordMapName(fqn, func, relNameString);
       } else {
-        func->setName(fqName);
-        ont->record(func);
+        ont.record(fqn, func);
       }
     }
   }
@@ -78,24 +77,63 @@ public:
       catalog(scope, decl);
     }
   }
-  
-  void typeNameCollisionError(const std::string& repeatedType) {
-    std::string errMsg = "Data type is already defined: " + repeatedType;
-    errors.push_back(errMsg);
+
+
+  void canonicalize(llvm::StringRef scope, DeclList* declList) {
+    for (auto decl : declList->asArrayRef()) canonicalize(scope, decl);
   }
 
-  void moduleNameCollisionError(const std::string& repeatedMod) {
-    std::string errMsg = "Module is already defined: " + repeatedMod;
-    errors.push_back(errMsg);
+  void canonicalize(llvm::StringRef scope, Decl* decl) {
+    llvm::Twine fqn = scope + "::" + decl->getName()->asStringRef();
+    decl->getName()->set(fqn);
+    if (auto moduleDecl = ModuleDecl::downcast(decl)) {
+      canonicalize(decl->getName()->asStringRef(), moduleDecl->getDecls());
+    }
+    else if (auto funcDecl = FunctionDecl::downcast(decl)) {
+      for (auto param : funcDecl->getParameters()->asArrayRef())
+        canonicalizeNonDecl(scope, param.second);
+      canonicalizeNonDecl(scope, funcDecl->getReturnType());
+      Exp* body = funcDecl->getBody();
+      if (body != nullptr) canonicalizeNonDecl(scope, body);
+    }
   }
 
-  void functionNameCollisionError(const std::string& repeatedFunc) {
-    std::string errMsg = "Function or procedure is already defined: " + repeatedFunc;
-    errors.push_back(errMsg);
+  /// @brief Recursively canonicalizes `ast` which must not be or contain a
+  /// declaration.
+  /// @param scope The (deepest) module or namespace in which `ast` appears.
+  void canonicalizeNonDecl(llvm::StringRef scope, AST* ast) {
+    if (auto nameTExp = NameTypeExp::downcast(ast)) {
+      canonicalize(scope, nameTExp->getName(), Ontology::Space::TYPE);
+    }
+    else if (auto callExp = CallExp::downcast(ast)) {
+      canonicalize(scope, callExp->getFunction(),
+        Ontology::Space::FUNCTION_OR_TYPE);
+      for (auto arg : callExp->getArguments()->asArrayRef())
+        canonicalizeNonDecl(scope, arg);
+    }
+    else {
+      for (AST* node : getSubnodes(ast)) canonicalizeNonDecl(scope, node);
+    }
   }
 
-  void multipleEntryPointsError() {
-    errors.push_back("There are multiple program entry points");
+  /// @brief Fully-qualifies `name`, which appears in `scope`, by searching for
+  /// a decl in `space`.
+  void canonicalize(llvm::StringRef scope, Name* name, Ontology::Space space) {
+    while (!scope.empty()) {
+      std::string fqName = (scope + "::" + name->asStringRef()).str();
+      Decl* d = ont.getDecl(fqName, space);
+      if (d != nullptr) { name->set(fqName); return; }
+      scope = getQualifier(scope);
+    }
+    errors.push_back(LocatedError(name->getLocation(), "Could not canonicalize"));
+  }
+
+  /// Returns a reference to the qualifier of this name. Returns empty string
+  /// if there is no qualifier.
+  llvm::StringRef getQualifier(llvm::StringRef name) {
+    auto idx = name.rfind(':');
+    if (idx == std::string::npos) return "";
+    return llvm::StringRef(name.data(), idx-1);
   }
 };
 

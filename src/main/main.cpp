@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
 
   Typer typer;
   typer.typeDeclList(parsedDeclList);
-  if (typer.unifier.getErrors()->size() > 0) {
+  if (!typer.errors.empty()) {
     for (auto err : *typer.unifier.getErrors()) {
       llvm::outs() << err.render(text, lexer.getLocationTable());
     }

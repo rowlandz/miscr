@@ -12,39 +12,45 @@
 /// same name. However, either can overlap with the module space.
 class Ontology {
 
+public:
   llvm::StringMap<DataDecl*> typeSpace;
   llvm::StringMap<FunctionDecl*> functionSpace;
   llvm::StringMap<ModuleDecl*> moduleSpace;
 
   llvm::StringMap<std::string> mappedFuncNames;
 
-public:
+  enum struct Space { FUNCTION, MODULE, TYPE, FUNCTION_OR_TYPE };
 
   /// The fully-qualified name of the "main" entry point procedure.
   /// Empty if no entry point has been found.
   std::string entryPoint;
 
-  void record(DataDecl* decl) {
-    typeSpace[decl->getName()->asStringRef()] = decl;
+  void record(llvm::StringRef fqn, DataDecl* decl)
+    { typeSpace[fqn] = decl; }
+  void record(llvm::StringRef fqn, ModuleDecl* decl)
+    { moduleSpace[fqn] = decl; }
+  void record(llvm::StringRef fqn, FunctionDecl* decl)
+    { functionSpace[fqn] = decl; }
+
+  void recordMapName(llvm::StringRef fqn, FunctionDecl* decl,
+      llvm::StringRef mappedName) {
+    functionSpace[fqn] = decl;
+    mappedFuncNames[fqn] = mappedName.str();
   }
 
-  void record(ModuleDecl* decl) {
-    moduleSpace[decl->getName()->asStringRef()] = decl;
+  /// @brief Looks for a declaration with `name` in the specified `space`.
+  Decl* getDecl(llvm::StringRef name, Space space) const {
+    switch (space) {
+    case Space::FUNCTION: return functionSpace.lookup(name);
+    case Space::MODULE: return moduleSpace.lookup(name);
+    case Space::TYPE: return typeSpace.lookup(name);
+    case Space::FUNCTION_OR_TYPE:
+      if (auto ret = functionSpace.lookup(name)) return ret;
+      return typeSpace.lookup(name);
+    }
   }
 
-  void record(FunctionDecl* decl) {
-    functionSpace[decl->getName()->asStringRef()] = decl;
-  }
-
-  void recordMapName(FunctionDecl* decl, llvm::StringRef mappedName) {
-    llvm::StringRef declName = decl->getName()->asStringRef();
-    functionSpace[declName] = decl;
-    mappedFuncNames[declName] = mappedName.str();
-  }
-
-
-
-  /// @brief Finds a data type in the type space. Returns error if not found. 
+  /// @brief Finds a data type in the type space. Returns nullptr if not found. 
   DataDecl* getType(llvm::StringRef name) const {
     return typeSpace.lookup(name);
   }

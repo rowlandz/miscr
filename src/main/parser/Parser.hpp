@@ -357,6 +357,7 @@ public:
     if (p->ty == KW_STR) return PrimitiveTypeExp::newStr(tokToLoc(p++));
     if (p->ty == KW_UNIT) return PrimitiveTypeExp::newUnit(tokToLoc(p++));
     TypeExp* ret = arrayTypeExp(); CONTINUE_ON_EPSILON(ret)
+    ret = nameTypeExp(); CONTINUE_ON_EPSILON(ret)
     EPSILON_ERROR
   }
 
@@ -370,6 +371,11 @@ public:
     } else {
       return typeExpLv0();
     }
+  }
+
+  NameTypeExp* nameTypeExp() {
+    Name* n = name(); RETURN_IF_ERROR
+    return new NameTypeExp(n);
   }
 
   ArrayTypeExp* arrayTypeExp() {

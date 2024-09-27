@@ -5,10 +5,12 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/Twine.h>
 #include "common/Location.hpp"
 
 class AST;
 class Exp;
+class Name;
 void deleteAST(AST*);
 
 /// @brief An AST node is any syntactic form that appears in source code. All
@@ -36,7 +38,7 @@ public:
 
     // type expressions
     ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i16_TEXP, i32_TEXP,
-    i64_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, 
+    i64_TEXP, NAME_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, 
 
     // other
     DECLLIST, EXPLIST, NAME, PARAMLIST,
@@ -95,7 +97,7 @@ public:
     // concrete types
     ARRAY_SART,  // array (sized at runtime)
     ARRAY_SACT,  // array (sized at compile-time)
-    BOOL, f32, f64, i8, i16, i32, i64, RREF, UNIT, WREF,
+    BOOL, f32, f64, i8, i16, i32, i64, NAME, RREF, UNIT, WREF,
 
     // type constraints
     DECIMAL, NUMERIC, REF,
@@ -107,6 +109,7 @@ private:
   Type::ID id;
   union { unsigned int compileTime; Exp* runtime; } arraySize;
   TVar inner;
+  const Name* _name;
   Type(Type::ID id) : arraySize({.compileTime=0}), id(id) {}
   Type(Type::ID id, TVar inner) : arraySize({.compileTime=0}), id(id),
     inner(inner) {}
@@ -114,6 +117,8 @@ private:
     id(ID::ARRAY_SART) {}
   Type(unsigned int arrSize, TVar of) : arraySize({.compileTime = arrSize}),
     inner(of), id(ID::ARRAY_SACT) {}
+  Type(const Name* name)
+    : arraySize({.compileTime=0}), id(ID::NAME), _name(name) {}
 public:
   static Type array_sart(Exp* sz, TVar of) { return Type(sz, of); }
   static Type array_sact(unsigned int sz, TVar of) { return Type(sz, of); }
@@ -124,6 +129,7 @@ public:
   static Type i16() { return Type(ID::i16); }
   static Type i32() { return Type(ID::i32); }
   static Type i64() { return Type(ID::i64); }
+  static Type name(const Name* n) { return Type(n); }
   static Type ref(TVar of) { return Type(ID::REF, of); }
   static Type rref(TVar of) { return Type(ID::RREF, of); }
   static Type unit() { return Type(ID::UNIT); }
@@ -138,6 +144,7 @@ public:
   TVar getInner() const { return inner; }
   unsigned int getCompileTimeArraySize() const { return arraySize.compileTime; }
   Exp* getRuntimeArraySize() const { return arraySize.runtime; }
+  const Name* getName() const { return _name; }
 };
 
 /// @brief A qualified or unqualified name. Unqualified names are also called
@@ -152,8 +159,8 @@ public:
   static Name* downcast(AST* ast)
     { return ast->getID() == NAME ? static_cast<Name*>(ast) : nullptr; }
   llvm::StringRef asStringRef() const { return s; }
-  /// @brief Sets this name to `s`.
-  void set(llvm::StringRef s) { this->s.assign(s.data(), s.size()); }
+  /// Sets this name to `s`.
+  void set(const llvm::Twine& s) { this->s = s.str(); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -197,6 +204,18 @@ public:
     default: return nullptr;
     }
   }
+};
+
+class NameTypeExp : public TypeExp {
+  Name* name;
+public:
+  NameTypeExp(Name* name)
+    : TypeExp(NAME_TEXP, name->getLocation()), name(name) {}
+  ~NameTypeExp() { delete name; }
+  static NameTypeExp* downcast(AST* ast) {
+    return ast->getID() == NAME_TEXP ? static_cast<NameTypeExp*>(ast) : nullptr;
+  }
+  Name* getName() const { return name; }
 };
 
 /// @brief A read-only or writable reference type expression.
@@ -411,7 +430,6 @@ public:
     { return ast->getID() == CALL ? static_cast<CallExp*>(ast) : nullptr; }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
-  void setFunction(llvm::StringRef name) { function->set(name); }
 };
 
 /// @brief A type ascription expression.
@@ -556,8 +574,6 @@ protected:
   ~Decl() { delete name; }
 public:
   Name* getName() const { return name; }
-  /// @brief Safely sets the name of this decl to `name`. 
-  void setName(llvm::StringRef name) { this->name->set(name); }
 };
 
 /// @brief A list of declarations.
@@ -657,6 +673,7 @@ void deleteAST(AST* _ast) {
        if (_ast == nullptr) {}
   else if (auto ast = Name::downcast(_ast)) delete ast;
   else if (auto ast = PrimitiveTypeExp::downcast(_ast)) delete ast;
+  else if (auto ast = NameTypeExp::downcast(_ast)) delete ast;
   else if (auto ast = RefTypeExp::downcast(_ast)) delete ast;
   else if (auto ast = ArrayTypeExp::downcast(_ast)) delete ast;
   else if (auto ast = ExpList::downcast(_ast)) delete ast;
@@ -733,6 +750,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::i16_TEXP:           return "i16_TEXP";
   case AST::ID::i32_TEXP:           return "i32_TEXP";
   case AST::ID::i64_TEXP:           return "i64_TEXP";
+  case AST::ID::NAME_TEXP:          return "NAME_TEXP";
   case AST::ID::REF_TEXP:           return "REF_TEXP";
   case AST::ID::STR_TEXP:           return "STR_TEXP";
   case AST::ID::UNIT_TEXP:          return "UNIT_TEXP";
@@ -787,6 +805,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "i16_TEXP")            return AST::ID::i16_TEXP;
   else if (str == "i32_TEXP")            return AST::ID::i32_TEXP;
   else if (str == "i64_TEXP")            return AST::ID::i64_TEXP;
+  else if (str == "NAME_TEXP")           return AST::ID::NAME_TEXP;
   else if (str == "REF_TEXP")            return AST::ID::REF_TEXP;
   else if (str == "STR_TEXP")            return AST::ID::STR_TEXP;
   else if (str == "UNIT_TEXP")           return AST::ID::UNIT_TEXP;
@@ -799,7 +818,7 @@ AST::ID stringToASTID(const std::string& str) {
   else llvm_unreachable(("Invalid AST::ID string: " + str).c_str());
 }
 
-/** Returns the sub-ASTs of `node`. This is only used for testing purposes. */
+/// Returns the sub-ASTs of `node`.
 std::vector<AST*> getSubnodes(AST* ast) {
   AST::ID id = ast->getID();
   std::vector<AST*> ret;
@@ -882,6 +901,9 @@ std::vector<AST*> getSubnodes(AST* ast) {
     auto n = reinterpret_cast<const NamespaceDecl*>(ast);
     ret.push_back(n->getName());
     ret.push_back(n->getDecls());
+  } else if (id == AST::ID::NAME_TEXP) {
+    auto n = reinterpret_cast<const NameTypeExp*>(ast);
+    ret.push_back(n->getName());
   } else if (id == AST::ID::PARAMLIST) {
     auto n = reinterpret_cast<const ParamList*>(ast);
     for (auto param : n->asArrayRef()) {

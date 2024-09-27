@@ -16,8 +16,9 @@ public:
   Ontology ont;
   Cataloger cataloger;
   Unifier unifier;
+  std::vector<LocatedError> errors;
 
-  Typer() : cataloger(&ont), unifier(&ont) {}
+  Typer() : cataloger(ont, errors), unifier(ont, errors) {}
 
   const TypeContext* getTypeContext() const { return unifier.getTypeContext(); }
 
@@ -26,12 +27,14 @@ public:
   }
 
   void typeDecl(Decl* _decl) {
-    cataloger.catalog(std::string("global"), _decl);
+    cataloger.run(_decl);
+    if (!errors.empty()) return;
     unifier.unifyDecl(_decl);
   }
 
   void typeDeclList(DeclList* _declList) {
-    cataloger.catalogDeclList(std::string("global"), _declList);
+    cataloger.run(_declList);
+    if (!errors.empty()) return;
     unifier.unifyDeclList(_declList);
   }
 
