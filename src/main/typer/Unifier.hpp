@@ -186,12 +186,14 @@ public:
   TVar unifyWith(Exp* _exp, TVar ty) {
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, ty)) return inferredTy;
-    std::string errMsg("Cannot unify type ");
-    errMsg.append(tc.TVarToString(inferredTy));
-    errMsg.append(" with type ");
-    errMsg.append(tc.TVarToString(ty));
-    errMsg.append(".");
-    errors.push_back(LocatedError(_exp->getLocation(), errMsg));
+    LocatedError err;
+    err.appendStatic("Cannot unify ");
+    err.append(tc.TVarToString(inferredTy));
+    err.appendStatic(" with type ");
+    err.append(tc.TVarToString(ty));
+    err.appendStatic(".\n");
+    err.append(_exp->getLocation());
+    errors.push_back(err);
     return inferredTy;
   }
 
@@ -202,12 +204,14 @@ public:
   TVar expectTypeToBe(Exp* _exp, TVar expectedTy) {
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, expectedTy, true)) return inferredTy;
-    std::string errMsg("Inferred type is ");
-    errMsg.append(tc.TVarToString(inferredTy));
-    errMsg.append(" but expected type ");
-    errMsg.append(tc.TVarToString(expectedTy));
-    errMsg.append(".");
-    errors.push_back(LocatedError(_exp->getLocation(), errMsg));
+    LocatedError err;
+    err.appendStatic("Inferred type is ");
+    err.append(tc.TVarToString(inferredTy));
+    err.appendStatic(" but expected type ");
+    err.append(tc.TVarToString(expectedTy));
+    err.appendStatic(".\n");
+    err.append(_exp->getLocation());
+    errors.push_back(err);
     return inferredTy;
   }
 
@@ -276,9 +280,16 @@ public:
           ++idx;
         }
         if (idx < argList.size() || idx < paramList.size()) {
-          llvm::Twine errMsg = "Arity mismatch for function " +
-            callee->getName()->asStringRef() + ".";
-          errors.push_back(LocatedError(e->getLocation(), errMsg.str()));
+          LocatedError err;
+          err.appendStatic("Arity mismatch for function ");
+          err.append(callee->getName()->asStringRef());
+          err.appendStatic(". Expected ");
+          err.append(std::to_string(paramList.size()));
+          err.appendStatic(" but got ");
+          err.append(std::to_string(argList.size()));
+          err.appendStatic(".\n");
+          err.append(e->getLocation());
+          errors.push_back(err);
         }
         /*** set this expression's type to the callee's return type ***/
         e->setTVar(freshFromTypeExp(callee->getReturnType()));
@@ -293,9 +304,16 @@ public:
           ++idx;
         }
         if (idx < args.size() || idx < params.size()) {
-          llvm::Twine errMsg = "Arity mismatch for constructor " +
-            callee->getName()->asStringRef() + ".";
-          errors.push_back(LocatedError(e->getLocation(), errMsg.str()));
+          LocatedError err;
+          err.appendStatic("Arity mismatch for constructor ");
+          err.append(callee->getName()->asStringRef());
+          err.appendStatic(". Expected ");
+          err.append(std::to_string(params.size()));
+          err.appendStatic(" but got ");
+          err.append(std::to_string(args.size()));
+          err.appendStatic(".\n");
+          err.append(e->getLocation());
+          errors.push_back(err);
         }
         e->setTVar(tc.fresh(Type::name(callee->getName())));
       }
@@ -320,8 +338,12 @@ public:
       TVar ty = localVarTypes.getOrElse(s, TVar::none());
       if (ty.exists())
         e->setTVar(ty);
-      else
-        errors.push_back(LocatedError(e->getLocation(), "Unbound identifier"));
+      else {
+        LocatedError err;
+        err.appendStatic("Unbound identifier.\n");
+        err.append(e->getLocation());
+        errors.push_back(err);
+      }
     }
 
     else if (auto e = BoolLit::downcast(_e)) {
@@ -345,13 +367,17 @@ public:
                     tc.fresh(Type::wref(innerTy.getInner())) :
                     tc.fresh(Type::rref(innerTy.getInner())));
         } else {
-          std::string errMsg("Must infer that this is a reference to an array");
-          errors.push_back(LocatedError(e->getBase()->getLocation(), errMsg));
+          LocatedError err;
+          err.appendStatic("Must be a reference to an array.\n");
+          err.append(e->getBase()->getLocation());
+          errors.push_back(err);
           e->setTVar(tc.fresh());
         }
       } else {
-        std::string errMsg("Couldn't infer that this is a reference");
-        errors.push_back(LocatedError(e->getBase()->getLocation(), errMsg));
+        LocatedError err;
+        err.appendStatic("Must be a reference.\n");
+        err.append(e->getBase()->getLocation());
+        errors.push_back(err);
         e->setTVar(tc.fresh());
       }
       unifyWith(e->getIndex(), tc.fresh(Type::numeric()));

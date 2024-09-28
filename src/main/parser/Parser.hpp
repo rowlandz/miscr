@@ -55,20 +55,21 @@ public:
 
   /// Returns the parser error after an unsuccessful parse.
   LocatedError getError() {
-    std::string errString;
+    LocatedError err('^');
     if (errTryingToParse != nullptr) {
-      errString.append("I got stuck parsing ");
-      errString.append(errTryingToParse);
-      errString.append(".");
+      err.appendStatic("I got stuck parsing ");
+      err.append(errTryingToParse);
+      err.appendStatic(".");
     } else {
-      errString.append("I got stuck while parsing.");
+      err.appendStatic("I got stuck while parsing.\n");
     }
     if (expectedTokens != nullptr) {
-      errString.append(" I was expecting ");
-      errString.append(expectedTokens);
-      errString.append(" next.");
+      err.appendStatic(" I was expecting ");
+      err.append(expectedTokens);
+      err.appendStatic(" next.\n");
     }
-    return LocatedError(tokToLoc(p), errString);
+    err.append(tokToLoc(p));
+    return err;
   }
 
   // ---------- Idents and QIdents ----------

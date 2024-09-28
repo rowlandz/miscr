@@ -109,7 +109,7 @@ public:
   Location currentLocation() { return { row, col, 1 }; }
 
   /// Returns the location table.
-  const LocationTable* locationTable() { return &_locTable; }
+  const LocationTable& locationTable() { return _locTable; }
 
 private:
   const char* p1;                // beginning of selection
