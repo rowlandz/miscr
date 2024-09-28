@@ -63,7 +63,7 @@ public:
   Unifier(Ontology& ont, std::vector<LocatedError>& errors)
     : ont(ont), errors(errors) {}
 
-  const TypeContext* getTypeContext() const { return &tc; }
+  const TypeContext& getTypeContext() const { return tc; }
 
   const std::vector<LocatedError>* getErrors() { return &errors; }
 
@@ -211,7 +211,6 @@ public:
     return inferredTy;
   }
 
-  // TODO: change if-stmt to switch-stmt
   /// @brief Unifies an expression or statement. Returns the type of `_e`. 
   /// Expressions or statements that bind local identifiers will cause
   /// `localVarTypes` to be updated.

@@ -106,14 +106,34 @@ private:
       canonicalize(scope, nameTExp->getName(), Ontology::Space::TYPE);
     }
     else if (auto callExp = CallExp::downcast(ast)) {
-      canonicalize(scope, callExp->getFunction(),
-        Ontology::Space::FUNCTION_OR_TYPE);
+      canonicalizeCallExp(scope, callExp);
       for (auto arg : callExp->getArguments()->asArrayRef())
         canonicalizeNonDecl(scope, arg);
     }
     else {
-      for (AST* node : getSubnodes(ast)) canonicalizeNonDecl(scope, node);
+      for (AST* node : getSubASTs(ast)) canonicalizeNonDecl(scope, node);
     }
+  }
+
+  /// @brief Canonicalizes the function name in a call expression. Flips CALL
+  /// to CALL_CONSTR if found to be a constructor call.
+  void canonicalizeCallExp(llvm::StringRef scope, CallExp* callExp) {
+    Name* functionName = callExp->getFunction();
+    while (!scope.empty()) {
+      std::string fqn = (scope + "::" + functionName->asStringRef()).str();
+      if (auto d = ont.getFunction(fqn)) {
+        functionName->set(fqn);
+        return;
+      }
+      if (auto d = ont.getType(fqn)) {
+        functionName->set(fqn);
+        callExp->markAsConstructorCall();
+        return;
+      }
+      scope = getQualifier(scope);
+    }
+    errors.push_back(LocatedError(functionName->getLocation(),
+        "Could not canonicalize call expression"));
   }
 
   /// @brief Fully-qualifies `name`, which appears in `scope`, by searching for

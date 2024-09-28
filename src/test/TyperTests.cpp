@@ -24,7 +24,7 @@ namespace TyperTests {
       throw std::runtime_error(errStr);
     }
     TVar infTy = parsed->getTVar();
-    std::string infTyStr = typer.unifier.getTypeContext()->TVarToString(infTy);
+    std::string infTyStr = typer.getTypeContext().TVarToString(infTy);
     if (infTyStr != expectedTy) throw std::runtime_error(
       "Inferred " + infTyStr + " but expected " + expectedTy);
   }

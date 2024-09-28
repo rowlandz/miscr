@@ -34,7 +34,7 @@ void print_parse_tree(
 
   llvm::outs() << "\n";
 
-  auto subnodes = getSubnodes(n);
+  auto subnodes = getSubASTs(n);
   if (subnodes.size() == 1) {
     indents.push_back(false);
     print_parse_tree(subnodes[0], indents, tc);

@@ -11,18 +11,33 @@ public:
   llvm::LLVMContext llvmctx;
   llvm::IRBuilder<>* b;
   llvm::Module* mod;
-  const TypeContext* tyctx;
-  const Ontology* ont;
+  const TypeContext& tyctx;
+  const Ontology& ont;
 
-  /** Maps variable names to their LLVM values */
+  /// @brief Maps fully qualified names of `data` decls to their LLVM struct
+  /// types.
+  llvm::StringMap<llvm::StructType*> dataTypes;
+
+  /// Maps variable names to their LLVM values
   ScopeStack<llvm::Value*> varValues;
 
-  Codegen(const TypeContext* tyctx, const Ontology* ont) {
+  Codegen(const TypeContext& tyctx, const Ontology& ont)
+      : tyctx(tyctx), ont(ont) {
     b = new llvm::IRBuilder<>(llvmctx);
     mod = new llvm::Module("MyModule", llvmctx);
     mod->setTargetTriple("x86_64-pc-linux-gnu");
-    this->tyctx = tyctx;
-    this->ont = ont;
+    llvmctx.enableOpaquePointers();
+
+    // Populates `dataTypes`
+    for (llvm::StringRef typeName : ont.typeSpace.keys()) {
+      std::vector<llvm::Type*> fieldTys;
+      DataDecl* dataDecl = ont.getType(typeName);
+      for (auto field : dataDecl->getFields()->asArrayRef())
+        fieldTys.push_back(genType(field.second));
+      auto st = llvm::StructType::get(llvmctx, fieldTys);
+      st->setName(typeName);
+      dataTypes[typeName] = st;
+    }
   }
 
   ~Codegen() {
@@ -31,7 +46,7 @@ public:
   }
 
   llvm::Type* genType(TVar tvar) {
-    Type ty = tyctx->resolve(tvar).second;
+    Type ty = tyctx.resolve(tvar).second;
     if (ty.isNoType()) return b->getVoidTy();
     switch (ty.getID()) {
     case Type::ID::ARRAY_SART: {
@@ -53,13 +68,10 @@ public:
     case Type::ID::i64: return b->getInt64Ty();
     case Type::ID::f32: return b->getFloatTy();
     case Type::ID::f64: return b->getDoubleTy();
+    case Type::ID::NAME: return dataTypes[ty.getName()->asStringRef()];
     case Type::ID::RREF:
-    case Type::ID::WREF: {
-      llvm::Type* pointeeType = genType(ty.getInner());
-      return llvm::PointerType::get(pointeeType, 0);
-    }
+    case Type::ID::WREF: return llvm::PointerType::get(llvmctx, 0);
     case Type::ID::UNIT: return b->getVoidTy();
-
     // NUMERIC just defaults to i32.
     case Type::ID::NUMERIC: return b->getInt32Ty();
     default:
@@ -80,6 +92,9 @@ public:
     if (_texp->getID() == AST::ID::STR_TEXP) {
       return llvm::ArrayType::get(b->getInt8Ty(), 0);
     }
+    if (auto texp = NameTypeExp::downcast(_texp)) {
+      return dataTypes[texp->getName()->asStringRef()];
+    }
     if (auto texp = ArrayTypeExp::downcast(_texp)) {
       if (texp->getSize() == nullptr)
         return llvm::ArrayType::get(genType(texp->getInnerType()), 0);
@@ -89,20 +104,9 @@ public:
       return llvm::ArrayType::get(genType(texp->getInnerType()), arrSize);
     }
     if (auto texp = RefTypeExp::downcast(_texp)) {
-      llvm::Type* pointeeType = genType(texp->getPointeeType());
-      return llvm::PointerType::get(pointeeType, 0);
+      return llvm::PointerType::get(llvmctx, 0);
     }
     llvm_unreachable("genType(TypeExp*) case unimplemented");
-  }
-
-  llvm::FunctionType* makeFunctionType(ParamList* paramList, TypeExp* retTy) {
-    std::vector<llvm::Type*> paramTys;
-    paramTys.reserve(paramList->asArrayRef().size());
-    for (auto param : paramList->asArrayRef()) {
-      paramTys.push_back(genType(param.second));
-    }
-    llvm::Type* retType = genType(retTy);
-    return llvm::FunctionType::get(retType, paramTys, false);
   }
 
   /// Adds the parameters to the topmost scope in the scope stack. Also sets
@@ -168,7 +172,7 @@ public:
     }
     else if (auto e = ArrayListExp::downcast(_exp)) {
       unsigned int arrSize = e->getContent()->asArrayRef().size();
-      TVar elemTy = tyctx->resolve(e->getTVar()).second.getInner();
+      TVar elemTy = tyctx.resolve(e->getTVar()).second.getInner();
       auto arrTy = llvm::ArrayType::get(genType(elemTy), arrSize);
       llvm::Value* ret = llvm::ConstantAggregateZero::get(arrTy);
       llvm::ArrayRef<Exp*> expList = e->getContent()->asArrayRef();
@@ -194,7 +198,7 @@ public:
       return b->getInt1(e->getValue());
     }
     else if (auto e = CallExp::downcast(_exp)) {
-      llvm::StringRef funName = ont->mapName(e->getFunction()->asStringRef());
+      llvm::StringRef funName = ont.mapName(e->getFunction()->asStringRef());
       llvm::Function* callee = mod->getFunction(funName);
       llvm::FunctionType* calleeType = callee->getFunctionType();
 
@@ -247,7 +251,7 @@ public:
       llvm::Value* baseV = genExp(e->getBase());
       llvm::Value* indexV = genExp(e->getIndex());
       TVar baseTVar = e->getBase()->getTVar();
-      TVar arrTVar = tyctx->resolve(baseTVar).second.getInner();
+      TVar arrTVar = tyctx.resolve(baseTVar).second.getInner();
       auto arrTy = llvm::dyn_cast_or_null<llvm::ArrayType>(genType(arrTVar));
       return b->CreateGEP(arrTy, baseV, { b->getInt64(0), indexV });
     }
@@ -263,15 +267,17 @@ public:
     }
     else if (auto e = RefExp::downcast(_exp)) {
       AST::ID initID = e->getInitializer()->getID();
-      if (initID == AST::ID::ARRAY_INIT || initID == AST::ID::ARRAY_LIST) {
+      if (initID == AST::ID::ARRAY_INIT || initID == AST::ID::ARRAY_LIST)
         return genRefToExp(e->getInitializer());
-      } else {
-        llvm::Value* v = genExp(e->getInitializer());
-        TVar initTy = e->getInitializer()->getTVar();
-        llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
-        b->CreateStore(v, memCell);
-        return memCell;
+      if (auto callExp = CallExp::downcast(e->getInitializer())) {
+        if (callExp->isConstructorCall())
+          return genRefToExp(e->getInitializer());
       }
+      llvm::Value* v = genExp(e->getInitializer());
+      TVar initTy = e->getInitializer()->getTVar();
+      llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
+      b->CreateStore(v, memCell);
+      return memCell;
     }
     else if (auto e = StoreExp::downcast(_exp)) {
       llvm::Value* lhs = genExp(e->getLHS());
@@ -285,7 +291,7 @@ public:
     else llvm_unreachable("genExp -- unsupported expression form");
   }
 
-  /// @brief Generates LLVM IR that performs `_exp` and stores the result on
+  /// @brief Generates LLVM IR that computes `_exp` and stores the result on
   /// the stack. The returned value is a pointer to the result. In other words,
   /// this is like calling `genExp(&(_exp))`. Certain expressions (like
   /// constructing arrays of unknown size) can only be done on the stack and
@@ -297,7 +303,7 @@ public:
       auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e->getTVar()));
       llvm::Value* arrSize = genExp(e->getSize());
       llvm::Value* ret = b->CreateAlloca(arrTy->getElementType(), arrSize);
-      return b->CreateBitCast(ret, llvm::PointerType::get(arrTy, 0));
+      return b->CreateBitCast(ret, llvm::PointerType::get(llvmctx, 0));
     }
 
     else if (auto e = ArrayListExp::downcast(_exp)) {
@@ -314,7 +320,21 @@ public:
       }
       // return ret;
       arrTy = llvm::ArrayType::get(elemTy, arrayLen);
-      return b->CreateBitCast(ret, llvm::PointerType::get(arrTy, 0));
+      return b->CreateBitCast(ret, llvm::PointerType::get(llvmctx, 0));
+    }
+
+    else if (auto e = CallExp::downcast(_exp)) {
+      llvm::StructType* st = dataTypes[e->getFunction()->asStringRef()];
+      llvm::Value* ret = b->CreateAlloca(st);
+      unsigned int fieldIdx = 0;
+      for (auto arg : e->getArguments()->asArrayRef()) {
+        llvm::Value* argV = genExp(arg);
+        llvm::Value* fieldAddr = b->CreateGEP(st, ret,
+          { b->getInt64(0), b->getInt32(fieldIdx) });
+        b->CreateStore(argV, fieldAddr);
+        ++fieldIdx;
+      }
+      return ret;
     }
 
     else {
@@ -324,19 +344,24 @@ public:
     }
   }
 
-  /** Codegens a `func`, `extern func`. */
+  /// Codegens a `func` or external function
   llvm::Function* genFunc(FunctionDecl* funDecl) {
-
-    llvm::StringRef mappedName = ont->mapName(funDecl->getName()->asStringRef());
+    // Make the function type
+    std::vector<llvm::Type*> paramTys;
+    paramTys.reserve(funDecl->getParameters()->asArrayRef().size());
+    for (auto param : funDecl->getParameters()->asArrayRef()) {
+      paramTys.push_back(genType(param.second));
+    }
+    llvm::Type* retType = genType(funDecl->getReturnType());
+    auto funcType = llvm::FunctionType::get(retType, paramTys, false);
 
     llvm::Function* f = llvm::Function::Create(
-      makeFunctionType(funDecl->getParameters(), funDecl->getReturnType()),
+      funcType,
       llvm::Function::ExternalLinkage,
-      mappedName,
+      ont.mapName(funDecl->getName()->asStringRef()),
       mod
     );
-
-    if (funDecl->getID() == AST::ID::FUNC) {
+    if (funDecl->hasBody()) {
       varValues.push();
       addParamsToScope(f, funDecl->getParameters());
       b->SetInsertPoint(llvm::BasicBlock::Create(llvmctx, "entry", f));
@@ -344,7 +369,6 @@ public:
       b->CreateRet(retVal);
       varValues.pop();
     }
-
     return f;
   }
 
@@ -353,19 +377,18 @@ public:
   }
 
   void genDecl(Decl* decl) {
-    if (auto mod = ModuleDecl::downcast(decl)) {
+    if (auto mod = ModuleDecl::downcast(decl))
       genModule(mod);
-    }
-    else if (auto func = FunctionDecl::downcast(decl)) {
+    else if (auto func = FunctionDecl::downcast(decl))
       genFunc(func);
-    }
+    else if (decl->getID() == AST::ID::DATA)
+      {}
     else llvm_unreachable("Unsupported decl");
   }
 
   void genDeclList(DeclList* declList) {
-    for (Decl* decl : declList->asArrayRef()) {
+    for (Decl* decl : declList->asArrayRef())
       genDecl(decl);
-    }
   }
 
 };

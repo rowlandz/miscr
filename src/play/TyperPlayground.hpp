@@ -57,7 +57,7 @@ check_input:
       }
       if (typer.errors.size() == 0) {
         std::vector<bool> indents;
-        print_parse_tree(parsed, indents, typer.getTypeContext());
+        print_parse_tree(parsed, indents, &typer.getTypeContext());
       }
 
       deleteAST(parsed);

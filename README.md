@@ -18,7 +18,7 @@ Minimal dependencies:
 * Clang++ compiler
 * Bash
 * (optional) GNU make
-Dead-simple unit test infrastructure; The include file `test.hpp` is only 54 lines of code!
+Dead-simple unit test infrastructure; The include file `test.hpp` is only 50 lines of code!
 
 
 ## Module System
@@ -238,3 +238,7 @@ Takes about this long:
 real    0m0.025s
 user    0m0.008s
 sys     0m0.015s
+
+## Notes:
+
+Use `clang -mllvm -opaque-pointers` to compile with clang version 14.

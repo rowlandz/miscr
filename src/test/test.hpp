@@ -8,18 +8,16 @@
 
 #define TESTGROUP(name) UnitTestGroup testGroup(name);
 #define TEST(name) void name();\
-  char _##name = ([](){ testGroup.tests.push_back(UnitTest(#name, name)); return 0; })();\
-  void name()
+  char _##name = ([](){ testGroup.tests.push_back(UnitTest(#name, name));\
+  return 0; })(); void name()
 
 class UnitTest {
   const char* name;
   std::function<void()> code;
 
 public:
-  UnitTest(const char* name, std::function<void()> code) {
-    this->name = name;
-    this->code = code;
-  }
+  UnitTest(const char* name, std::function<void()> code)
+    : name(name), code(code) {}
 
   int run() {
     try { code(); }
@@ -39,9 +37,7 @@ struct UnitTestGroup {
   const char* name;
   std::vector<UnitTest> tests;
 
-  UnitTestGroup(const char* name) {
-    this->name = name;
-  }
+  UnitTestGroup(const char* name) : name(name) {}
 
   int runAll() {
     int exitcode = 0;

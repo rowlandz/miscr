@@ -20,7 +20,7 @@ public:
 
   Typer() : cataloger(ont, errors), unifier(ont, errors) {}
 
-  const TypeContext* getTypeContext() const { return unifier.getTypeContext(); }
+  const TypeContext& getTypeContext() const { return unifier.getTypeContext(); }
 
   void typeExp(Exp* _exp) {
     unifier.unifyExp(_exp);

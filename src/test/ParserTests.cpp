@@ -1,4 +1,3 @@
-#include <vector>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
 #include "test.hpp"
@@ -50,10 +49,8 @@ namespace ParserTests {
     }
     *currentLine = *currentLine + 1;
 
-    std::vector<AST*> subnodes = getSubnodes(n);
-    for (AST* subnode : subnodes) {
+    for (AST* subnode : getSubASTs(n))
       expectMatch(subnode, indent+4, lines, currentLine);
-    }
   }
 
   void expParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {

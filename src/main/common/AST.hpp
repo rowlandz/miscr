@@ -29,9 +29,9 @@ class AST {
 public:
   enum ID : unsigned short {
     // expressions and statements
-    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, BOOL_LIT, CALL, DEC_LIT, DEREF,
-    DIV, ENAME, EQ, GE, GT, IF, INDEX, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP,
-    RETURN, STORE, STRING_LIT, SUB,
+    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, BOOL_LIT, CALL, CALL_CONSTR,
+    DEC_LIT, DEREF, DIV, ENAME, EQ, GE, GT, IF, INDEX, INT_LIT, LE, LET, LT,
+    MUL, NE, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
 
     // declarations
     DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
@@ -44,11 +44,10 @@ public:
     DECLLIST, EXPLIST, NAME, PARAMLIST,
   };
 
-private:
+protected:
   Location location;
   ID id;
 
-protected:
   AST(ID id, Location location) : id(id), location(location) {}
   ~AST() {};
 
@@ -59,10 +58,10 @@ public:
   bool isExp() const {
     switch (id) {
     case ADD: case ARRAY_INIT: case ARRAY_LIST: case ASCRIP: case BLOCK:
-    case BOOL_LIT: case CALL: case DEC_LIT: case DEREF: case DIV: case ENAME:
-    case EQ: case GE: case GT: case IF: case INDEX: case INT_LIT: case LE:
-    case LET: case LT: case MUL: case NE: case REF_EXP: case RETURN: case STORE:
-    case STRING_LIT: case SUB:
+    case BOOL_LIT: case CALL: case CALL_CONSTR: case DEC_LIT: case DEREF:
+    case DIV: case ENAME: case EQ: case GE: case GT: case IF: case INDEX:
+    case INT_LIT: case LE: case LET: case LT: case MUL: case NE: case REF_EXP:
+    case RETURN: case STORE: case STRING_LIT: case SUB:
       return true;
     default: return false;
     }
@@ -418,7 +417,9 @@ public:
   ExpList* getStatements() const { return statements; }
 };
 
-/// @brief A function call expression.
+/// @brief A function call or constructor invocation (CALL/CALL_CONSTR).
+/// The parser will always generate CALL and the canonicalizer flips the
+/// constructor calls to CALL_CONSTR.
 class CallExp : public Exp {
   Name* function;
   ExpList* arguments;
@@ -426,10 +427,14 @@ public:
   CallExp(Location loc, Name* function, ExpList* arguments)
     : Exp(CALL, loc), function(function), arguments(arguments) {}
   ~CallExp() { delete function; delete arguments; }
-  static CallExp* downcast(AST* ast)
-    { return ast->getID() == CALL ? static_cast<CallExp*>(ast) : nullptr; }
+  static CallExp* downcast(AST* ast) {
+    return (ast->getID() == CALL || ast->getID() == CALL_CONSTR) ?
+           static_cast<CallExp*>(ast) : nullptr;
+  }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
+  void markAsConstructorCall() { id = CALL_CONSTR; }
+  bool isConstructorCall() { return id == CALL_CONSTR; }
 };
 
 /// @brief A type ascription expression.
@@ -648,6 +653,8 @@ public:
   ParamList* getParameters() const { return parameters; }
   TypeExp* getReturnType() const { return returnType; }
   Exp* getBody() const { return body; }
+  /// True if the not an `extern` function and `getBody` is not nullptr. 
+  bool hasBody() const { return body != nullptr; }
 };
 
 /// @brief The declaration of a data type.
@@ -715,6 +722,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::BLOCK:              return "BLOCK";
   case AST::ID::BOOL_LIT:           return "BOOL_LIT";
   case AST::ID::CALL:               return "CALL";
+  case AST::ID::CALL_CONSTR:        return "CALL_CONSTR";
   case AST::ID::DEC_LIT:            return "DEC_LIT";
   case AST::ID::DEREF:              return "DEREF";
   case AST::ID::DIV:                return "DIV";
@@ -770,6 +778,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "BLOCK")               return AST::ID::BLOCK;
   else if (str == "BOOL_LIT")            return AST::ID::BOOL_LIT;
   else if (str == "CALL")                return AST::ID::CALL;
+  else if (str == "CALL_CONSTR")         return AST::ID::CALL_CONSTR;
   else if (str == "DEC_LIT")             return AST::ID::DEC_LIT;
   else if (str == "DEREF")               return AST::ID::DEREF;
   else if (str == "DIV")                 return AST::ID::DIV;
@@ -818,113 +827,83 @@ AST::ID stringToASTID(const std::string& str) {
   else llvm_unreachable(("Invalid AST::ID string: " + str).c_str());
 }
 
-/// Returns the sub-ASTs of `node`.
-std::vector<AST*> getSubnodes(AST* ast) {
-  AST::ID id = ast->getID();
-  std::vector<AST*> ret;
+/// Returns the children of this AST node.
+llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
 
-  // TODO: make this a switch statement
-  if (ast->isBinopExp()) {
-    auto n = reinterpret_cast<const BinopExp*>(ast);
-    ret.push_back(n->getLHS());
-    ret.push_back(n->getRHS());
-  } else if (id == AST::ID::ARRAY_INIT) {
-    auto n = reinterpret_cast<const ArrayInitExp*>(ast);
-    ret.push_back(n->getSize());
-    ret.push_back(n->getInitializer());
-  } else if (id == AST::ID::ARRAY_LIST) {
-    auto n = reinterpret_cast<const ArrayListExp*>(ast);
-    ret.push_back(n->getContent());
-  } else if (id == AST::ID::ARRAY_TEXP) {
-    auto n = reinterpret_cast<const ArrayTypeExp*>(ast);
-    if (n->getSize() != nullptr)
-      ret.push_back(n->getSize());
-    ret.push_back(n->getInnerType());
-  } else if (id == AST::ID::ASCRIP) {
-    auto n = reinterpret_cast<const AscripExp*>(ast);
-    ret.push_back(n->getAscriptee());
-    ret.push_back(n->getAscripter());
-  } else if (id == AST::ID::BLOCK) {
-    auto n = reinterpret_cast<const BlockExp*>(ast);
-    ret.push_back(n->getStatements());
-  } else if (id == AST::ID::CALL) {
-    auto n = reinterpret_cast<const CallExp*>(ast);
-    ret.push_back(n->getFunction());
-    ret.push_back(n->getArguments());
-  } else if (id == AST::ID::DATA) {
-    auto n = reinterpret_cast<const DataDecl*>(ast);
-    ret.push_back(n->getName());
-    ret.push_back(n->getFields());
-  } else if (id == AST::ID::DECLLIST) {
-    auto n = reinterpret_cast<const DeclList*>(ast);
-    for (auto elem : n->asArrayRef()) ret.push_back(elem);
-  } else if (id == AST::ID::DEREF) {
-    auto n = reinterpret_cast<const DerefExp*>(ast);
-    ret.push_back(n->getOf());
-  } else if (id == AST::ID::ENAME) {
-    auto n = reinterpret_cast<const NameExp*>(ast);
-    ret.push_back(n->getName());
-  } else if (id == AST::ID::EXPLIST) {
-    auto n = reinterpret_cast<const ExpList*>(ast);
-    for (auto elem : n->asArrayRef()) ret.push_back(elem);
-  } else if (id == AST::ID::EXTERN_FUNC) {
-    auto n = reinterpret_cast<const FunctionDecl*>(ast);
-    ret.push_back(n->getName());
-    ret.push_back(n->getParameters());
-    ret.push_back(n->getReturnType());
-  } else if (id == AST::ID::FUNC) {
-    auto n = reinterpret_cast<const FunctionDecl*>(ast);
-    ret.push_back(n->getName());
-    ret.push_back(n->getParameters());
-    ret.push_back(n->getReturnType());
-    ret.push_back(n->getBody());
-  } else if (id == AST::ID::IF) {
-    auto n = reinterpret_cast<const IfExp*>(ast);
-    ret.push_back(n->getCondExp());
-    ret.push_back(n->getThenExp());
-    ret.push_back(n->getElseExp());
-  } else if (id == AST::ID::INDEX) {
-    auto n = reinterpret_cast<const IndexExp*>(ast);
-    ret.push_back(n->getBase());
-    ret.push_back(n->getIndex());
-  } else if (id == AST::ID::LET) {
-    auto n = reinterpret_cast<const LetExp*>(ast);
-    ret.push_back(n->getBoundIdent());
-    if (n->getAscrip() != nullptr)
-      ret.push_back(n->getAscrip());
-    ret.push_back(n->getDefinition());
-  } else if (id == AST::ID::MODULE) {
-    auto n = reinterpret_cast<const ModuleDecl*>(ast);
-    ret.push_back(n->getName());
-    ret.push_back(n->getDecls());
-  } else if (id == AST::ID::NAMESPACE) {
-    auto n = reinterpret_cast<const NamespaceDecl*>(ast);
-    ret.push_back(n->getName());
-    ret.push_back(n->getDecls());
-  } else if (id == AST::ID::NAME_TEXP) {
-    auto n = reinterpret_cast<const NameTypeExp*>(ast);
-    ret.push_back(n->getName());
-  } else if (id == AST::ID::PARAMLIST) {
-    auto n = reinterpret_cast<const ParamList*>(ast);
-    for (auto param : n->asArrayRef()) {
+  if (auto ast = BinopExp::downcast(_ast))
+    return { ast->getLHS(), ast->getRHS() };
+  if (auto ast = ArrayInitExp::downcast(_ast))
+    return { ast->getSize(), ast->getInitializer() };
+  if (auto ast = ArrayListExp::downcast(_ast))
+    return { ast->getContent() };
+  if (auto ast = ArrayTypeExp::downcast(_ast)) {
+    if (ast->getSize() != nullptr)
+      return { ast->getSize(), ast->getInnerType() };
+    else
+      return { ast->getInnerType() };
+  }
+  if (auto ast = AscripExp::downcast(_ast))
+    return { ast->getAscriptee(), ast->getAscripter() };
+  if (auto ast = BlockExp::downcast(_ast))
+    return { ast->getStatements() };
+  if (auto ast = CallExp::downcast(_ast))
+    return { ast->getFunction(), ast->getArguments() };
+  if (auto ast = DataDecl::downcast(_ast))
+    return { ast->getName(), ast->getFields() };
+  if (auto ast = DeclList::downcast(_ast)) {
+    llvm::SmallVector<AST*,4> ret;
+    for (auto elem : ast->asArrayRef()) ret.push_back(elem);
+    return ret;
+  }
+  if (auto ast = DerefExp::downcast(_ast))
+    return { ast->getOf() };
+  if (auto ast = NameExp::downcast(_ast))
+    return { ast->getName() };
+  if (auto ast = ExpList::downcast(_ast)) {
+    llvm::SmallVector<AST*,4> ret;
+    for (auto elem : ast->asArrayRef()) ret.push_back(elem);
+    return ret;
+  }
+  if (auto ast = FunctionDecl::downcast(_ast)) {
+    if (ast->hasBody())
+      return { ast->getName(), ast->getParameters(), ast->getReturnType(),
+          ast->getBody() };
+    else
+      return { ast->getName(), ast->getParameters(), ast->getReturnType() };
+  }
+  if (auto ast = IfExp::downcast(_ast))
+    return { ast->getCondExp(), ast->getThenExp(), ast->getElseExp() };
+  if (auto ast = IndexExp::downcast(_ast))
+    return { ast->getBase(), ast->getIndex() };
+  if (auto ast = LetExp::downcast(_ast)) {
+    if (ast->getAscrip() != nullptr)
+      return { ast->getBoundIdent(), ast->getAscrip(), ast->getDefinition() };
+    else
+      return { ast->getBoundIdent(), ast->getDefinition() };
+  }
+  if (auto ast = ModuleDecl::downcast(_ast))
+    return { ast->getName(), ast->getDecls() };
+  if (auto ast = NamespaceDecl::downcast(_ast))
+    return { ast->getName(), ast->getDecls() };
+  if (auto ast = NameTypeExp::downcast(_ast))
+    return { ast->getName() };
+  if (auto ast = ParamList::downcast(_ast)) {
+    llvm::SmallVector<AST*,4> ret;
+    for (auto param : ast->asArrayRef()) {
       ret.push_back(param.first);
       ret.push_back(param.second);
     }
-  } else if (id == AST::ID::REF_EXP) {
-    auto n = reinterpret_cast<const RefExp*>(ast);
-    ret.push_back(n->getInitializer());
-  } else if (id == AST::ID::REF_TEXP) {
-    auto n = reinterpret_cast<const RefTypeExp*>(ast);
-    ret.push_back(n->getPointeeType());
-  } else if (id == AST::ID::RETURN) {
-    auto n = reinterpret_cast<const ReturnExp*>(ast);
-    ret.push_back(n->getReturnee());
-  } else if (id == AST::ID::STORE) {
-    auto n = reinterpret_cast<const StoreExp*>(ast);
-    ret.push_back(n->getLHS());
-    ret.push_back(n->getRHS());
+    return ret;
   }
-  return ret;
+  if (auto ast = RefExp::downcast(_ast))
+    return { ast->getInitializer() };
+  if (auto ast = RefTypeExp::downcast(_ast))
+    return { ast->getPointeeType() };
+  if (auto ast = ReturnExp::downcast(_ast))
+    return { ast->getReturnee() };
+  if (auto ast = StoreExp::downcast(_ast))
+    return { ast->getLHS(), ast->getRHS() };
+  return {};
 }
 
 #endif

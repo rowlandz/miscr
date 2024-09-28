@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  Codegen codegen(typer.getTypeContext(), &typer.ont);
+  Codegen codegen(typer.getTypeContext(), typer.ont);
   codegen.genDeclList(parsedDeclList);
   codegen.mod->setModuleIdentifier(argv[1]);
   codegen.mod->setSourceFileName(argv[1]);
