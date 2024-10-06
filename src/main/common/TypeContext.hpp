@@ -82,21 +82,8 @@ public:
       return std::string("?") + std::to_string(v.get());
     } else {
       switch (res.second.getID()) {
-      case Type::ID::ARRAY_SACT: {
-        std::string innerTy = TVarToString(res.second.getInner());
-        std::string sz = std::to_string(res.second.getCompileTimeArraySize());
-        return std::string("array_sact<") + sz + "," + innerTy + ">";
-      }
-      case Type::ID::ARRAY_SART: {
-        std::string innerTy = TVarToString(res.second.getInner());
-        return std::string("array_sart<???,") + innerTy + ">";
-      }
       case Type::ID::REF:
         return std::string("ref<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::RREF:
-        return std::string("rref<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::WREF:
-        return std::string("wref<") + TVarToString(res.second.getInner()) + ">";
       case Type::ID::BOOL: return std::string("bool");
       case Type::ID::DECIMAL: return std::string("decimal");
       case Type::ID::f32: return std::string("f32");

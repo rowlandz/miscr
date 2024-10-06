@@ -154,37 +154,37 @@ public:
     return new BlockExp(loc, statements);
   }
 
-  /// @brief Parses an array list or array init expression. 
-  Exp* arrayListOrInitExp() {
-    Token t0 = *p;
-    if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
-    Token t1 = *p;
-    Exp* firstExp = exp(); ARREST_IF_ERROR
-    if (p->ty == KW_OF) {
-      ++p;
-      Exp* initializer = exp(); ARREST_IF_ERROR
-      CHOMP_ELSE_ARREST(RBRACKET, "]", "array init expression")
-      Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-      return new ArrayInitExp(loc, firstExp, initializer);
-    } else if (p->ty == COMMA) {
-      ++p;
-      ExpList* contentTail = expListWotc0(); ARREST_IF_ERROR
-      Location loc(t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr));
-      ExpList* content = new ExpList(loc, firstExp, contentTail);
-      CHOMP_ELSE_ARREST(RBRACKET, "]", "array list constructor")
-      loc = Location(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-      return new ArrayListExp(loc, content);
-    } else if (p->ty == RBRACKET) {
-      ExpList* content = new ExpList(Location(p->row, p->col, 0));
-      ++p;
-      Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-      return new ArrayListExp(loc, content);
-    } else {
-      errTryingToParse = "array init or list expression";
-      expectedTokens = "of , ]";
-      ARRESTING_ERROR
-    }
-  }
+  // @brief Parses an array list or array init expression. 
+  // Exp* arrayListOrInitExp() {
+  //   Token t0 = *p;
+  //   if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
+  //   Token t1 = *p;
+  //   Exp* firstExp = exp(); ARREST_IF_ERROR
+  //   if (p->ty == KW_OF) {
+  //     ++p;
+  //     Exp* initializer = exp(); ARREST_IF_ERROR
+  //     CHOMP_ELSE_ARREST(RBRACKET, "]", "array init expression")
+  //     Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
+  //     return new ArrayInitExp(loc, firstExp, initializer);
+  //   } else if (p->ty == COMMA) {
+  //     ++p;
+  //     ExpList* contentTail = expListWotc0(); ARREST_IF_ERROR
+  //     Location loc(t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr));
+  //     ExpList* content = new ExpList(loc, firstExp, contentTail);
+  //     CHOMP_ELSE_ARREST(RBRACKET, "]", "array list constructor")
+  //     loc = Location(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
+  //     return new ArrayListExp(loc, content);
+  //   } else if (p->ty == RBRACKET) {
+  //     ExpList* content = new ExpList(Location(p->row, p->col, 0));
+  //     ++p;
+  //     Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
+  //     return new ArrayListExp(loc, content);
+  //   } else {
+  //     errTryingToParse = "array init or list expression";
+  //     expectedTokens = "of , ]";
+  //     ARRESTING_ERROR
+  //   }
+  // }
 
   Exp* expLv0() {
     Exp* ret;
@@ -195,7 +195,7 @@ public:
     ret = stringLit(); CONTINUE_ON_EPSILON(ret)
     ret = parensExp(); CONTINUE_ON_EPSILON(ret)
     ret = blockExp(); CONTINUE_ON_EPSILON(ret)
-    ret = arrayListOrInitExp(); CONTINUE_ON_EPSILON(ret)
+    // ret = arrayListOrInitExp(); CONTINUE_ON_EPSILON(ret)
     EPSILON_ERROR
   }
 
@@ -225,11 +225,11 @@ public:
 
   Exp* expLv2() {
     Token t = *p;
-    if (t.ty == AMP || t.ty == HASH) {
+    if (t.ty == AMP) {
       ++p;
       Exp* e = expLv2(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return new RefExp(loc, e, t.ty == HASH);
+      return new RefExp(loc, e);
     } else {
       return expLv1();
     }
@@ -355,20 +355,21 @@ public:
     if (p->ty == KW_i32) return PrimitiveTypeExp::newI32(tokToLoc(p++));
     if (p->ty == KW_i64) return PrimitiveTypeExp::newI64(tokToLoc(p++));
     if (p->ty == KW_BOOL) return PrimitiveTypeExp::newBool(tokToLoc(p++));
-    if (p->ty == KW_STR) return PrimitiveTypeExp::newStr(tokToLoc(p++));
+    //if (p->ty == KW_STR) return PrimitiveTypeExp::newStr(tokToLoc(p++));
     if (p->ty == KW_UNIT) return PrimitiveTypeExp::newUnit(tokToLoc(p++));
-    TypeExp* ret = arrayTypeExp(); CONTINUE_ON_EPSILON(ret)
+    TypeExp* ret;
+    // ret = arrayTypeExp(); CONTINUE_ON_EPSILON(ret)
     ret = nameTypeExp(); CONTINUE_ON_EPSILON(ret)
     EPSILON_ERROR
   }
 
   TypeExp* typeExp() {
     Token t = *p;
-    if (t.ty == AMP || t.ty == HASH) {
+    if (t.ty == AMP) {
       ++p;
       TypeExp* n1 = typeExp(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-      return new RefTypeExp(loc, n1, t.ty == HASH);
+      return new RefTypeExp(loc, n1);
     } else {
       return typeExpLv0();
     }
@@ -379,21 +380,21 @@ public:
     return new NameTypeExp(n);
   }
 
-  ArrayTypeExp* arrayTypeExp() {
-    Token t = *p;
-    if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
-    Exp* size = nullptr;
-    if (p->ty == UNDERSCORE) {
-      ++p;
-    } else {
-      size = exp(); ARREST_IF_ERROR
-    }
-    CHOMP_ELSE_ARREST(KW_OF, "of", "array type expression")
-    TypeExp* innerType = typeExp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(RBRACKET, "]", "array type expression")
-    Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-    return new ArrayTypeExp(loc, size, innerType);
-  }
+  // ArrayTypeExp* arrayTypeExp() {
+  //   Token t = *p;
+  //   if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
+  //   Exp* size = nullptr;
+  //   if (p->ty == UNDERSCORE) {
+  //     ++p;
+  //   } else {
+  //     size = exp(); ARREST_IF_ERROR
+  //   }
+  //   CHOMP_ELSE_ARREST(KW_OF, "of", "array type expression")
+  //   TypeExp* innerType = typeExp(); ARREST_IF_ERROR
+  //   CHOMP_ELSE_ARREST(RBRACKET, "]", "array type expression")
+  //   Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+  //   return new ArrayTypeExp(loc, size, innerType);
+  // }
 
   // ---------- Statements ----------
 

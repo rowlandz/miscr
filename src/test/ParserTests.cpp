@@ -102,28 +102,6 @@ namespace ParserTests {
     });
   }
 
-  TEST(array_list_exp) {
-    expParseTreeShouldBe("[42, x, y+1]", {
-      "ARRAY_LIST",
-      "    EXPLIST",
-      "        INT_LIT",
-      "        ENAME",
-      "            NAME",
-      "        ADD",
-      "            ENAME",
-      "                NAME",
-      "            INT_LIT",
-    });
-  }
-
-  TEST(array_init_exp) {
-    expParseTreeShouldBe("[20 of 0]", {
-      "ARRAY_INIT",
-      "    INT_LIT",
-      "    INT_LIT",
-    });
-  }
-
   TEST(main_prints_hello_world) {
     declParseTreeShouldBe("func main(): i32 = { println(\"Hello World\"); };", {
       "FUNC",

@@ -49,18 +49,6 @@ public:
     Type ty = tyctx.resolve(tvar).second;
     if (ty.isNoType()) return b->getVoidTy();
     switch (ty.getID()) {
-    case Type::ID::ARRAY_SART: {
-      llvm::Value* sizeV = ty.getRuntimeArraySize() != nullptr ?
-                           genExp(ty.getRuntimeArraySize()) :
-                           b->getInt32(0);
-      llvm::ConstantInt* c = llvm::dyn_cast_or_null<llvm::ConstantInt>(sizeV);
-      uint64_t arrSize = c ? c->getZExtValue() : 0;
-      return llvm::ArrayType::get(genType(ty.getInner()), arrSize);
-    }
-    case Type::ID::ARRAY_SACT: {
-      unsigned int arrSize = ty.getCompileTimeArraySize();
-      return llvm::ArrayType::get(genType(ty.getInner()), arrSize);
-    }
     case Type::ID::BOOL: return b->getInt1Ty();
     case Type::ID::i8: return b->getInt8Ty();
     case Type::ID::i16: return b->getInt16Ty();
@@ -69,8 +57,7 @@ public:
     case Type::ID::f32: return b->getFloatTy();
     case Type::ID::f64: return b->getDoubleTy();
     case Type::ID::NAME: return dataTypes[ty.getName()->asStringRef()];
-    case Type::ID::RREF:
-    case Type::ID::WREF: return llvm::PointerType::get(llvmctx, 0);
+    case Type::ID::REF: return llvm::PointerType::get(llvmctx, 0);
     case Type::ID::UNIT: return b->getVoidTy();
     // NUMERIC just defaults to i32.
     case Type::ID::NUMERIC: return b->getInt32Ty();
@@ -89,19 +76,8 @@ public:
     if (_texp->getID() == AST::ID::i32_TEXP) return b->getInt32Ty();
     if (_texp->getID() == AST::ID::i64_TEXP) return b->getInt64Ty();
     if (_texp->getID() == AST::ID::UNIT_TEXP) return b->getVoidTy();
-    if (_texp->getID() == AST::ID::STR_TEXP) {
-      return llvm::ArrayType::get(b->getInt8Ty(), 0);
-    }
     if (auto texp = NameTypeExp::downcast(_texp)) {
       return dataTypes[texp->getName()->asStringRef()];
-    }
-    if (auto texp = ArrayTypeExp::downcast(_texp)) {
-      if (texp->getSize() == nullptr)
-        return llvm::ArrayType::get(genType(texp->getInnerType()), 0);
-      llvm::Value* sizeV = genExp(texp->getSize());
-      llvm::ConstantInt* c = llvm::dyn_cast_or_null<llvm::ConstantInt>(sizeV);
-      uint64_t arrSize = c ? c->getZExtValue() : 0;
-      return llvm::ArrayType::get(genType(texp->getInnerType()), arrSize);
     }
     if (auto texp = RefTypeExp::downcast(_texp)) {
       return llvm::PointerType::get(llvmctx, 0);
@@ -153,36 +129,6 @@ public:
       default: llvm_unreachable("Unsupported binary operator");
       }
     }
-    else if (auto e = ArrayInitExp::downcast(_exp)) {
-      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e->getTVar()));
-      llvm::Value* sizeV = genExp(e->getSize());
-      auto sizeC = llvm::dyn_cast_or_null<llvm::ConstantInt>(genExp(e->getSize()));
-      if (!sizeC) {
-        llvm::errs() << "genExp does not support array initializer with "
-                     << "non constant size\n";
-        exit(1);
-      }
-      auto initC = llvm::dyn_cast_or_null<llvm::Constant>(genExp(e->getInitializer()));
-      if (!initC) {
-        llvm::errs() << "Array with non-constant initializer value!\n";
-        exit(1);
-      }
-      std::vector<llvm::Constant*> vals(sizeC->getZExtValue(), initC);
-      return llvm::ConstantArray::get(arrTy, vals);
-    }
-    else if (auto e = ArrayListExp::downcast(_exp)) {
-      unsigned int arrSize = e->getContent()->asArrayRef().size();
-      TVar elemTy = tyctx.resolve(e->getTVar()).second.getInner();
-      auto arrTy = llvm::ArrayType::get(genType(elemTy), arrSize);
-      llvm::Value* ret = llvm::ConstantAggregateZero::get(arrTy);
-      llvm::ArrayRef<Exp*> expList = e->getContent()->asArrayRef();
-      for (unsigned int idx = 0; idx < expList.size(); ++idx) {
-        llvm::Value* v = genExp(expList[idx]);
-        ret = b->CreateInsertValue(ret, v, idx);
-        ++idx;
-      }
-      return ret;
-    }
     else if (auto e = AscripExp::downcast(_exp)) {
       return genExp(e->getAscriptee());
     }
@@ -198,6 +144,10 @@ public:
       return b->getInt1(e->getValue());
     }
     else if (auto e = CallExp::downcast(_exp)) {
+      if (e->isConstructorCall()) {
+        llvm_unreachable("Calls to constructors must be immediately stored "
+          "right now.");
+      }
       llvm::StringRef funName = ont.mapName(e->getFunction()->asStringRef());
       llvm::Function* callee = mod->getFunction(funName);
       llvm::FunctionType* calleeType = callee->getFunctionType();
@@ -251,9 +201,9 @@ public:
       llvm::Value* baseV = genExp(e->getBase());
       llvm::Value* indexV = genExp(e->getIndex());
       TVar baseTVar = e->getBase()->getTVar();
-      TVar arrTVar = tyctx.resolve(baseTVar).second.getInner();
-      auto arrTy = llvm::dyn_cast_or_null<llvm::ArrayType>(genType(arrTVar));
-      return b->CreateGEP(arrTy, baseV, { b->getInt64(0), indexV });
+      TVar ofTVar = tyctx.resolve(baseTVar).second.getInner();
+      llvm::Type* ofTy = genType(ofTVar);
+      return b->CreateGEP(ofTy, baseV, indexV);
     }
     else if (auto e = IntLit::downcast(_exp)) {
       return llvm::ConstantInt::get(genType(e->getTVar()), e->asLong());
@@ -298,32 +248,7 @@ public:
   /// not using pure LLVM values.
   llvm::Value* genRefToExp(Exp* _exp) {
 
-    // TODO: skipping initializer for now.
-    if (auto e = ArrayInitExp::downcast(_exp)) {
-      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e->getTVar()));
-      llvm::Value* arrSize = genExp(e->getSize());
-      llvm::Value* ret = b->CreateAlloca(arrTy->getElementType(), arrSize);
-      return b->CreateBitCast(ret, llvm::PointerType::get(llvmctx, 0));
-    }
-
-    else if (auto e = ArrayListExp::downcast(_exp)) {
-      auto arrTy = llvm::dyn_cast<llvm::ArrayType>(genType(e->getTVar()));
-      auto elemTy = arrTy->getArrayElementType();
-      unsigned int arrayLen = e->getContent()->asArrayRef().size();
-      llvm::Value* ret = b->CreateAlloca(elemTy, b->getInt32(arrayLen));
-      llvm::ArrayRef<Exp*> expList = e->getContent()->asArrayRef();
-      for (unsigned int idx = 0; idx < expList.size(); ++idx) {
-        llvm::Value* elem = genExp(expList[idx]);
-        llvm::Value* ptr = b->CreateGEP(elemTy, ret, b->getInt32(idx) );
-        b->CreateStore(elem, ptr);
-        ++idx;
-      }
-      // return ret;
-      arrTy = llvm::ArrayType::get(elemTy, arrayLen);
-      return b->CreateBitCast(ret, llvm::PointerType::get(llvmctx, 0));
-    }
-
-    else if (auto e = CallExp::downcast(_exp)) {
+    if (auto e = CallExp::downcast(_exp)) {
       llvm::StructType* st = dataTypes[e->getFunction()->asStringRef()];
       llvm::Value* ret = b->CreateAlloca(st);
       unsigned int fieldIdx = 0;

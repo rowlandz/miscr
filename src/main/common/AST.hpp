@@ -94,33 +94,23 @@ class Type {
 public:
   enum struct ID : unsigned char {
     // concrete types
-    ARRAY_SART,  // array (sized at runtime)
-    ARRAY_SACT,  // array (sized at compile-time)
-    BOOL, f32, f64, i8, i16, i32, i64, NAME, RREF, UNIT, WREF,
+    BOOL, f32, f64, i8, i16, i32, i64, NAME, REF, UNIT,
 
     // type constraints
-    DECIMAL, NUMERIC, REF,
+    DECIMAL, NUMERIC,
 
     // other
     NOTYPE,
   };
 private:
   Type::ID id;
-  union { unsigned int compileTime; Exp* runtime; } arraySize;
   TVar inner;
   const Name* _name;
-  Type(Type::ID id) : arraySize({.compileTime=0}), id(id) {}
-  Type(Type::ID id, TVar inner) : arraySize({.compileTime=0}), id(id),
+  Type(Type::ID id) : id(id) {}
+  Type(Type::ID id, TVar inner) : id(id),
     inner(inner) {}
-  Type(Exp* arraySize, TVar of) : arraySize({.runtime = arraySize}), inner(of),
-    id(ID::ARRAY_SART) {}
-  Type(unsigned int arrSize, TVar of) : arraySize({.compileTime = arrSize}),
-    inner(of), id(ID::ARRAY_SACT) {}
-  Type(const Name* name)
-    : arraySize({.compileTime=0}), id(ID::NAME), _name(name) {}
+  Type(const Name* name) : id(ID::NAME), _name(name) {}
 public:
-  static Type array_sart(Exp* sz, TVar of) { return Type(sz, of); }
-  static Type array_sact(unsigned int sz, TVar of) { return Type(sz, of); }
   static Type bool_() { return Type(ID::BOOL); }
   static Type f32() { return Type(ID::f32); }
   static Type f64() { return Type(ID::f64); }
@@ -130,19 +120,13 @@ public:
   static Type i64() { return Type(ID::i64); }
   static Type name(const Name* n) { return Type(n); }
   static Type ref(TVar of) { return Type(ID::REF, of); }
-  static Type rref(TVar of) { return Type(ID::RREF, of); }
   static Type unit() { return Type(ID::UNIT); }
-  static Type wref(TVar of) { return Type(ID::WREF, of); }
   static Type decimal() { return Type(ID::DECIMAL); }
   static Type numeric() { return Type(ID::NUMERIC); }
   static Type notype() { return Type(ID::NOTYPE); }
   bool isNoType() const { return id == ID::NOTYPE; }
-  bool isArrayType() const
-    { return id == ID::ARRAY_SACT || id == ID::ARRAY_SART; }
   ID getID() const { return id; }
   TVar getInner() const { return inner; }
-  unsigned int getCompileTimeArraySize() const { return arraySize.compileTime; }
-  Exp* getRuntimeArraySize() const { return arraySize.runtime; }
   const Name* getName() const { return _name; }
 };
 
@@ -220,38 +204,14 @@ public:
 /// @brief A read-only or writable reference type expression.
 class RefTypeExp : public TypeExp {
   TypeExp* pointeeType;
-  bool writable;
 public:
-  RefTypeExp(Location loc, TypeExp* pointeeType, bool writable)
-    : TypeExp(REF_TEXP, loc), pointeeType(pointeeType), writable(writable) {}
+  RefTypeExp(Location loc, TypeExp* pointeeType)
+    : TypeExp(REF_TEXP, loc), pointeeType(pointeeType) {}
   ~RefTypeExp() { deleteAST(pointeeType); }
   static RefTypeExp* downcast(AST* ast) {
     return ast->getID() == REF_TEXP ? static_cast<RefTypeExp*>(ast) : nullptr;
   }
   TypeExp* getPointeeType() const { return pointeeType; }
-  bool isWritable() const { return writable; }
-};
-
-/// @brief Type expression of a constant-size array `[20 of i32]` or
-/// unknown-size array `[n of i32]` or `[_ of i32]`.
-class ArrayTypeExp : public TypeExp {
-  Exp* size;
-  TypeExp* innerType;
-public:
-  /// @brief If `size` is an error address, then an underscore was used to
-  /// indicate the array size. 
-  ArrayTypeExp(Location loc, Exp* size, TypeExp* innerType)
-    : TypeExp(ARRAY_TEXP, loc), size(size), innerType(innerType) {}
-  ~ArrayTypeExp()
-    { deleteAST(reinterpret_cast<AST*>(size)); deleteAST(innerType); }
-  static ArrayTypeExp* downcast(AST* ast) {
-    return ast->getID() == ARRAY_TEXP ?
-      static_cast<ArrayTypeExp*>(ast) : nullptr;
-  }
-  /// @brief This returns nullptr if size is unknown.
-  Exp* getSize() const { return size; }
-  TypeExp* getInnerType() const { return innerType; }
-  bool hasUnderscoreSize() const { return size == nullptr; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -494,18 +454,16 @@ public:
 };
 
 /// @brief An expression that allocates and initializes stack memory and returns
-/// a reference to that memory (e.g., `&myexp` or `#myexp`).
+/// a reference to that memory (e.g., `&myexp`).
 class RefExp : public Exp {
   Exp* initializer;
-  bool writable;
 public:
-  RefExp(Location loc, Exp* initializer, bool writable)
-    : Exp(REF_EXP, loc), initializer(initializer), writable(writable) {}
+  RefExp(Location loc, Exp* initializer)
+    : Exp(REF_EXP, loc), initializer(initializer) {}
   ~RefExp() { deleteAST(initializer); }
   static RefExp* downcast(AST* ast)
     { return (ast->getID() == REF_EXP) ? static_cast<RefExp*>(ast) : nullptr; }
   Exp* getInitializer() const { return initializer; }
-  bool isWritable() const { return writable; }
 };
 
 /// @brief A dereference expression.
@@ -682,7 +640,6 @@ void deleteAST(AST* _ast) {
   else if (auto ast = PrimitiveTypeExp::downcast(_ast)) delete ast;
   else if (auto ast = NameTypeExp::downcast(_ast)) delete ast;
   else if (auto ast = RefTypeExp::downcast(_ast)) delete ast;
-  else if (auto ast = ArrayTypeExp::downcast(_ast)) delete ast;
   else if (auto ast = ExpList::downcast(_ast)) delete ast;
   else if (auto ast = BoolLit::downcast(_ast)) delete ast;
   else if (auto ast = IntLit::downcast(_ast)) delete ast;
@@ -836,12 +793,6 @@ llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
     return { ast->getSize(), ast->getInitializer() };
   if (auto ast = ArrayListExp::downcast(_ast))
     return { ast->getContent() };
-  if (auto ast = ArrayTypeExp::downcast(_ast)) {
-    if (ast->getSize() != nullptr)
-      return { ast->getSize(), ast->getInnerType() };
-    else
-      return { ast->getInnerType() };
-  }
   if (auto ast = AscripExp::downcast(_ast))
     return { ast->getAscriptee(), ast->getAscripter() };
   if (auto ast = BlockExp::downcast(_ast))

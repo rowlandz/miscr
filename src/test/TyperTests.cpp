@@ -94,36 +94,19 @@ namespace TyperTests {
   }
 
   TEST(references) {
-    expShouldHaveType("&42", "rref<numeric>");
-    expShouldHaveType("#42", "wref<numeric>");
+    expShouldHaveType("&42", "ref<numeric>");
   }
 
   TEST(deref_expression) {
     expShouldHaveType("(&0)!", "numeric");
-    expShouldHaveType("(#0)!", "numeric");
   }
 
   TEST(store_expression) {
-    expShouldHaveType("{ let x = #0; x := x! + 42 }", "numeric");
-    expShouldFailTyper("{ let x = &0; x := 42; }");
+    expShouldHaveType("{ let x = &0; x := x! + 42 }", "numeric");
   }
 
-  TEST(wref_to_rref_coercion) {
-    expShouldHaveType("(#42): &i32", "rref<i32>");
-    expShouldFailTyper("(&42): #i32");
-    expShouldHaveType(
-      "{ let x = #0;"
-      "  let y = x: &i32;"
-      "  x := x! + 1;"
-      "}",
-      "i32"
-    );
-  }
-
-  TEST(arrays_and_strings) {
-    expShouldHaveType("[1,2,3]", "array_sact<3,numeric>");
-    expShouldHaveType("[20 of 0]", "array_sart<???,numeric>");
-    expShouldHaveType("\"hello\\n\"", "rref<array_sact<7,i8>>");
+  TEST(string_literal) {
+    expShouldHaveType("\"hello\\n\"", "ref<i8>");
   }
 
   TEST(decls_and_call_expressions) {
@@ -141,19 +124,12 @@ namespace TyperTests {
     declShouldPass(
       "module Testing {"
       "  extern func f(x: &i32): unit;"
-      "  func h(): unit = f(#42);"
-      "}"
-    );
-    declShouldFail(
-      "module Testing {"
-      "  extern func f(x: #i32): unit;"
       "  func h(): unit = f(&42);"
       "}"
     );
   }
 
   TEST(indexing) {
-    expShouldHaveType("(&[1,2,3])[0]", "rref<numeric>");
-    expShouldHaveType("(#[1,2,3])[0]", "wref<numeric>");
+    expShouldHaveType("(\"hello\")[0]", "ref<i8>");
   }
 }
