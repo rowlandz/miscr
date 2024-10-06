@@ -134,7 +134,7 @@ private:
   }
 
   /// @brief Canonicalizes the function name in a call expression. Flips CALL
-  /// to CALL_CONSTR if found to be a constructor call.
+  /// to CONSTR if found to be a constructor invocation.
   void canonicalizeCallExp(llvm::StringRef scope, CallExp* callExp) {
     Name* functionName = callExp->getFunction();
     while (!scope.empty()) {
@@ -145,7 +145,7 @@ private:
       }
       if (auto d = ont.getType(fqn)) {
         functionName->set(fqn);
-        callExp->markAsConstructorCall();
+        callExp->markAsConstr();
         return;
       }
       scope = getQualifier(scope);

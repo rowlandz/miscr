@@ -144,22 +144,30 @@ public:
       return b->getInt1(e->getValue());
     }
     else if (auto e = CallExp::downcast(_exp)) {
-      if (e->isConstructorCall()) {
-        llvm_unreachable("Calls to constructors must be immediately stored "
-          "right now.");
-      }
-      llvm::StringRef funName = ont.mapName(e->getFunction()->asStringRef());
-      llvm::Function* callee = mod->getFunction(funName);
-      llvm::FunctionType* calleeType = callee->getFunctionType();
-
       std::vector<llvm::Value*> args;
       llvm::ArrayRef<Exp*> expList = e->getArguments()->asArrayRef();
       for (unsigned int paramIdx = 0; paramIdx < expList.size(); ++paramIdx) {
         llvm::Value* arg = genExp(expList[paramIdx]);
-        arg = b->CreateBitCast(arg, calleeType->getParamType(paramIdx));
         args.push_back(arg);
       }
-      return b->CreateCall(callee, args);
+
+      if (e->isConstr()) {
+        llvm::StructType* st = dataTypes[e->getFunction()->asStringRef()];
+        llvm::Value* mem = b->CreateAlloca(st);
+        unsigned int fieldIdx = 0;
+        for (auto argV : args) {
+          llvm::Value* fieldAddr = b->CreateGEP(st, mem,
+            { b->getInt64(0), b->getInt32(fieldIdx) });
+          b->CreateStore(argV, fieldAddr);
+          ++fieldIdx;
+        }
+        return b->CreateLoad(st, mem);
+      } else {
+        llvm::StringRef funName = ont.mapName(e->getFunction()->asStringRef());
+        llvm::Function* callee = mod->getFunction(funName);
+        llvm::FunctionType* calleeType = callee->getFunctionType();
+        return b->CreateCall(callee, args);
+      }
     }
     else if (auto e = DerefExp::downcast(_exp)) {
       llvm::Value* ofExp = genExp(e->getOf());
@@ -216,13 +224,6 @@ public:
       return nullptr;
     }
     else if (auto e = RefExp::downcast(_exp)) {
-      AST::ID initID = e->getInitializer()->getID();
-      if (initID == AST::ID::ARRAY_INIT || initID == AST::ID::ARRAY_LIST)
-        return genRefToExp(e->getInitializer());
-      if (auto callExp = CallExp::downcast(e->getInitializer())) {
-        if (callExp->isConstructorCall())
-          return genRefToExp(e->getInitializer());
-      }
       llvm::Value* v = genExp(e->getInitializer());
       TVar initTy = e->getInitializer()->getTVar();
       llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
@@ -239,34 +240,6 @@ public:
       return b->CreateGlobalString(e->processEscapes());
     }
     else llvm_unreachable("genExp -- unsupported expression form");
-  }
-
-  /// @brief Generates LLVM IR that computes `_exp` and stores the result on
-  /// the stack. The returned value is a pointer to the result. In other words,
-  /// this is like calling `genExp(&(_exp))`. Certain expressions (like
-  /// constructing arrays of unknown size) can only be done on the stack and
-  /// not using pure LLVM values.
-  llvm::Value* genRefToExp(Exp* _exp) {
-
-    if (auto e = CallExp::downcast(_exp)) {
-      llvm::StructType* st = dataTypes[e->getFunction()->asStringRef()];
-      llvm::Value* ret = b->CreateAlloca(st);
-      unsigned int fieldIdx = 0;
-      for (auto arg : e->getArguments()->asArrayRef()) {
-        llvm::Value* argV = genExp(arg);
-        llvm::Value* fieldAddr = b->CreateGEP(st, ret,
-          { b->getInt64(0), b->getInt32(fieldIdx) });
-        b->CreateStore(argV, fieldAddr);
-        ++fieldIdx;
-      }
-      return ret;
-    }
-
-    else {
-      llvm::errs() << "genRefToExp cannot handle AST::ID::";
-      llvm::errs() << ASTIDToString(_exp->getID()) << "\n";
-      exit(1);
-    }
   }
 
   /// Codegens a `func` or external function

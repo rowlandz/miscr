@@ -29,9 +29,9 @@ class AST {
 public:
   enum ID : unsigned short {
     // expressions and statements
-    ADD, ARRAY_INIT, ARRAY_LIST, ASCRIP, BLOCK, BOOL_LIT, CALL, CALL_CONSTR,
-    DEC_LIT, DEREF, DIV, ENAME, EQ, GE, GT, IF, INDEX, INT_LIT, LE, LET, LT,
-    MUL, NE, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
+    ADD, ASCRIP, BLOCK, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF, DIV, ENAME, EQ,
+    GE, GT, IF, INDEX, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP, RETURN, STORE,
+    STRING_LIT, SUB,
 
     // declarations
     DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
@@ -57,11 +57,10 @@ public:
 
   bool isExp() const {
     switch (id) {
-    case ADD: case ARRAY_INIT: case ARRAY_LIST: case ASCRIP: case BLOCK:
-    case BOOL_LIT: case CALL: case CALL_CONSTR: case DEC_LIT: case DEREF:
-    case DIV: case ENAME: case EQ: case GE: case GT: case IF: case INDEX:
-    case INT_LIT: case LE: case LET: case LT: case MUL: case NE: case REF_EXP:
-    case RETURN: case STORE: case STRING_LIT: case SUB:
+    case ADD: case ASCRIP: case BLOCK: case BOOL_LIT: case CALL: case CONSTR:
+    case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ: case GE: case GT:
+    case IF: case INDEX: case INT_LIT: case LE: case LET: case LT: case MUL:
+    case NE: case REF_EXP: case RETURN: case STORE: case STRING_LIT: case SUB:
       return true;
     default: return false;
     }
@@ -377,9 +376,9 @@ public:
   ExpList* getStatements() const { return statements; }
 };
 
-/// @brief A function call or constructor invocation (CALL/CALL_CONSTR).
+/// @brief A function call or constructor invocation (CALL/CONSTR).
 /// The parser will always generate CALL and the canonicalizer flips the
-/// constructor calls to CALL_CONSTR.
+/// constructor calls to CONSTR.
 class CallExp : public Exp {
   Name* function;
   ExpList* arguments;
@@ -388,13 +387,13 @@ public:
     : Exp(CALL, loc), function(function), arguments(arguments) {}
   ~CallExp() { delete function; delete arguments; }
   static CallExp* downcast(AST* ast) {
-    return (ast->getID() == CALL || ast->getID() == CALL_CONSTR) ?
+    return (ast->getID() == CALL || ast->getID() == CONSTR) ?
            static_cast<CallExp*>(ast) : nullptr;
   }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
-  void markAsConstructorCall() { id = CALL_CONSTR; }
-  bool isConstructorCall() { return id == CALL_CONSTR; }
+  void markAsConstr() { id = CONSTR; }
+  bool isConstr() { return id == CONSTR; }
 };
 
 /// @brief A type ascription expression.
@@ -475,38 +474,6 @@ public:
   static DerefExp* downcast(AST* ast)
     { return ast->getID() == DEREF ? static_cast<DerefExp*>(ast) : nullptr; }
   Exp* getOf() const { return of; }
-};
-
-/// @brief An array constructor that lists out the array contents.
-/// e.g., `[42, x, y+1]`
-class ArrayListExp : public Exp {
-  ExpList* content;
-public:
-  ArrayListExp(Location loc, ExpList* content)
-    : Exp(ARRAY_LIST, loc), content(content) {}
-  ~ArrayListExp() { delete content; }
-  static ArrayListExp* downcast(AST* ast) {
-    return ast->getID() == ARRAY_LIST ?
-           static_cast<ArrayListExp*>(ast) : nullptr;
-  }
-  ExpList* getContent() const { return content; }
-};
-
-/// @brief An expression that constructs an array by specifying a size and
-/// an element to fill all the spots. e.g., `[10 of 0]`
-class ArrayInitExp : public Exp {
-  Exp* size;
-  Exp* initializer;
-public:
-  ArrayInitExp(Location loc, Exp* size, Exp* initializer)
-      : Exp(ARRAY_INIT, loc), size(size), initializer(initializer) {}
-  ~ArrayInitExp() { deleteAST(size); deleteAST(initializer); }
-  static ArrayInitExp* downcast(AST* ast) {
-    return ast->getID() == ARRAY_INIT ?
-           static_cast<ArrayInitExp*>(ast) : nullptr;
-  }
-  Exp* getSize() const { return size; }
-  Exp* getInitializer() const { return initializer; }
 };
 
 /// @brief An expression that calculates an address from a base reference and
@@ -656,8 +623,6 @@ void deleteAST(AST* _ast) {
   else if (auto ast = StoreExp::downcast(_ast)) delete ast;
   else if (auto ast = RefExp::downcast(_ast)) delete ast;
   else if (auto ast = DerefExp::downcast(_ast)) delete ast;
-  else if (auto ast = ArrayListExp::downcast(_ast)) delete ast;
-  else if (auto ast = ArrayInitExp::downcast(_ast)) delete ast;
   else if (auto ast = IndexExp::downcast(_ast)) delete ast;
   else if (auto ast = DeclList::downcast(_ast)) delete ast;
   else if (auto ast = ModuleDecl::downcast(_ast)) delete ast;
@@ -673,13 +638,11 @@ void deleteAST(AST* _ast) {
 const char* ASTIDToString(AST::ID nt) {
   switch (nt) {
   case AST::ID::ADD:                return "ADD";
-  case AST::ID::ARRAY_INIT:         return "ARRAY_INIT";
-  case AST::ID::ARRAY_LIST:         return "ARRAY_LIST";
   case AST::ID::ASCRIP:             return "ASCRIP";
   case AST::ID::BLOCK:              return "BLOCK";
   case AST::ID::BOOL_LIT:           return "BOOL_LIT";
   case AST::ID::CALL:               return "CALL";
-  case AST::ID::CALL_CONSTR:        return "CALL_CONSTR";
+  case AST::ID::CONSTR:             return "CONSTR";
   case AST::ID::DEC_LIT:            return "DEC_LIT";
   case AST::ID::DEREF:              return "DEREF";
   case AST::ID::DIV:                return "DIV";
@@ -729,13 +692,11 @@ const char* ASTIDToString(AST::ID nt) {
 
 AST::ID stringToASTID(const std::string& str) {
        if (str == "ADD")                 return AST::ID::ADD;
-  else if (str == "ARRAY_INIT")          return AST::ID::ARRAY_INIT;
-  else if (str == "ARRAY_LIST")          return AST::ID::ARRAY_LIST;
   else if (str == "ASCRIP")              return AST::ID::ASCRIP;
   else if (str == "BLOCK")               return AST::ID::BLOCK;
   else if (str == "BOOL_LIT")            return AST::ID::BOOL_LIT;
   else if (str == "CALL")                return AST::ID::CALL;
-  else if (str == "CALL_CONSTR")         return AST::ID::CALL_CONSTR;
+  else if (str == "CONSTR")              return AST::ID::CONSTR;
   else if (str == "DEC_LIT")             return AST::ID::DEC_LIT;
   else if (str == "DEREF")               return AST::ID::DEREF;
   else if (str == "DIV")                 return AST::ID::DIV;
@@ -789,10 +750,6 @@ llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
 
   if (auto ast = BinopExp::downcast(_ast))
     return { ast->getLHS(), ast->getRHS() };
-  if (auto ast = ArrayInitExp::downcast(_ast))
-    return { ast->getSize(), ast->getInitializer() };
-  if (auto ast = ArrayListExp::downcast(_ast))
-    return { ast->getContent() };
   if (auto ast = AscripExp::downcast(_ast))
     return { ast->getAscriptee(), ast->getAscripter() };
   if (auto ast = BlockExp::downcast(_ast))
