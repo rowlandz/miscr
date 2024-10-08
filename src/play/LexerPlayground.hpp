@@ -1,34 +1,37 @@
 #ifndef LEXERPLAYGROUND
 #define LEXERPLAYGROUND
 
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/FormatVariadic.h>
 #include "lexer/Lexer.hpp"
 
-void print_tokens(const std::vector<Token>* tokens) {
-  for (auto token: *tokens) {
-    std::cout << token.tagAsString() << "  ";
+void print_tokens(const std::vector<Token>& tokens) {
+  for (auto token: tokens) {
+    llvm::outs() << token.tagAsString() << "  ";
   }
-  std::cout << std::endl;
+  llvm::outs() << "\n";
 }
 
-void print_tokens_verbose(const std::vector<Token>* tokens) {
-  for (auto token: *tokens) {
-    char buffer[token.sz+1];
-    strncpy(buffer, token.ptr, token.sz);
-    buffer[token.sz] = '\0';
-    printf("@ ln%3d, col%3d   %-15s   %s\n", token.row, token.col, token.tagAsString(), buffer);
+void print_tokens_verbose(const std::vector<Token>& tokens) {
+  for (auto token: tokens) {
+    printf("r%3d c%3d   %-15s   %s\n", token.loc.row, token.loc.col, token.tagAsString(), token.asString().data());
   }
 }
 
 void play_with_lexer(bool verbose) {
-  std::string line;
+  llvm::StringRef line;
 
   while (!std::cin.eof()) {
-    std::cout << "\x1B[34m>\x1B[0m " << std::flush;
-    std::getline(std::cin, line);
+    llvm::outs() << "\x1B[34m>\x1B[0m ";
+    llvm::outs().flush();
+    auto res = llvm::MemoryBuffer::getSTDIN();
+    assert(res && "Could not read from stdin");
+    line = res.get()->getBuffer();
 
-    Lexer lexer(line.c_str());
+    Lexer lexer(line.data());
     if (!lexer.run()) {
-      std::cout << lexer.getError().render(line.c_str(), lexer.getLocationTable()) << std::endl;
+      std::cout << lexer.getError().render(line.data(), lexer.getLocationTable()) << std::endl;
       continue;
     }
     if (verbose)

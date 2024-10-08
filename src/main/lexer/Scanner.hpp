@@ -21,8 +21,8 @@ template<typename S>
 class Scanner {
 
 public:
-  Scanner(const char* text, S _initialState) : _locTable(text) {
-    p1 = p2 = text;
+  Scanner(llvm::StringRef text, S _initialState) : _locTable(text.data()) {
+    p1 = p2 = text.data();
     row = 1; col = 1;
     newlines = 0;
     lastNewline = nullptr;
@@ -46,7 +46,7 @@ public:
   /// cleared and state is reset.
   void capture(Token::Tag ty) {
     u_int8_t tokenSize = (u_int8_t)(p2 - p1);
-    _tokens.push_back(Token(ty, p1, row, col, tokenSize));
+    _tokens.push_back(Token(ty, p1, Location(row, col, tokenSize)));
     _state = initialState;
     p1 = p2;
     if (newlines == 0) {
@@ -91,7 +91,7 @@ public:
   S state() { return _state; }
 
   /// Returns the tokens. */
-  const std::vector<Token>* tokens() { return &_tokens; }
+  const std::vector<Token>& tokens() { return _tokens; }
 
   /// Returns true if there are unprocessed chars left.
   bool thereAreMoreChars() { return *p2 != '\0'; }

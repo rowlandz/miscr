@@ -30,8 +30,8 @@ enum LexerST: unsigned char {
   ST_MULTILINE_DOC_COMMENT_STAR,
 };
 
-/// The lexer takes a `const char* text` string and generates a vector of
-/// tokens which is fed to the parser.
+/// @brief The lexer takes a `const char* text` string and generates a vector
+/// of tokens which is fed to the parser.
 ///
 /// The `run` method runs the lexer and returns a success indicator. If
 /// successful, `getTokens` and `getLocationTable` can be used to retrieve data.
@@ -41,7 +41,7 @@ class Lexer {
   LocatedError err;
 
 public:
-  Lexer(const char* text) : tok(text, ST_BEGIN), err('^') {}
+  Lexer(llvm::StringRef text) : tok(text, ST_BEGIN), err('^') {}
 
   /// Runs the lexer. Returns `true` if tokenization was successful.
   bool run() {
@@ -54,7 +54,7 @@ public:
   }
 
   /// Returns the lexed tokens after a successful run.
-  const std::vector<Token>* getTokens() { return tok.tokens(); }
+  const std::vector<Token>& getTokens() { return tok.tokens(); }
 
   /// Returns the location table after a successful run.
   const LocationTable& getLocationTable() { return tok.locationTable(); }
@@ -152,7 +152,7 @@ private:
       case ST_FSLASH:
         if (c == '/') tok.step(ST_FSLASH_FSLASH);
         else if (c == '*') tok.step(ST_FSLASH_STAR);
-        else if (c == '=') tok.stepAndCapture(Token::OP_NEQ);
+        else if (c == '=') tok.stepAndCapture(Token::OP_NE);
         else tok.capture(Token::OP_DIV);
         break;
 

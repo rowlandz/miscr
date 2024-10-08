@@ -24,7 +24,7 @@ namespace LexerTests {
 
   TEST(operators) {
     tokensShouldBe("=  =>  ==  /=", {
-      Token::EQUAL, Token::FATARROW, Token::OP_EQ, Token::OP_NEQ, Token::END
+      Token::EQUAL, Token::FATARROW, Token::OP_EQ, Token::OP_NE, Token::END
     });
   }
 
@@ -74,13 +74,13 @@ namespace LexerTests {
     Lexer lexer(text);
     lexer.run();
     auto observed = lexer.getTokens();
-    auto end = observed->size() < expected.size() ? observed->size() : expected.size();
+    auto end = observed.size() < expected.size() ? observed.size() : expected.size();
     for (int i = 0; i < end; i++) {
-      if (observed->at(i).tag != expected[i]) {
+      if (observed.at(i).tag != expected[i]) {
         throw std::runtime_error(string_format("First mismatched token was at index %d", i));
       }
     }
-    if (expected.size() != observed->size())
-      throw std::runtime_error(string_format("Expected %d tokens but lexed %d.", expected.size(), observed->size()));
+    if (expected.size() != observed.size())
+      throw std::runtime_error(string_format("Expected %d tokens but lexed %d.", expected.size(), observed.size()));
   }
 }

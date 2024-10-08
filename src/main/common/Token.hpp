@@ -1,6 +1,8 @@
 #ifndef COMMON_TOKEN
 #define COMMON_TOKEN
 
+#include "common/Location.hpp"
+
 /// @brief A lexical "unit of meaning" such as an operator, keyword, or
 /// parenthesis. The Lexer turns source code into a sequence of these and the 
 /// Parser turns that sequence into an AST.
@@ -15,7 +17,7 @@ public:
     KW_STR, KW_THEN, KW_TRUE, KW_UNIT,
     KW_i8, KW_i16, KW_i32, KW_i64, KW_f32, KW_f64,
     OP_ADD, OP_SUB, OP_MUL, OP_DIV,
-    OP_GE, OP_GT, OP_LE, OP_LT, OP_EQ, OP_NEQ,
+    OP_GE, OP_GT, OP_LE, OP_LT, OP_EQ, OP_NE,
     LIT_DEC, LIT_INT, LIT_STRING,
     LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
     AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
@@ -24,14 +26,16 @@ public:
     END
   };
 
-  Tag tag;
-  const char* ptr;
-  unsigned short row;
-  unsigned short col;
-  unsigned short sz;
+  const Tag tag;
+  const char* const ptr;
+  const Location loc;
 
-  Token(Tag tag, const char* ptr, unsigned short row, unsigned short col,
-    unsigned short sz) : tag(tag), ptr(ptr), row(row), col(col), sz(sz) {}
+  Token(Tag tag, const char* ptr, Location loc)
+    : tag(tag), ptr(ptr), loc(loc) {}
+
+  const char* tagAsString() const { return tagToString(tag); }
+
+  std::string asString() const { return std::string(ptr, loc.sz); }
 
   static const char* tagToString(Tag tag) {
     switch (tag) {
@@ -66,7 +70,7 @@ public:
     case OP_LE:           return "OP_LE";
     case OP_LT:           return "OP_LT";
     case OP_EQ:           return "OP_EQ";
-    case OP_NEQ:          return "OP_NEQ";
+    case OP_NE:           return "OP_NE";
     case OP_ADD:          return "OP_ADD";
     case OP_SUB:          return "OP_SUB";
     case OP_MUL:          return "OP_MUL";
@@ -98,10 +102,6 @@ public:
     case END:             return "END";
     }
   }
-
-  const char* tagAsString() const { return tagToString(tag); }
-
-  std::string asString() const { return std::string(ptr, sz); }
 };
 
 #endif
