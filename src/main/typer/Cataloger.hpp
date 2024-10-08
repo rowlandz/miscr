@@ -35,9 +35,9 @@ private:
       std::string fqn = (scope + "::" + relName).str();
       if (auto existingModule = ont.getModule(fqn)) {
         LocatedError err;
-        err.appendStatic("Duplicate module definition.\n");
+        err.append("Duplicate module definition.\n");
         err.append(_decl->getName()->getLocation());
-        err.appendStatic("Previous definition was here:\n");
+        err.append("Previous definition was here:\n");
         err.append(existingModule->getName()->getLocation());
         errors.push_back(err);
       } else {
@@ -50,9 +50,9 @@ private:
       std::string fqn = (scope + "::" + relName).str();
       if (auto prevDef = ont.getDecl(fqn, Ontology::Space::FUNCTION_OR_TYPE)) {
         LocatedError err;
-        err.appendStatic("Data type is already defined.\n");
+        err.append("Data type is already defined.\n");
         err.append(_decl->getName()->getLocation());
-        err.appendStatic("Previous definition was here:\n");
+        err.append("Previous definition was here:\n");
         err.append(prevDef->getName()->getLocation());
         errors.push_back(err);
       } else {
@@ -64,16 +64,16 @@ private:
       std::string fqn = (scope + "::" + relName).str();
       if (auto prevDef = ont.getFunctionOrConstructor(fqn)) {
         LocatedError err;
-        err.appendStatic("Function is already defined.\n");
+        err.append("Function is already defined.\n");
         err.append(_decl->getName()->getLocation());
-        err.appendStatic("Previous definition was here:\n");
+        err.append("Previous definition was here:\n");
         err.append(prevDef->getName()->getLocation());
         errors.push_back(err);
       }
       if (relName.equals("main")) {
         if (!ont.entryPoint.empty()) {
           LocatedError err;
-          err.appendStatic("There are multiple program entry points.\n");
+          err.append("There are multiple program entry points.\n");
           err.append(_decl->getName()->getLocation());
           // TODO: add "previous entry point is here ..."
           return;
@@ -151,7 +151,7 @@ private:
       scope = getQualifier(scope);
     }
     LocatedError err;
-    err.appendStatic("Function or data type not found.\n");
+    err.append("Function or data type not found.\n");
     err.append(functionName->getLocation());
     errors.push_back(err);
   }
@@ -166,7 +166,7 @@ private:
       scope = getQualifier(scope);
     }
     LocatedError err;
-    err.appendStatic("Failed to canonicalize name.\n");
+    err.append("Failed to canonicalize name.\n");
     err.append(name->getLocation());
     errors.push_back(err);
   }

@@ -1,24 +1,40 @@
 #ifndef COMMON_TOKEN
 #define COMMON_TOKEN
 
-enum TokenTy: unsigned char {
-  TOK_IDENT,
-  KW_BOOL, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_FALSE, KW_FUNC, KW_IF,
-  KW_LET, KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_OF, KW_PROC, KW_RETURN, KW_STR,
-  KW_THEN, KW_TRUE, KW_UNIT,
-  KW_i8, KW_i16, KW_i32, KW_i64, KW_f32, KW_f64,
-  OP_ADD, OP_SUB, OP_MUL, OP_DIV,
-  OP_GE, OP_GT, OP_LE, OP_LT, OP_EQ, OP_NEQ,
-  LIT_DEC, LIT_INT, LIT_STRING,
-  LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-  AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
-  HASH, SEMICOLON, UNDERSCORE,
-  COMMENT, DOC_COMMENT_L, DOC_COMMENT_R,
-  END
-};
+/// @brief A lexical "unit of meaning" such as an operator, keyword, or
+/// parenthesis. The Lexer turns source code into a sequence of these and the 
+/// Parser turns that sequence into an AST.
+class Token {
+public:
 
-const char* TokenTyToString(TokenTy ty) {
-  switch (ty) {
+  /// @brief The type of token.
+  enum Tag : unsigned char {
+    TOK_IDENT,
+    KW_BOOL, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_FALSE, KW_FUNC, KW_IF,
+    KW_LET, KW_MATCH, KW_MODULE, KW_NAMESPACE, KW_OF, KW_PROC, KW_RETURN,
+    KW_STR, KW_THEN, KW_TRUE, KW_UNIT,
+    KW_i8, KW_i16, KW_i32, KW_i64, KW_f32, KW_f64,
+    OP_ADD, OP_SUB, OP_MUL, OP_DIV,
+    OP_GE, OP_GT, OP_LE, OP_LT, OP_EQ, OP_NEQ,
+    LIT_DEC, LIT_INT, LIT_STRING,
+    LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
+    AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
+    HASH, SEMICOLON, UNDERSCORE,
+    COMMENT, DOC_COMMENT_L, DOC_COMMENT_R,
+    END
+  };
+
+  Tag tag;
+  const char* ptr;
+  unsigned short row;
+  unsigned short col;
+  unsigned short sz;
+
+  Token(Tag tag, const char* ptr, unsigned short row, unsigned short col,
+    unsigned short sz) : tag(tag), ptr(ptr), row(row), col(col), sz(sz) {}
+
+  static const char* tagToString(Tag tag) {
+    switch (tag) {
     case TOK_IDENT:       return "TOK_IDENT";
     case KW_UNIT:         return "KW_UNIT";
     case KW_BOOL:         return "KW_BOOL";
@@ -80,18 +96,10 @@ const char* TokenTyToString(TokenTy ty) {
     case DOC_COMMENT_L:   return "DOC_COMMENT_L";
     case DOC_COMMENT_R:   return "DOC_COMMENT_R";
     case END:             return "END";
+    }
   }
-}
 
-/// A single "unit of meaning." The lexer turns a program into a sequence of
-/// these and the parser turns that sequence into an AST.
-class Token {
-public:
-  const char* ptr;
-  unsigned short row;
-  unsigned short col;
-  unsigned short sz;
-  TokenTy ty;
+  const char* tagAsString() const { return tagToString(tag); }
 
   std::string asString() const { return std::string(ptr, sz); }
 };

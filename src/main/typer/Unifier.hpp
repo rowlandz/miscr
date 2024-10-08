@@ -140,11 +140,11 @@ public:
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, ty)) return inferredTy;
     LocatedError err;
-    err.appendStatic("Cannot unify ");
+    err.append("Cannot unify ");
     err.append(tc.TVarToString(inferredTy));
-    err.appendStatic(" with type ");
+    err.append(" with type ");
     err.append(tc.TVarToString(ty));
-    err.appendStatic(".\n");
+    err.append(".\n");
     err.append(_exp->getLocation());
     errors.push_back(err);
     return inferredTy;
@@ -157,11 +157,11 @@ public:
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, expectedTy)) return inferredTy;
     LocatedError err;
-    err.appendStatic("Inferred type is ");
+    err.append("Inferred type is ");
     err.append(tc.TVarToString(inferredTy));
-    err.appendStatic(" but expected type ");
+    err.append(" but expected type ");
     err.append(tc.TVarToString(expectedTy));
-    err.appendStatic(".\n");
+    err.append(".\n");
     err.append(_exp->getLocation());
     errors.push_back(err);
     return inferredTy;
@@ -220,13 +220,13 @@ public:
         }
         if (idx < argList.size() || idx < paramList.size()) {
           LocatedError err;
-          err.appendStatic("Arity mismatch for function ");
+          err.append("Arity mismatch for function ");
           err.append(callee->getName()->asStringRef());
-          err.appendStatic(". Expected ");
+          err.append(". Expected ");
           err.append(std::to_string(paramList.size()));
-          err.appendStatic(" but got ");
+          err.append(" but got ");
           err.append(std::to_string(argList.size()));
-          err.appendStatic(".\n");
+          err.append(".\n");
           err.append(e->getLocation());
           errors.push_back(err);
         }
@@ -244,13 +244,13 @@ public:
         }
         if (idx < args.size() || idx < params.size()) {
           LocatedError err;
-          err.appendStatic("Arity mismatch for constructor ");
+          err.append("Arity mismatch for constructor ");
           err.append(callee->getName()->asStringRef());
-          err.appendStatic(". Expected ");
+          err.append(". Expected ");
           err.append(std::to_string(params.size()));
-          err.appendStatic(" but got ");
+          err.append(" but got ");
           err.append(std::to_string(args.size()));
-          err.appendStatic(".\n");
+          err.append(".\n");
           err.append(e->getLocation());
           errors.push_back(err);
         }
@@ -279,7 +279,7 @@ public:
         e->setTVar(ty);
       else {
         LocatedError err;
-        err.appendStatic("Unbound identifier.\n");
+        err.append("Unbound identifier.\n");
         err.append(e->getLocation());
         errors.push_back(err);
       }
@@ -300,6 +300,35 @@ public:
       TVar baseTy = unifyWith(e->getBase(), tc.fresh(Type::ref(tc.fresh())));
       unifyWith(e->getIndex(), tc.fresh(Type::numeric()));
       e->setTVar(baseTy);
+    }
+
+    else if (auto e = IndexFieldExp::downcast(_e)) {
+      TVar dataTVar = tc.fresh();
+      unifyWith(e->getBase(), tc.fresh(Type::ref(dataTVar)));
+      Type t = tc.resolve(dataTVar).second;
+      if (t.getID() == Type::ID::NAME) {
+        DataDecl* dd = ont.getType(t.getName()->asStringRef());
+        e->setTypeName(dd->getName()->asStringRef());
+        llvm::StringRef field = e->getFieldName()->asStringRef();
+        if (TypeExp* pt = dd->getFields()->findParamType(field)) {
+          e->setTVar(tc.fresh(Type::ref(freshFromTypeExp(pt))));
+        } else {
+          LocatedError err;
+          err.append(field);
+          err.append(" is not a field of data type ");
+          err.append(dd->getName()->asStringRef());
+          err.append(".\n");
+          err.append(e->getLocation());
+          errors.push_back(err);
+          e->setTVar(tc.fresh());
+        }
+      } else {
+        LocatedError err;
+        err.append("Could not infer what data type is being indexed.\n");
+        err.append(e->getLocation());
+        errors.push_back(err);
+        e->setTVar(tc.fresh());
+      }
     }
 
     else if (auto e = IntLit::downcast(_e)) {

@@ -7,29 +7,31 @@ namespace LexerTests {
   TESTGROUP("Lexer Tests")
 
   /** Succeeds if `text` is lexed into `expected`. */
-  void tokensShouldBe(const char* text, std::vector<TokenTy> expected);
+  void tokensShouldBe(const char* text, std::vector<Token::Tag> expected);
 
   TEST(simple_example_1) {
     tokensShouldBe("(1 + 2) * 3", {
-      LPAREN, LIT_INT, OP_ADD, LIT_INT, RPAREN, OP_MUL, LIT_INT, END
+      Token::LPAREN, Token::LIT_INT, Token::OP_ADD, Token::LIT_INT,
+      Token::RPAREN, Token::OP_MUL, Token::LIT_INT, Token::END
     });
   }
 
   TEST(keywords_and_identifiers) {
     tokensShouldBe("func funcy let", {
-      KW_FUNC, TOK_IDENT, KW_LET, END
+      Token::KW_FUNC, Token::TOK_IDENT, Token::KW_LET, Token::END
     });
   }
 
   TEST(operators) {
     tokensShouldBe("=  =>  ==  /=", {
-      EQUAL, FATARROW, OP_EQ, OP_NEQ, END
+      Token::EQUAL, Token::FATARROW, Token::OP_EQ, Token::OP_NEQ, Token::END
     });
   }
 
   TEST(ampersands_should_all_be_separate) {
     tokensShouldBe("&   &&   &&&", {
-      AMP, AMP, AMP, AMP, AMP, AMP, END
+      Token::AMP, Token::AMP, Token::AMP, Token::AMP, Token::AMP, Token::AMP,
+      Token::END
     });
   }
 
@@ -43,7 +45,7 @@ namespace LexerTests {
       "/** multiline\n"
       "    doc comment */\n"
       "/* tricky / // * /* /*/\n"
-    , { DOC_COMMENT_L, DOC_COMMENT_R, DOC_COMMENT_R, END }
+    , { Token::DOC_COMMENT_L, Token::DOC_COMMENT_R, Token::DOC_COMMENT_R, Token::END }
     );
   }
 
@@ -51,7 +53,7 @@ namespace LexerTests {
     tokensShouldBe(
       "\"a string\"\n"
       "\"string with \\\" excaped quote\"\n"
-    , { LIT_STRING, LIT_STRING, END }
+    , { Token::LIT_STRING, Token::LIT_STRING, Token::END }
     );
   }
 
@@ -68,13 +70,13 @@ namespace LexerTests {
     return std::string(buf.get(), buf.get() + size - 1);
   }
 
-  void tokensShouldBe(const char* text, std::vector<TokenTy> expected) {
+  void tokensShouldBe(const char* text, std::vector<Token::Tag> expected) {
     Lexer lexer(text);
     lexer.run();
     auto observed = lexer.getTokens();
     auto end = observed->size() < expected.size() ? observed->size() : expected.size();
     for (int i = 0; i < end; i++) {
-      if (observed->at(i).ty != expected[i]) {
+      if (observed->at(i).tag != expected[i]) {
         throw std::runtime_error(string_format("First mismatched token was at index %d", i));
       }
     }

@@ -12,49 +12,37 @@
 #define BOLDBLUE "\x1B[1;34m"
 #define RESETCOLOR "\x1B[0m"
 
-/// @brief An error message that can pretty-print source code locations. The
+/// @brief An error message that can pretty-print source code snippets. The
 /// user is provided complete control over the message text as well as a helper
-/// method for adding location visualizers. The message is constructed lazily
+/// method for adding source code snippets. The message is constructed lazily
 /// by efficient `append` methods and `render`ed on demand.
 class LocatedError {
-
-  struct Fragment {
-    enum { TEXT, STATIC_TEXT, LOCATION } tag;
-    std::string text;  // putting this inside the union is evil
-    union {
-      const char* staticText;
-      Location location;
-    };
-    Fragment(llvm::StringRef s) : tag(TEXT), text(s) {}
-    Fragment(const char* s) : tag(STATIC_TEXT), staticText(s) {}
-    Fragment(Location l) : tag(LOCATION), location(l) {}
-  };
-
-  char underlineChar;
-  llvm::SmallVector<Fragment,4> fragments;
-
 public:
+
   /// @param underlineChar The character used to underline selected text in
-  ///        locations. `\0` means omit the underline.
+  ///        code snippets. `\0` means omit the underline.
   /// @param omitSignifier If true, the initial `error: ` signifier is omitted.
   LocatedError(char underlineChar = '\0', bool omitSignifier = false) {
     this->underlineChar = underlineChar;
-    if (!omitSignifier) appendStatic("\x1B[1;31merror\x1B[37m:\x1B[0m ");
+    if (!omitSignifier) append("\x1B[1;31merror\x1B[37m:\x1B[0m ");
   }
 
-  /// Appends `text` to this error message. The text is copied into an owned
-  /// buffer so `appendStatic` is better for string literals.
-  void append(llvm::StringRef text) { fragments.push_back(Fragment(text)); }
+  /// @brief Appends @p text to this error message. The text is not copied into
+  /// an owned buffer so the error message must be rendered before @p text is
+  /// freed. In practice, this should only be used when @p text is a static
+  /// string literal.
+  template<unsigned long N>
+  void append(const char (&text)[N])
+    { fragments.push_back(Fragment(llvm::StringRef(text, N), true)); }
 
-  /// Appends `text` to this error message. The pointer itself is
-  /// stored, so the caller must be sure that the underlying text data will
-  /// not be moved or destroyed before the error is rendered. In practice, this
-  /// should only be called on string literals.
-  void appendStatic(const char* text) { fragments.push_back(Fragment(text)); }
+  /// @brief Appends @p text to this error message. The text is copied into an
+  /// owned buffer.
+  void append(llvm::StringRef text){fragments.push_back(Fragment(text, false));}
 
-  /// Appends a location vizualizer to this error message. Locations
-  /// should only be added after newlines, otherwise the text won't line up
-  /// correctly. A newline is appended though. Here's what it looks like:
+  /// @brief Appends a code snippet to this error message. Code snippets should
+  /// only be added directly after newlines, otherwise the text won't line up
+  /// correctly. The appended text always ends with a newline. A code snippet
+  /// looks something like this:
   /// ```
   /// 42 |   somefunctioncall(arg1, arg2, arg3);
   ///                         ^^^^
@@ -67,10 +55,10 @@ public:
     for (auto frag = fragments.begin(); frag < fragments.end(); ++frag) {
       switch (frag->tag) {
       case Fragment::TEXT: out.append(frag->text); break;
-      case Fragment::STATIC_TEXT: out.append(frag->staticText); break;
+      case Fragment::STATIC_TEXT: out.append(frag->staticText.str()); break;
       case Fragment::LOCATION: {
         const char* lineBegin = lt.findRow(frag->location.row, srcText);
-        renderLocation(out, frag->location, lineBegin);
+        renderCodeSnippet(out, frag->location, lineBegin);
       }
       }
     }
@@ -78,21 +66,43 @@ public:
   }
 
 private:
-  void renderLocation(std::string& out, Location location, const char* lineBegin) {
-    const char* selectBegin = lineBegin + location.col - 1;
-    const char* selectEnd = selectBegin + location.sz;
+  struct Fragment {
+    enum { TEXT, STATIC_TEXT, LOCATION } tag;
+    std::string text;  // putting this inside the union is evil
+    union {
+      llvm::StringRef staticText;
+      Location location;
+    };
+    Fragment(llvm::StringRef s, bool isStatic) {
+      if (isStatic) {
+        tag = STATIC_TEXT;
+        staticText = s;
+      } else {
+        tag = TEXT;
+        text = s.str();
+      }
+    }
+    Fragment(Location l) : tag(LOCATION), location(l) {}
+  };
+
+  char underlineChar;
+  llvm::SmallVector<Fragment,4> fragments;
+
+  void renderCodeSnippet(std::string& out, Location loc, const char* lineBegin){
+    const char* selectBegin = lineBegin + loc.col - 1;
+    const char* selectEnd = selectBegin + loc.sz;
 
     std::vector<const char*> newlinePositions;
     for (const char* p = selectBegin; p < selectEnd; p++)
       if (*p == '\n') newlinePositions.push_back(p);
 
     if (newlinePositions.size() == 0) {
-      std::string rowMarker = std::to_string(location.row);
+      std::string rowMarker = std::to_string(loc.row);
       renderLine(out, rowMarker, lineBegin, selectBegin, selectEnd);
     } else {
       std::vector<std::string> rowMarkers;
-      int lastRowToPrint = location.row + newlinePositions.size();
-      for (int i = location.row; i <= lastRowToPrint; i++)
+      int lastRowToPrint = loc.row + newlinePositions.size();
+      for (int i = loc.row; i <= lastRowToPrint; i++)
         rowMarkers.push_back(std::to_string(i));
       int prefixWidth = rowMarkers.back().size();
       int line = 0;
@@ -100,7 +110,7 @@ private:
       // first row
       std::string pref = std::string(prefixWidth - rowMarkers[line].size(), ' ')
                        + rowMarkers[line];
-      renderLine(out, pref, lineBegin, lineBegin + location.col - 1, newlinePositions[line]);
+      renderLine(out, pref, lineBegin, lineBegin + loc.col - 1, newlinePositions[line]);
       lineBegin = newlinePositions[line] + 1;
       ++line;
 

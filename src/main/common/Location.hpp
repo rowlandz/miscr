@@ -8,12 +8,11 @@ public:
   unsigned short col;
   unsigned int sz;
 
-  /// @brief Default location is 0,0,0
-  Location() { row = 0; col = 0; sz = 0; }
+  /// @brief Constructs the default location (0,0,0).
+  Location() : row(0), col(0), sz(0) {}
 
-  Location(unsigned short row, unsigned short col, unsigned int sz) {
-    this->row = row; this->col = col; this->sz = sz;
-  }
+  Location(unsigned short row, unsigned short col, unsigned int sz)
+    : row(row), col(col), sz(sz) {}
 };
 
 #endif

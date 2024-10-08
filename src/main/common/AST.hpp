@@ -30,8 +30,8 @@ public:
   enum ID : unsigned short {
     // expressions and statements
     ADD, ASCRIP, BLOCK, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF, DIV, ENAME, EQ,
-    GE, GT, IF, INDEX, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP, RETURN, STORE,
-    STRING_LIT, SUB,
+    GE, GT, IF, INDEX, INDEX_FIELD, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP,
+    RETURN, STORE, STRING_LIT, SUB,
 
     // declarations
     DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
@@ -59,8 +59,9 @@ public:
     switch (id) {
     case ADD: case ASCRIP: case BLOCK: case BOOL_LIT: case CALL: case CONSTR:
     case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ: case GE: case GT:
-    case IF: case INDEX: case INT_LIT: case LE: case LET: case LT: case MUL:
-    case NE: case REF_EXP: case RETURN: case STORE: case STRING_LIT: case SUB:
+    case IF: case INDEX: case INDEX_FIELD: case INT_LIT: case LE: case LET:
+    case LT: case MUL: case NE: case REF_EXP: case RETURN: case STORE:
+    case STRING_LIT: case SUB:
       return true;
     default: return false;
     }
@@ -492,6 +493,29 @@ public:
   Exp* getIndex() const { return index; }
 };
 
+/// @brief An expression that computes the address of a field of a data type.
+/// (e.g., `bob[.age]`).
+class IndexFieldExp : public Exp {
+  Exp* base;
+  Name* fieldName;
+  std::string typeName;   // name of the datatype being index
+public:
+  IndexFieldExp(Location loc, Exp* base, Name* fieldName)
+    : Exp(INDEX_FIELD, loc), base(base), fieldName(fieldName) {}
+  ~IndexFieldExp() { deleteAST(base); delete fieldName; }
+  static IndexFieldExp* downcast(AST* ast) {
+    return ast->getID() == INDEX_FIELD ?
+           static_cast<IndexFieldExp*>(ast) : nullptr;
+  }
+  Exp* getBase() const { return base; }
+  Name* getFieldName() const { return fieldName; }
+
+  /// Used the the unifier to set the name of the data decl being indexed.
+  void setTypeName(llvm::StringRef name) { typeName = name.str(); }
+
+  llvm::StringRef getTypeName() const { return typeName; }
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // DECLARATIONS
 ////////////////////////////////////////////////////////////////////////////////
@@ -556,6 +580,15 @@ public:
   }
   llvm::ArrayRef<std::pair<Name*, TypeExp*>> asArrayRef() const
     { return params; }
+
+  /// Returns the type expression of the parameter named `paramName`, or
+  /// `nullptr` if no such parameter exists.
+  TypeExp* findParamType(llvm::StringRef paramName) const {
+    for (auto param : params) {
+      if (param.first->asStringRef() == paramName) return param.second;
+    }
+    return nullptr;
+  }
 };
 
 /// @brief A function or extern function (FUNC/EXTERN_FUNC).
@@ -624,6 +657,7 @@ void deleteAST(AST* _ast) {
   else if (auto ast = RefExp::downcast(_ast)) delete ast;
   else if (auto ast = DerefExp::downcast(_ast)) delete ast;
   else if (auto ast = IndexExp::downcast(_ast)) delete ast;
+  else if (auto ast = IndexFieldExp::downcast(_ast)) delete ast;
   else if (auto ast = DeclList::downcast(_ast)) delete ast;
   else if (auto ast = ModuleDecl::downcast(_ast)) delete ast;
   else if (auto ast = NamespaceDecl::downcast(_ast)) delete ast;
@@ -652,6 +686,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::GE:                 return "GE";
   case AST::ID::GT:                 return "GT";
   case AST::ID::INDEX:              return "INDEX";
+  case AST::ID::INDEX_FIELD:        return "INDEX_FIELD";
   case AST::ID::INT_LIT:            return "INT_LIT";
   case AST::ID::LE:                 return "LE";
   case AST::ID::LET:                return "LET";
@@ -706,6 +741,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "GT")                  return AST::ID::GT;
   else if (str == "IF")                  return AST::ID::IF;
   else if (str == "INDEX")               return AST::ID::INDEX;
+  else if (str == "INDEX_FIELD")         return AST::ID::INDEX_FIELD;
   else if (str == "INT_LIT")             return AST::ID::INT_LIT;
   else if (str == "LE")                  return AST::ID::LE;
   else if (str == "LET")                 return AST::ID::LET;
@@ -783,6 +819,8 @@ llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
     return { ast->getCondExp(), ast->getThenExp(), ast->getElseExp() };
   if (auto ast = IndexExp::downcast(_ast))
     return { ast->getBase(), ast->getIndex() };
+  if (auto ast = IndexFieldExp::downcast(_ast))
+    return { ast->getBase(), ast->getFieldName() };
   if (auto ast = LetExp::downcast(_ast)) {
     if (ast->getAscrip() != nullptr)
       return { ast->getBoundIdent(), ast->getAscrip(), ast->getDefinition() };

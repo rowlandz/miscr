@@ -4,7 +4,17 @@
 #include <vector>
 #include "llvm/ADT/StringMap.h"
 
-/// Manages information about program variables.
+/// @brief Stores information (of type V) about local identifiers that exist in
+/// a scope hierarchy.
+///
+/// Internally, a ScopeStack is a stack of scopes, where a _scope_ is a mapping
+/// from identifier names to V values. The scope on the bottom of the stack is
+/// the outermost scope, and each one subsequently pushed is a scope that is
+/// nested inside the previous one.
+///
+/// The stack structure enables identifier shadowing; when looking up an
+/// identifier the stack is searched from top to bottom, so the inner-most
+/// occurance of the identifier is always the one whose information is returned.
 template <typename V>
 class ScopeStack {
 
@@ -16,7 +26,7 @@ public:
     push();   // do an initial push so there is always at least one scope.
   }
 
-  /** Adds a variable to the topmost scope. */
+  /// Adds a variable to the topmost scope.
   void add(llvm::StringRef varName, V addr) {
     scopes.back()[varName] = addr;
   }
@@ -32,7 +42,7 @@ public:
     return alt;
   }
 
-  /// Pushs a new empty scope onto the stack.
+  /// Pushes a new empty scope onto the stack.
   void push() {
     scopes.push_back(llvm::StringMap<V>());
   }

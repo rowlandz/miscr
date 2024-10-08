@@ -6,7 +6,7 @@
 #include "common/LocatedError.hpp"
 #include "common/AST.hpp"
 
-#define CHOMP_ELSE_ARREST(tokenTy, expected, element) if (p->ty == tokenTy) \
+#define CHOMP_ELSE_ARREST(tokenTy, expected, element) if (p->tag == tokenTy) \
   ++p; else { errTryingToParse = element; expectedTokens = expected; \
   error = ARREST; return nullptr; }
 
@@ -57,16 +57,16 @@ public:
   LocatedError getError() {
     LocatedError err('^');
     if (errTryingToParse != nullptr) {
-      err.appendStatic("I got stuck parsing ");
+      err.append("I got stuck parsing ");
       err.append(errTryingToParse);
-      err.appendStatic(".");
+      err.append(".");
     } else {
-      err.appendStatic("I got stuck while parsing.\n");
+      err.append("I got stuck while parsing.\n");
     }
     if (expectedTokens != nullptr) {
-      err.appendStatic(" I was expecting ");
+      err.append(" I was expecting ");
       err.append(expectedTokens);
-      err.appendStatic(" next.\n");
+      err.append(" next.\n");
     }
     err.append(tokToLoc(p));
     return err;
@@ -76,13 +76,13 @@ public:
 
   /// Parses an identifier (i.e., an unqualified name). 
   Name* ident() {
-    if (p->ty == TOK_IDENT) return new Name(tokToLoc(p), (p++)->asString());
+    if (p->tag == Token::TOK_IDENT) return new Name(tokToLoc(p), (p++)->asString());
     EPSILON_ERROR
   }
 
   /// Same as `ident` except the result is returned as an `std::string`.
   std::string namePart() {
-    if (p->ty == TOK_IDENT) return (p++)->asString();
+    if (p->tag == Token::TOK_IDENT) return (p++)->asString();
     error = EPSILON;
     return std::string();
   }
@@ -91,7 +91,7 @@ public:
   Name* name() {
     Token t = *p;
     std::string s = namePart(); RETURN_IF_ERROR
-    while (p->ty == COLON_COLON) {
+    while (p->tag == Token::COLON_COLON) {
       ++p;
       std::string s2 = namePart(); ARREST_IF_ERROR
       s.append("::");
@@ -104,40 +104,40 @@ public:
   // ---------- Expressions ----------
 
   BoolLit* boolLit() {
-    if (p->ty == KW_FALSE) return new BoolLit(tokToLoc(p++), false);
-    if (p->ty == KW_TRUE) return new BoolLit(tokToLoc(p++), true);
+    if (p->tag == Token::KW_FALSE) return new BoolLit(tokToLoc(p++), false);
+    if (p->tag == Token::KW_TRUE) return new BoolLit(tokToLoc(p++), true);
     EPSILON_ERROR
   }
 
   IntLit* intLit() {
-    if (p->ty == LIT_INT) return new IntLit(tokToLoc(p), (p++)->ptr);
+    if (p->tag == Token::LIT_INT) return new IntLit(tokToLoc(p), (p++)->ptr);
     EPSILON_ERROR
   }
 
   DecimalLit* decimalLit() {
-    if (p->ty == LIT_DEC) return new DecimalLit(tokToLoc(p), (p++)->ptr);
+    if (p->tag == Token::LIT_DEC) return new DecimalLit(tokToLoc(p), (p++)->ptr);
     EPSILON_ERROR
   }
 
   StringLit* stringLit() {
-    if (p->ty == LIT_STRING) return new StringLit(tokToLoc(p), (p++)->ptr);
+    if (p->tag == Token::LIT_STRING) return new StringLit(tokToLoc(p), (p++)->ptr);
     EPSILON_ERROR
   }
 
   Exp* parensExp() {
-    if (p->ty == LPAREN) ++p; else EPSILON_ERROR
+    if (p->tag == Token::LPAREN) ++p; else EPSILON_ERROR
     Exp* ret = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(RPAREN, ")", "parentheses expression")
+    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "parentheses expression")
     return ret;
   }
 
   Exp* nameOrCallExp() {
     Token t = *p;
     Name* n = name(); RETURN_IF_ERROR
-    if (p->ty == LPAREN) {
+    if (p->tag == Token::LPAREN) {
       ++p;
       ExpList* argList = expListWotc0();
-      CHOMP_ELSE_ARREST(RPAREN, ")", "function call")
+      CHOMP_ELSE_ARREST(Token::RPAREN, ")", "function call")
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
       return new CallExp(loc, n, argList);
     } else {
@@ -147,44 +147,12 @@ public:
 
   BlockExp* blockExp() {
     Token t = *p;
-    if (p->ty == LBRACE) ++p; else EPSILON_ERROR
+    if (p->tag == Token::LBRACE) ++p; else EPSILON_ERROR
     ExpList* statements = stmts0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(RBRACE, "}", "block expression")
+    CHOMP_ELSE_ARREST(Token::RBRACE, "}", "block expression")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return new BlockExp(loc, statements);
   }
-
-  // @brief Parses an array list or array init expression. 
-  // Exp* arrayListOrInitExp() {
-  //   Token t0 = *p;
-  //   if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
-  //   Token t1 = *p;
-  //   Exp* firstExp = exp(); ARREST_IF_ERROR
-  //   if (p->ty == KW_OF) {
-  //     ++p;
-  //     Exp* initializer = exp(); ARREST_IF_ERROR
-  //     CHOMP_ELSE_ARREST(RBRACKET, "]", "array init expression")
-  //     Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-  //     return new ArrayInitExp(loc, firstExp, initializer);
-  //   } else if (p->ty == COMMA) {
-  //     ++p;
-  //     ExpList* contentTail = expListWotc0(); ARREST_IF_ERROR
-  //     Location loc(t1.row, t1.col, (unsigned int)(p->ptr - t1.ptr));
-  //     ExpList* content = new ExpList(loc, firstExp, contentTail);
-  //     CHOMP_ELSE_ARREST(RBRACKET, "]", "array list constructor")
-  //     loc = Location(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-  //     return new ArrayListExp(loc, content);
-  //   } else if (p->ty == RBRACKET) {
-  //     ExpList* content = new ExpList(Location(p->row, p->col, 0));
-  //     ++p;
-  //     Location loc(t0.row, t0.col, (unsigned int)(p->ptr - t0.ptr));
-  //     return new ArrayListExp(loc, content);
-  //   } else {
-  //     errTryingToParse = "array init or list expression";
-  //     expectedTokens = "of , ]";
-  //     ARRESTING_ERROR
-  //   }
-  // }
 
   Exp* expLv0() {
     Exp* ret;
@@ -203,20 +171,30 @@ public:
     Token t = *p;
     Exp* e = expLv0(); RETURN_IF_ERROR
     for (;;) {
-      switch(p->ty) {
-      case EXCLAIM: {
+      switch(p->tag) {
+      case Token::EXCLAIM: {
         Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
         e = new DerefExp(loc, e);
         ++p;
         break;
       }
-      case LBRACKET: {
+      case Token::LBRACKET: {
         ++p;
-        Exp* indexExp = exp(); ARREST_IF_ERROR
-        CHOMP_ELSE_ARREST(RBRACKET, "]", "index expression")
-        Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-        e = new IndexExp(loc, e, indexExp);
-        break;
+        if (p->tag == Token::DOT) {
+          ++p;
+          Name* fieldName = ident(); ARREST_IF_ERROR
+          CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index field expression")
+          Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+          e = new IndexFieldExp(loc, e, fieldName);
+          break;
+        }
+        else {
+          Exp* indexExp = exp(); ARREST_IF_ERROR
+          CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index expression")
+          Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
+          e = new IndexExp(loc, e, indexExp);
+          break;
+        }
       }
       default: return e;
       }
@@ -225,7 +203,7 @@ public:
 
   Exp* expLv2() {
     Token t = *p;
-    if (t.ty == AMP) {
+    if (t.tag == Token::AMP) {
       ++p;
       Exp* e = expLv2(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -238,7 +216,7 @@ public:
   Exp* expLv3() {
     Token t = *p;
     Exp* e = expLv2(); RETURN_IF_ERROR
-    while (p->ty == COLON) {
+    while (p->tag == Token::COLON) {
       ++p;
       TypeExp* tyAscrip = typeExp(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -251,8 +229,8 @@ public:
     Token t = *p;
     Exp* lhs = expLv3();
     RETURN_IF_ERROR
-    while (p->ty == OP_MUL || p->ty == OP_DIV) {
-      AST::ID op = (p->ty == OP_MUL) ? AST::ID::MUL : AST::ID::DIV;
+    while (p->tag == Token::OP_MUL || p->tag == Token::OP_DIV) {
+      AST::ID op = (p->tag == Token::OP_MUL) ? AST::ID::MUL : AST::ID::DIV;
       ++p;
       Exp* rhs = expLv3(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -264,8 +242,8 @@ public:
   Exp* expLv5() {
     Token t = *p;
     Exp* lhs = expLv4(); RETURN_IF_ERROR
-    while (p->ty == OP_ADD || p->ty == OP_SUB) {
-      AST::ID op = (p->ty == OP_ADD) ? AST::ID::ADD : AST::ID::SUB;
+    while (p->tag == Token::OP_ADD || p->tag == Token::OP_SUB) {
+      AST::ID op = (p->tag == Token::OP_ADD) ? AST::ID::ADD : AST::ID::SUB;
       ++p;
       Exp* rhs = expLv4(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -277,13 +255,13 @@ public:
   Exp* expLv6() {
     Token t = *p;
     Exp* lhs = expLv5(); RETURN_IF_ERROR
-    while (p->ty == OP_EQ || p->ty == OP_NEQ || p->ty == OP_GE
-    || p->ty == OP_GT || p->ty == OP_LE || p->ty == OP_LT) {
-      AST::ID op = p->ty == OP_EQ ? AST::ID::EQ :
-                   p->ty == OP_NEQ ? AST::ID::NE :
-                   p->ty == OP_GE ? AST::ID::GE :
-                   p->ty == OP_GT ? AST::ID::GT :
-                   p->ty == OP_LE ? AST::ID::LE :
+    while (p->tag == Token::OP_EQ || p->tag == Token::OP_NEQ || p->tag == Token::OP_GE
+    || p->tag == Token::OP_GT || p->tag == Token::OP_LE || p->tag == Token::OP_LT) {
+      AST::ID op = p->tag == Token::OP_EQ ? AST::ID::EQ :
+                   p->tag == Token::OP_NEQ ? AST::ID::NE :
+                   p->tag == Token::OP_GE ? AST::ID::GE :
+                   p->tag == Token::OP_GT ? AST::ID::GT :
+                   p->tag == Token::OP_LE ? AST::ID::LE :
                                     AST::ID::LT;
       ++p;
       Exp* rhs = expLv5(); ARREST_IF_ERROR
@@ -296,7 +274,7 @@ public:
   Exp* expLv7() {
     Token t = *p;
     Exp* lhs = expLv6(); RETURN_IF_ERROR
-    while (p->ty == COLON_EQUAL) {
+    while (p->tag == Token::COLON_EQUAL) {
       ++p;
       Exp* rhs = expLv6(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -307,11 +285,11 @@ public:
 
   IfExp* ifExp() {
     Token t = *p;
-    if (p->ty == KW_IF) ++p; else EPSILON_ERROR
+    if (p->tag == Token::KW_IF) ++p; else EPSILON_ERROR
     Exp* condExp = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(KW_THEN, "then", "if expression")
+    CHOMP_ELSE_ARREST(Token::KW_THEN, "then", "if expression")
     Exp* thenExp = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(KW_ELSE, "else", "if expression")
+    CHOMP_ELSE_ARREST(Token::KW_ELSE, "else", "if expression")
     Exp* elseExp = exp(); ARREST_IF_ERROR
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return new IfExp(loc, condExp, thenExp, elseExp);
@@ -337,7 +315,7 @@ public:
         return new ExpList(loc, es);
       }
       es.push_back(e);
-      if (p->ty != COMMA) {
+      if (p->tag != Token::COMMA) {
         Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
         return new ExpList(loc, es);
       }
@@ -348,15 +326,14 @@ public:
   // ---------- Type Expressions ----------
 
   TypeExp* typeExpLv0() {
-    if (p->ty == KW_f32) return PrimitiveTypeExp::newF32(tokToLoc(p++));
-    if (p->ty == KW_f64) return PrimitiveTypeExp::newF64(tokToLoc(p++));
-    if (p->ty == KW_i8) return PrimitiveTypeExp::newI8(tokToLoc(p++));
-    if (p->ty == KW_i16) return PrimitiveTypeExp::newI16(tokToLoc(p++));
-    if (p->ty == KW_i32) return PrimitiveTypeExp::newI32(tokToLoc(p++));
-    if (p->ty == KW_i64) return PrimitiveTypeExp::newI64(tokToLoc(p++));
-    if (p->ty == KW_BOOL) return PrimitiveTypeExp::newBool(tokToLoc(p++));
-    //if (p->ty == KW_STR) return PrimitiveTypeExp::newStr(tokToLoc(p++));
-    if (p->ty == KW_UNIT) return PrimitiveTypeExp::newUnit(tokToLoc(p++));
+    if (p->tag == Token::KW_f32) return PrimitiveTypeExp::newF32(tokToLoc(p++));
+    if (p->tag == Token::KW_f64) return PrimitiveTypeExp::newF64(tokToLoc(p++));
+    if (p->tag == Token::KW_i8) return PrimitiveTypeExp::newI8(tokToLoc(p++));
+    if (p->tag == Token::KW_i16) return PrimitiveTypeExp::newI16(tokToLoc(p++));
+    if (p->tag == Token::KW_i32) return PrimitiveTypeExp::newI32(tokToLoc(p++));
+    if (p->tag == Token::KW_i64) return PrimitiveTypeExp::newI64(tokToLoc(p++));
+    if (p->tag == Token::KW_BOOL) return PrimitiveTypeExp::newBool(tokToLoc(p++));
+    if (p->tag == Token::KW_UNIT) return PrimitiveTypeExp::newUnit(tokToLoc(p++));
     TypeExp* ret;
     // ret = arrayTypeExp(); CONTINUE_ON_EPSILON(ret)
     ret = nameTypeExp(); CONTINUE_ON_EPSILON(ret)
@@ -365,7 +342,7 @@ public:
 
   TypeExp* typeExp() {
     Token t = *p;
-    if (t.ty == AMP) {
+    if (t.tag == Token::AMP) {
       ++p;
       TypeExp* n1 = typeExp(); ARREST_IF_ERROR
       Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -380,35 +357,19 @@ public:
     return new NameTypeExp(n);
   }
 
-  // ArrayTypeExp* arrayTypeExp() {
-  //   Token t = *p;
-  //   if (p->ty == LBRACKET) ++p; else EPSILON_ERROR
-  //   Exp* size = nullptr;
-  //   if (p->ty == UNDERSCORE) {
-  //     ++p;
-  //   } else {
-  //     size = exp(); ARREST_IF_ERROR
-  //   }
-  //   CHOMP_ELSE_ARREST(KW_OF, "of", "array type expression")
-  //   TypeExp* innerType = typeExp(); ARREST_IF_ERROR
-  //   CHOMP_ELSE_ARREST(RBRACKET, "]", "array type expression")
-  //   Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
-  //   return new ArrayTypeExp(loc, size, innerType);
-  // }
-
   // ---------- Statements ----------
 
   LetExp* letStmt() {
     Token t = *p;
-    if (p->ty == KW_LET) ++p; else EPSILON_ERROR
+    if (p->tag == Token::KW_LET) ++p; else EPSILON_ERROR
     Name* boundIdent = ident(); ARREST_IF_ERROR
     TypeExp* ascrip = nullptr;
-    if (p->ty == COLON) {
+    if (p->tag == Token::COLON) {
       ++p;
       ascrip = typeExp(); ARREST_IF_ERROR
-      CHOMP_ELSE_ARREST(EQUAL, "=", "let statement")
+      CHOMP_ELSE_ARREST(Token::EQUAL, "=", "let statement")
     } else {
-      CHOMP_ELSE_ARREST(EQUAL, ": =", "let statement")
+      CHOMP_ELSE_ARREST(Token::EQUAL, ": =", "let statement")
     }
     Exp* definition = exp(); ARREST_IF_ERROR
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
@@ -417,9 +378,9 @@ public:
 
   ReturnExp* returnStmt() {
     Token t = *p;
-    if (p->ty == KW_RETURN) ++p; else EPSILON_ERROR
+    if (p->tag == Token::KW_RETURN) ++p; else EPSILON_ERROR
     Exp* returnee = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(SEMICOLON, ";", "return statement")
+    CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "return statement")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return new ReturnExp(loc, returnee);
   }
@@ -446,7 +407,7 @@ public:
         return new ExpList(loc, ss);
       }
       ss.push_back(s);
-      if (p->ty != SEMICOLON) {
+      if (p->tag != Token::SEMICOLON) {
         Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
         return new ExpList(loc, ss);
       }
@@ -471,10 +432,10 @@ public:
         Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
         return new ParamList(loc, params);
       }
-      CHOMP_ELSE_ARREST(COLON, ":", "parameter list")
+      CHOMP_ELSE_ARREST(Token::COLON, ":", "parameter list")
       paramType = typeExp(); ARREST_IF_ERROR
       params.push_back(std::pair<Name*, TypeExp*>(paramName, paramType));
-      if (p->ty != COMMA) {
+      if (p->tag != Token::COMMA) {
         Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
         return new ParamList(loc, params);
       }
@@ -484,42 +445,42 @@ public:
 
   DataDecl* dataDecl() {
     Token t = *p;
-    if (p->ty == KW_DATA) ++p; else EPSILON_ERROR
+    if (p->tag == Token::KW_DATA) ++p; else EPSILON_ERROR
     Name* name = ident(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(LPAREN, "(", "data")
+    CHOMP_ELSE_ARREST(Token::LPAREN, "(", "data")
     ParamList* fields = paramListWotc0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(RPAREN, ")", "data")
+    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "data")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return new DataDecl(loc, name, fields);
   }
 
   FunctionDecl* functionDecl() {
     Token t = *p;
-    if (p->ty == KW_FUNC) ++p; else EPSILON_ERROR
+    if (p->tag == Token::KW_FUNC) ++p; else EPSILON_ERROR
     Name* name = ident(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(LPAREN, "(", "function")
+    CHOMP_ELSE_ARREST(Token::LPAREN, "(", "function")
     ParamList* params = paramListWotc0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(RPAREN, ")", "function")
-    CHOMP_ELSE_ARREST(COLON, ":", "function")
+    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "function")
+    CHOMP_ELSE_ARREST(Token::COLON, ":", "function")
     TypeExp* retType = typeExp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(EQUAL, "=", "function")
+    CHOMP_ELSE_ARREST(Token::EQUAL, "=", "function")
     Exp* body = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(SEMICOLON, ";", "function")
+    CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return new FunctionDecl(loc, name, params, retType, body);
   }
 
   FunctionDecl* externFunctionDecl() {
     Token t = *p;
-    if (p->ty == KW_EXTERN) ++p; else EPSILON_ERROR
-    CHOMP_ELSE_ARREST(KW_FUNC, "func", "extern function")
+    if (p->tag == Token::KW_EXTERN) ++p; else EPSILON_ERROR
+    CHOMP_ELSE_ARREST(Token::KW_FUNC, "func", "extern function")
     Name* name = ident(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(LPAREN, "(", "extern function")
+    CHOMP_ELSE_ARREST(Token::LPAREN, "(", "extern function")
     ParamList* params = paramListWotc0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(RPAREN, ")", "extern function")
-    CHOMP_ELSE_ARREST(COLON, ":", "extern function")
+    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "extern function")
+    CHOMP_ELSE_ARREST(Token::COLON, ":", "extern function")
     TypeExp* retType = typeExp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(SEMICOLON, ";", "extern function")
+    CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "extern function")
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return new FunctionDecl(loc, name, params, retType);
   }
@@ -528,14 +489,14 @@ public:
   Decl* moduleOrNamespace() {
     Token t = *p;
     AST::ID ty;
-    if (p->ty == KW_MODULE) { ty = AST::ID::MODULE; ++p; }
-    else if (p->ty == KW_NAMESPACE) { ty = AST::ID::NAMESPACE; ++p; }
+    if (p->tag == Token::KW_MODULE) { ty = AST::ID::MODULE; ++p; }
+    else if (p->tag == Token::KW_NAMESPACE) { ty = AST::ID::NAMESPACE; ++p; }
     else EPSILON_ERROR
     const char* whatThisIs = ty == AST::ID::MODULE ? "module" : "namespace";
     Name* n1 = ident(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(LBRACE, "{", whatThisIs)
+    CHOMP_ELSE_ARREST(Token::LBRACE, "{", whatThisIs)
     DeclList* n2 = decls0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(RBRACE, "}", whatThisIs)
+    CHOMP_ELSE_ARREST(Token::RBRACE, "}", whatThisIs)
     Location loc(t.row, t.col, (unsigned int)(p->ptr - t.ptr));
     return ty == AST::ID::MODULE ?
            static_cast<Decl*>(new ModuleDecl(loc, n1, n2)) :
@@ -573,6 +534,14 @@ public:
 
   Location tokToLoc(std::vector<Token>::const_iterator tok) {
     return Location(tok->row, tok->col, tok->sz);
+  }
+
+  /// @brief Returns the location that spans from the beginning of @p first to
+  /// the end of the token before the current one.
+  /// @param first 
+  /// @return 
+  Location hereFrom(Token first) {
+    return Location(first.row, first.col, p->ptr - first.ptr);
   }
 };
 

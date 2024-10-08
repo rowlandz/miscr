@@ -49,7 +49,7 @@ public:
       if (!one_iteration()) return false;
     }
     final_iteration();
-    tok.capture(END);
+    tok.capture(Token::END);
     return true;
   }
 
@@ -78,23 +78,23 @@ private:
         else if (c == '>') tok.step(ST_RANGLE);
         else if (c == '<') tok.step(ST_LANGLE);
         else if (c == ':') tok.step(ST_COLON);
-        else if (c == '&') tok.stepAndCapture(AMP);
-        else if (c == '#') tok.stepAndCapture(HASH);
-        else if (c == '!') tok.stepAndCapture(EXCLAIM);
-        else if (c == '+') tok.stepAndCapture(OP_ADD);
-        else if (c == '-') tok.stepAndCapture(OP_SUB);
-        else if (c == '*') tok.stepAndCapture(OP_MUL);
-        else if (c == '(') tok.stepAndCapture(LPAREN);
-        else if (c == ')') tok.stepAndCapture(RPAREN);
-        else if (c == '{') tok.stepAndCapture(LBRACE);
-        else if (c == '}') tok.stepAndCapture(RBRACE);
-        else if (c == '[') tok.stepAndCapture(LBRACKET);
-        else if (c == ']') tok.stepAndCapture(RBRACKET);
-        else if (c == ',') tok.stepAndCapture(COMMA);
-        else if (c == '.') tok.stepAndCapture(DOT);
-        else if (c == ';') tok.stepAndCapture(SEMICOLON);
+        else if (c == '&') tok.stepAndCapture(Token::AMP);
+        else if (c == '#') tok.stepAndCapture(Token::HASH);
+        else if (c == '!') tok.stepAndCapture(Token::EXCLAIM);
+        else if (c == '+') tok.stepAndCapture(Token::OP_ADD);
+        else if (c == '-') tok.stepAndCapture(Token::OP_SUB);
+        else if (c == '*') tok.stepAndCapture(Token::OP_MUL);
+        else if (c == '(') tok.stepAndCapture(Token::LPAREN);
+        else if (c == ')') tok.stepAndCapture(Token::RPAREN);
+        else if (c == '{') tok.stepAndCapture(Token::LBRACE);
+        else if (c == '}') tok.stepAndCapture(Token::RBRACE);
+        else if (c == '[') tok.stepAndCapture(Token::LBRACKET);
+        else if (c == ']') tok.stepAndCapture(Token::RBRACKET);
+        else if (c == ',') tok.stepAndCapture(Token::COMMA);
+        else if (c == '.') tok.stepAndCapture(Token::DOT);
+        else if (c == ';') tok.stepAndCapture(Token::SEMICOLON);
         else {
-          err.appendStatic("Illegal start of token.\n");
+          err.append("Illegal start of token.\n");
           err.append(tok.currentLocation());
           return false;
         }
@@ -108,40 +108,40 @@ private:
       case ST_DIGITS:
         if (isDigit(c)) tok.step(ST_DIGITS);
         else if (c == '.') tok.step(ST_DIGITS_DOT_DIGITS); 
-        else tok.capture(LIT_INT);
+        else tok.capture(Token::LIT_INT);
         break;
       
       case ST_DIGITS_DOT_DIGITS:
         if (isDigit(c)) tok.step(ST_DIGITS_DOT_DIGITS);
-        else tok.capture(LIT_DEC);
+        else tok.capture(Token::LIT_DEC);
         break;
 
       case ST_EQUAL:
-        if (c == '>') tok.stepAndCapture(FATARROW);
-        else if (c == '=') tok.stepAndCapture(OP_EQ);
-        else tok.capture(EQUAL);
+        if (c == '>') tok.stepAndCapture(Token::FATARROW);
+        else if (c == '=') tok.stepAndCapture(Token::OP_EQ);
+        else tok.capture(Token::EQUAL);
         break;
 
       case ST_LANGLE:
-        if (c == '=') tok.stepAndCapture(OP_LE);
-        else tok.capture(OP_LT);
+        if (c == '=') tok.stepAndCapture(Token::OP_LE);
+        else tok.capture(Token::OP_LT);
         break;
 
       case ST_RANGLE:
-        if (c == '=') tok.stepAndCapture(OP_GE);
-        else tok.capture(OP_GT);
+        if (c == '=') tok.stepAndCapture(Token::OP_GE);
+        else tok.capture(Token::OP_GT);
         break;
 
       case ST_COLON:
-        if (c == ':') tok.stepAndCapture(COLON_COLON);
-        else if (c == '=') tok.stepAndCapture(COLON_EQUAL);
-        else tok.capture(COLON);
+        if (c == ':') tok.stepAndCapture(Token::COLON_COLON);
+        else if (c == '=') tok.stepAndCapture(Token::COLON_EQUAL);
+        else tok.capture(Token::COLON);
         break;
 
       case ST_STRING:
-        if (c == '"') tok.stepAndCapture(LIT_STRING);
+        if (c == '"') tok.stepAndCapture(Token::LIT_STRING);
         else if (c == '\\') tok.step(ST_STRING_BSLASH);
-        else if (c == '\n') { tok.capture(LIT_STRING); tok.stepAndDiscard(); }
+        else if (c == '\n') { tok.capture(Token::LIT_STRING); tok.stepAndDiscard(); }
         else tok.step(ST_STRING);
         break;
 
@@ -152,8 +152,8 @@ private:
       case ST_FSLASH:
         if (c == '/') tok.step(ST_FSLASH_FSLASH);
         else if (c == '*') tok.step(ST_FSLASH_STAR);
-        else if (c == '=') tok.stepAndCapture(OP_NEQ);
-        else tok.capture(OP_DIV);
+        else if (c == '=') tok.stepAndCapture(Token::OP_NEQ);
+        else tok.capture(Token::OP_DIV);
         break;
 
       case ST_FSLASH_STAR:
@@ -179,12 +179,12 @@ private:
         break;
 
       case ST_LINE_COMMENT_L:
-        if (c == '\n') { tok.capture(DOC_COMMENT_L); tok.stepAndDiscard(); }
+        if (c == '\n') { tok.capture(Token::DOC_COMMENT_L); tok.stepAndDiscard(); }
         else tok.step(ST_LINE_COMMENT_L);
         break;
 
       case ST_LINE_COMMENT_R:
-        if (c == '\n') { tok.capture(DOC_COMMENT_R); tok.stepAndDiscard(); }
+        if (c == '\n') { tok.capture(Token::DOC_COMMENT_R); tok.stepAndDiscard(); }
         else tok.step(ST_LINE_COMMENT_R);
         break;
 
@@ -205,7 +205,7 @@ private:
         break;
 
       case ST_MULTILINE_DOC_COMMENT_STAR:
-        if (c == '/') tok.stepAndCapture(DOC_COMMENT_R);
+        if (c == '/') tok.stepAndCapture(Token::DOC_COMMENT_R);
         else if (c == '*') tok.step(ST_MULTILINE_DOC_COMMENT_STAR);
         else tok.step(ST_MULTILINE_DOC_COMMENT);
         break;
@@ -219,32 +219,32 @@ private:
       case ST_BEGIN:
         break;
       case ST_DIGITS:
-        tok.capture(LIT_INT);
+        tok.capture(Token::LIT_INT);
         break;
       case ST_DIGITS_DOT_DIGITS:
-        tok.capture(LIT_DEC);
+        tok.capture(Token::LIT_DEC);
         break;
       case ST_IDENT:
         tok.capture(identOrKeywordTy(tok.selectionPtr(), tok.selectionSize()));
         break;
       case ST_EQUAL:
-        tok.capture(EQUAL);
+        tok.capture(Token::EQUAL);
         break;
       case ST_LANGLE:
-        tok.capture(OP_LT);
+        tok.capture(Token::OP_LT);
         break;
       case ST_RANGLE:
-        tok.capture(OP_GT);
+        tok.capture(Token::OP_GT);
         break;
       case ST_COLON:
-        tok.capture(COLON);
+        tok.capture(Token::COLON);
         break;
       case ST_STRING:
       case ST_STRING_BSLASH:
-        tok.capture(LIT_STRING);
+        tok.capture(Token::LIT_STRING);
         break;
       case ST_FSLASH:
-        tok.capture(OP_DIV);
+        tok.capture(Token::OP_DIV);
         break;
       case ST_FSLASH_FSLASH:
       case ST_FSLASH_STAR:
@@ -255,61 +255,61 @@ private:
         // discard non-doc comments
         break;
       case ST_LINE_COMMENT_L:
-        tok.capture(DOC_COMMENT_L);
+        tok.capture(Token::DOC_COMMENT_L);
         break;
       case ST_LINE_COMMENT_R:
       case ST_MULTILINE_DOC_COMMENT:
       case ST_MULTILINE_DOC_COMMENT_STAR:
-        tok.capture(DOC_COMMENT_R);
+        tok.capture(Token::DOC_COMMENT_R);
         break;
     }
   }
 
-  /** If `s` is a keyword, returns the corresponding token type,
+  /** If `s` is a keyword, returns the corresponding token tag,
    * otherwise returns TOK_IDENT. */
-  TokenTy identOrKeywordTy(const char* s, int len) {
+  Token::Tag identOrKeywordTy(const char* s, int len) {
     switch (len) {
       case 1:
-        if (!strncmp("_", s, 1)) return UNDERSCORE;
+        if (!strncmp("_", s, 1)) return Token::UNDERSCORE;
       case 2:
-        if (!strncmp("i8", s, 2)) return KW_i8;
-        if (!strncmp("if", s, 2)) return KW_IF;
-        if (!strncmp("of", s, 2)) return KW_OF;
-        return TOK_IDENT;
+        if (!strncmp("i8", s, 2)) return Token::KW_i8;
+        if (!strncmp("if", s, 2)) return Token::KW_IF;
+        if (!strncmp("of", s, 2)) return Token::KW_OF;
+        return Token::TOK_IDENT;
       case 3:
-        if (!strncmp("f32", s, 3)) return KW_f32;
-        if (!strncmp("f64", s, 3)) return KW_f64;
-        if (!strncmp("i16", s, 3)) return KW_i16;
-        if (!strncmp("i32", s, 3)) return KW_i32;
-        if (!strncmp("i64", s, 3)) return KW_i64;
-        if (!strncmp("let", s, 3)) return KW_LET;
-        if (!strncmp("str", s, 3)) return KW_STR;
-        return TOK_IDENT;
+        if (!strncmp("f32", s, 3)) return Token::KW_f32;
+        if (!strncmp("f64", s, 3)) return Token::KW_f64;
+        if (!strncmp("i16", s, 3)) return Token::KW_i16;
+        if (!strncmp("i32", s, 3)) return Token::KW_i32;
+        if (!strncmp("i64", s, 3)) return Token::KW_i64;
+        if (!strncmp("let", s, 3)) return Token::KW_LET;
+        if (!strncmp("str", s, 3)) return Token::KW_STR;
+        return Token::TOK_IDENT;
       case 4:
-        if (!strncmp("bool", s, 4)) return KW_BOOL;
-        if (!strncmp("case", s, 4)) return KW_CASE;
-        if (!strncmp("data", s, 4)) return KW_DATA;
-        if (!strncmp("else", s, 4)) return KW_ELSE;
-        if (!strncmp("func", s, 4)) return KW_FUNC;
-        if (!strncmp("proc", s, 4)) return KW_PROC;
-        if (!strncmp("then", s, 4)) return KW_THEN;
-        if (!strncmp("true", s, 4)) return KW_TRUE;
-        if (!strncmp("unit", s, 4)) return KW_UNIT;
-        return TOK_IDENT;
+        if (!strncmp("bool", s, 4)) return Token::KW_BOOL;
+        if (!strncmp("case", s, 4)) return Token::KW_CASE;
+        if (!strncmp("data", s, 4)) return Token::KW_DATA;
+        if (!strncmp("else", s, 4)) return Token::KW_ELSE;
+        if (!strncmp("func", s, 4)) return Token::KW_FUNC;
+        if (!strncmp("proc", s, 4)) return Token::KW_PROC;
+        if (!strncmp("then", s, 4)) return Token::KW_THEN;
+        if (!strncmp("true", s, 4)) return Token::KW_TRUE;
+        if (!strncmp("unit", s, 4)) return Token::KW_UNIT;
+        return Token::TOK_IDENT;
       case 5:
-        if (!strncmp("false", s, 5)) return KW_FALSE;
-        if (!strncmp("match", s, 5)) return KW_MATCH;
-        return TOK_IDENT;
+        if (!strncmp("false", s, 5)) return Token::KW_FALSE;
+        if (!strncmp("match", s, 5)) return Token::KW_MATCH;
+        return Token::TOK_IDENT;
       case 6:
-        if (!strncmp("extern", s, 6)) return KW_EXTERN;
-        if (!strncmp("module", s, 6)) return KW_MODULE;
-        if (!strncmp("return", s, 6)) return KW_RETURN;
-        return TOK_IDENT;
+        if (!strncmp("extern", s, 6)) return Token::KW_EXTERN;
+        if (!strncmp("module", s, 6)) return Token::KW_MODULE;
+        if (!strncmp("return", s, 6)) return Token::KW_RETURN;
+        return Token::TOK_IDENT;
       case 9:
-        if (!strncmp("namespace", s, 9)) return KW_NAMESPACE;
-        return TOK_IDENT;
+        if (!strncmp("namespace", s, 9)) return Token::KW_NAMESPACE;
+        return Token::TOK_IDENT;
       default:
-        return TOK_IDENT;
+        return Token::TOK_IDENT;
     }
   }
 

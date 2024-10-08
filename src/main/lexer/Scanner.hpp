@@ -31,7 +31,7 @@ public:
 
   /// Moves the cursor one char to the right (which adds the current char to
   /// the selection) and sets the state to `newState`.
-  /// @note the current character should *not* be a newline. */
+  /// @note the current character should *not* be a newline.
   void step(S newState) {
     if (*p2 == '\n') {
       newlines++;
@@ -44,9 +44,9 @@ public:
 
   /// Captures selected characters as a new token of type `ty`. Selection is
   /// cleared and state is reset.
-  void capture(TokenTy ty) {
+  void capture(Token::Tag ty) {
     u_int8_t tokenSize = (u_int8_t)(p2 - p1);
-    _tokens.push_back({ p1, row, col, tokenSize, ty });
+    _tokens.push_back(Token(ty, p1, row, col, tokenSize));
     _state = initialState;
     p1 = p2;
     if (newlines == 0) {
@@ -75,7 +75,7 @@ public:
   }
 
   /// Equivalent to `step(_); capture(ty)`
-  void stepAndCapture(TokenTy ty) {
+  void stepAndCapture(Token::Tag ty) {
     step(initialState);
     capture(ty);
   }

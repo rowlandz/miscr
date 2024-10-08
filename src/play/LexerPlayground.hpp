@@ -5,7 +5,7 @@
 
 void print_tokens(const std::vector<Token>* tokens) {
   for (auto token: *tokens) {
-    std::cout << TokenTyToString(token.ty) << "  ";
+    std::cout << token.tagAsString() << "  ";
   }
   std::cout << std::endl;
 }
@@ -15,7 +15,7 @@ void print_tokens_verbose(const std::vector<Token>* tokens) {
     char buffer[token.sz+1];
     strncpy(buffer, token.ptr, token.sz);
     buffer[token.sz] = '\0';
-    printf("@ ln%3d, col%3d   %-15s   %s\n", token.row, token.col, TokenTyToString(token.ty), buffer);
+    printf("@ ln%3d, col%3d   %-15s   %s\n", token.row, token.col, token.tagAsString(), buffer);
   }
 }
 
