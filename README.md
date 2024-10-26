@@ -217,27 +217,22 @@ let bob: &Person("Bob", 40);
 let bobsage: &i32 = bob[age];
 ```
 
-## Benchmarking
+## Reference Safety: `borrow` and `move`
 
-This Program:
+`borrow` and `move` are two operators with these types:
 
-module IO {
-  extern func scanf(format: &str, n: #i32): i32;
-  extern func printf(format: &str, n: i32): i32;
-}
+    borrow : forall t . #t -> &t
+    move   : forall t . &#t -> #t
 
-func main(): i32 = {
-  let n = #(0: i32);
-  IO::scanf("%d", n);
-  IO::printf("The number was %d\n", n!);
-  0
-};
+`borrow` lets you make copies of an owned reference with the understanding that
+the copies will not be freed, only the original owned reference.
 
-Takes about this long:
+`move` lets you move an owned pointer out of a place in memory. However, you
+must replace the pointer with another owned pointer later.
 
-real    0m0.025s
-user    0m0.008s
-sys     0m0.015s
+move p
+// cannot dereference p
+p := anotherOwnedPointer
 
 ## Notes:
 

@@ -34,7 +34,10 @@ class Unifier {
       return tc.fresh(Type::name(texp->getName()));
     }
     if (auto texp = RefTypeExp::downcast(_texp)) {
-      return tc.fresh(Type::ref(freshFromTypeExp(texp->getPointeeType())));
+      if (texp->isOwned())
+        return tc.fresh(Type::oref(freshFromTypeExp(texp->getPointeeType())));
+      else
+        return tc.fresh(Type::bref(freshFromTypeExp(texp->getPointeeType())));
     }
     if (id == AST::ID::BOOL_TEXP) return tc.fresh(Type::bool_());
     if (id == AST::ID::f32_TEXP) return tc.fresh(Type::f32());
@@ -72,7 +75,11 @@ public:
 
     if (t1.getID() == t2.getID()) {
       Type::ID ty = t1.getID();
-      if (ty == Type::ID::REF) {
+      if (ty == Type::ID::BREF) {
+        if (!unify(t1.getInner(), t2.getInner())) return false;
+        tc.bind(w1, w2);
+        return true;
+      } else if (ty == Type::ID::OREF) {
         if (!unify(t1.getInner(), t2.getInner())) return false;
         tc.bind(w1, w2);
         return true;
@@ -173,7 +180,13 @@ public:
   TVar unifyExp(Exp* _e) {
     AST::ID id = _e->getID();
 
-    if (auto e = BinopExp::downcast(_e)) {
+    if (auto e = AscripExp::downcast(_e)) {
+      TVar ty = freshFromTypeExp(e->getAscripter());
+      expectTypeToBe(e->getAscriptee(), ty);
+      e->setTVar(ty);
+    }
+
+    else if (auto e = BinopExp::downcast(_e)) {
       if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
       || id == AST::ID::DIV) {
         TVar lhsTy = unifyWith(e->getLHS(), tc.fresh(Type::numeric()));
@@ -189,12 +202,6 @@ public:
       }
     }
 
-    else if (auto e = AscripExp::downcast(_e)) {
-      TVar ty = freshFromTypeExp(e->getAscripter());
-      expectTypeToBe(e->getAscriptee(), ty);
-      e->setTVar(ty);
-    }
-
     else if (auto e = BlockExp::downcast(_e)) {
       llvm::ArrayRef<Exp*> stmtList = e->getStatements()->asArrayRef();
       TVar lastStmtTy = tc.fresh(Type::unit());  // TODO: no need to freshen unit
@@ -202,6 +209,16 @@ public:
       for (Exp* stmt : stmtList) lastStmtTy = unifyExp(stmt);
       localVarTypes.pop();
       e->setTVar(lastStmtTy);
+    }
+
+    else if (auto e = BoolLit::downcast(_e)) {
+      e->setTVar(tc.fresh(Type::bool_()));
+    }
+
+    else if (auto e = BorrowExp::downcast(_e)) {
+      TVar innerTy = tc.fresh();
+      expectTypeToBe(e->getRefExp(), tc.fresh(Type::oref(innerTy)));
+      e->setTVar(tc.fresh(Type::bref(innerTy)));
     }
 
     else if (auto e = CallExp::downcast(_e)) {
@@ -265,7 +282,7 @@ public:
 
     else if (auto e = DerefExp::downcast(_e)) {
       TVar retTy = tc.fresh();
-      TVar refTy = tc.fresh(Type::ref(retTy));
+      TVar refTy = tc.fresh(Type::bref(retTy));
       unifyWith(e->getOf(), refTy);
       e->setTVar(retTy);
     }
@@ -285,10 +302,6 @@ public:
       }
     }
 
-    else if (auto e = BoolLit::downcast(_e)) {
-      e->setTVar(tc.fresh(Type::bool_()));
-    }
-
     else if (auto e = IfExp::downcast(_e)) {
       unifyWith(e->getCondExp(), tc.fresh(Type::bool_()));
       TVar thenTy = unifyExp(e->getThenExp());
@@ -297,21 +310,21 @@ public:
     }
 
     else if (auto e = IndexExp::downcast(_e)) {
-      TVar baseTy = unifyWith(e->getBase(), tc.fresh(Type::ref(tc.fresh())));
+      TVar baseTy = unifyWith(e->getBase(), tc.fresh(Type::bref(tc.fresh())));
       unifyWith(e->getIndex(), tc.fresh(Type::numeric()));
       e->setTVar(baseTy);
     }
 
     else if (auto e = IndexFieldExp::downcast(_e)) {
       TVar dataTVar = tc.fresh();
-      unifyWith(e->getBase(), tc.fresh(Type::ref(dataTVar)));
+      unifyWith(e->getBase(), tc.fresh(Type::bref(dataTVar)));
       Type t = tc.resolve(dataTVar).second;
       if (t.getID() == Type::ID::NAME) {
         DataDecl* dd = ont.getType(t.getName()->asStringRef());
         e->setTypeName(dd->getName()->asStringRef());
         llvm::StringRef field = e->getFieldName()->asStringRef();
         if (TypeExp* pt = dd->getFields()->findParamType(field)) {
-          e->setTVar(tc.fresh(Type::ref(freshFromTypeExp(pt))));
+          e->setTVar(tc.fresh(Type::bref(freshFromTypeExp(pt))));
         } else {
           LocatedError err;
           err.append(field);
@@ -348,21 +361,27 @@ public:
       e->setTVar(tc.fresh(Type::unit()));
     }
 
+    else if (auto e = MoveExp::downcast(_e)) {
+      TVar retTy = tc.fresh(Type::oref(tc.fresh()));
+      expectTypeToBe(e->getRefExp(), tc.fresh(Type::bref(retTy)));
+      e->setTVar(retTy);
+    }
+
     else if (auto e = RefExp::downcast(_e)) {
       TVar initializerTy = unifyExp(e->getInitializer());
-      e->setTVar(tc.fresh(Type::ref(initializerTy)));
+      e->setTVar(tc.fresh(Type::bref(initializerTy)));
     }
 
     else if (auto e = StoreExp::downcast(_e)) {
       TVar retTy = tc.fresh();
-      TVar lhsTy = tc.fresh(Type::ref(retTy));
+      TVar lhsTy = tc.fresh(Type::bref(retTy));
       unifyWith(e->getLHS(), lhsTy);
       unifyWith(e->getRHS(), retTy);
       e->setTVar(retTy);
     }
 
     else if (auto e = StringLit::downcast(_e)) {
-      e->setTVar(tc.fresh(Type::ref(tc.fresh(Type::i8()))));
+      e->setTVar(tc.fresh(Type::bref(tc.fresh(Type::i8()))));
     }
 
     else {

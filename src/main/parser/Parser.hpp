@@ -202,9 +202,24 @@ public:
     }
   }
 
+  Exp* expLv25() {
+    Token t = *p;
+    if (t.tag == Token::KW_BORROW) {
+      ++p;
+      Exp* e = expLv25(); ARREST_IF_ERROR
+      return new BorrowExp(hereFrom(t), e);
+    } else if (t.tag == Token::KW_MOVE) {
+      ++p;
+      Exp* e = expLv25(); ARREST_IF_ERROR
+      return new MoveExp(hereFrom(t), e);
+    } else {
+      return expLv2();
+    }
+  }
+
   Exp* expLv3() {
     Token t = *p;
-    Exp* e = expLv2(); RETURN_IF_ERROR
+    Exp* e = expLv25(); RETURN_IF_ERROR
     while (p->tag == Token::COLON) {
       ++p;
       TypeExp* tyAscrip = typeExp(); ARREST_IF_ERROR
@@ -322,10 +337,11 @@ public:
 
   TypeExp* typeExp() {
     Token t = *p;
-    if (t.tag == Token::AMP) {
+    if (t.tag == Token::AMP || t.tag == Token::HASH) {
+      bool owned = t.tag == Token::HASH;
       ++p;
       TypeExp* n1 = typeExp(); ARREST_IF_ERROR
-      return new RefTypeExp(hereFrom(t), n1);
+      return new RefTypeExp(hereFrom(t), n1, owned);
     } else {
       return typeExpLv0();
     }

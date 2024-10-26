@@ -82,8 +82,10 @@ public:
       return std::string("?") + std::to_string(v.get());
     } else {
       switch (res.second.getID()) {
-      case Type::ID::REF:
-        return std::string("ref<") + TVarToString(res.second.getInner()) + ">";
+      case Type::ID::BREF:
+        return std::string("bref<") + TVarToString(res.second.getInner()) + ">";
+      case Type::ID::OREF:
+        return std::string("oref<") + TVarToString(res.second.getInner()) + ">";
       case Type::ID::BOOL: return std::string("bool");
       case Type::ID::DECIMAL: return std::string("decimal");
       case Type::ID::f32: return std::string("f32");

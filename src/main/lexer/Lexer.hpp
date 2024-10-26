@@ -291,6 +291,7 @@ private:
         if (!strncmp("data", s, 4)) return Token::KW_DATA;
         if (!strncmp("else", s, 4)) return Token::KW_ELSE;
         if (!strncmp("func", s, 4)) return Token::KW_FUNC;
+        if (!strncmp("move", s, 4)) return Token::KW_MOVE;
         if (!strncmp("proc", s, 4)) return Token::KW_PROC;
         if (!strncmp("then", s, 4)) return Token::KW_THEN;
         if (!strncmp("true", s, 4)) return Token::KW_TRUE;
@@ -301,6 +302,7 @@ private:
         if (!strncmp("match", s, 5)) return Token::KW_MATCH;
         return Token::TOK_IDENT;
       case 6:
+        if (!strncmp("borrow", s, 6)) return Token::KW_BORROW;
         if (!strncmp("extern", s, 6)) return Token::KW_EXTERN;
         if (!strncmp("module", s, 6)) return Token::KW_MODULE;
         if (!strncmp("return", s, 6)) return Token::KW_RETURN;

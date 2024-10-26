@@ -94,7 +94,7 @@ namespace TyperTests {
   }
 
   TEST(references) {
-    expShouldHaveType("&42", "ref<numeric>");
+    expShouldHaveType("&42", "bref<numeric>");
   }
 
   TEST(deref_expression) {
@@ -106,7 +106,7 @@ namespace TyperTests {
   }
 
   TEST(string_literal) {
-    expShouldHaveType("\"hello\\n\"", "ref<i8>");
+    expShouldHaveType("\"hello\\n\"", "bref<i8>");
   }
 
   TEST(decls_and_call_expressions) {
@@ -130,6 +130,6 @@ namespace TyperTests {
   }
 
   TEST(indexing) {
-    expShouldHaveType("(\"hello\")[0]", "ref<i8>");
+    expShouldHaveType("(\"hello\")[0]", "bref<i8>");
   }
 }

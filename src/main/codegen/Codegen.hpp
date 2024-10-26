@@ -57,7 +57,8 @@ public:
     case Type::ID::f32: return b->getFloatTy();
     case Type::ID::f64: return b->getDoubleTy();
     case Type::ID::NAME: return dataTypes[ty.getName()->asStringRef()];
-    case Type::ID::REF: return llvm::PointerType::get(llvmctx, 0);
+    case Type::ID::BREF:
+    case Type::ID::OREF: return llvm::PointerType::get(llvmctx, 0);
     case Type::ID::UNIT: return b->getVoidTy();
     // NUMERIC just defaults to i32.
     case Type::ID::NUMERIC: return b->getInt32Ty();
@@ -142,6 +143,9 @@ public:
     }
     else if (auto e = BoolLit::downcast(_exp)) {
       return b->getInt1(e->getValue());
+    }
+    else if (auto e = BorrowExp::downcast(_exp)) {
+      return genExp(e->getRefExp());
     }
     else if (auto e = CallExp::downcast(_exp)) {
       std::vector<llvm::Value*> args;
@@ -234,6 +238,11 @@ public:
       v->setName(boundIdentName);
       varValues.add(boundIdentName, v);
       return nullptr;
+    }
+    else if (auto e = MoveExp::downcast(_exp)) {
+      llvm::Value* refExp = genExp(e->getRefExp());
+      llvm::Type* tyToLoad = genType(e->getTVar());
+      return b->CreateLoad(tyToLoad, refExp);
     }
     else if (auto e = RefExp::downcast(_exp)) {
       llvm::Value* v = genExp(e->getInitializer());

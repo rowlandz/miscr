@@ -29,9 +29,9 @@ class AST {
 public:
   enum ID : unsigned short {
     // expressions and statements
-    ADD, ASCRIP, BLOCK, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF, DIV, ENAME, EQ,
-    GE, GT, IF, INDEX, INDEX_FIELD, INT_LIT, LE, LET, LT, MUL, NE, REF_EXP,
-    RETURN, STORE, STRING_LIT, SUB,
+    ADD, ASCRIP, BLOCK, BORROW, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF, DIV,
+    ENAME, EQ, GE, GT, IF, INDEX, INDEX_FIELD, INT_LIT, LE, LET, LT, MOVE, MUL,
+    NE, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
 
     // declarations
     DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
@@ -94,7 +94,7 @@ class Type {
 public:
   enum struct ID : unsigned char {
     // concrete types
-    BOOL, f32, f64, i8, i16, i32, i64, NAME, REF, UNIT,
+    BOOL, BREF, f32, f64, i8, i16, i32, i64, NAME, OREF, UNIT,
 
     // type constraints
     DECIMAL, NUMERIC,
@@ -112,6 +112,7 @@ private:
   Type(const Name* name) : id(ID::NAME), _name(name) {}
 public:
   static Type bool_() { return Type(ID::BOOL); }
+  static Type bref(TVar of) { return Type(ID::BREF, of); }
   static Type f32() { return Type(ID::f32); }
   static Type f64() { return Type(ID::f64); }
   static Type i8() { return Type(ID::i8); }
@@ -119,7 +120,7 @@ public:
   static Type i32() { return Type(ID::i32); }
   static Type i64() { return Type(ID::i64); }
   static Type name(const Name* n) { return Type(n); }
-  static Type ref(TVar of) { return Type(ID::REF, of); }
+  static Type oref(TVar of) { return Type(ID::OREF, of); }
   static Type unit() { return Type(ID::UNIT); }
   static Type decimal() { return Type(ID::DECIMAL); }
   static Type numeric() { return Type(ID::NUMERIC); }
@@ -146,9 +147,9 @@ public:
   void set(const llvm::Twine& s) { this->s = s.str(); }
 };
 
-////////////////////////////////////////////////////////////////////////////////
-// TYPE EXPRESSIONS
-////////////////////////////////////////////////////////////////////////////////
+//============================================================================//
+//=== TYPE EXPRESSIONS
+//============================================================================//
 
 /// @brief A type that appears in the source text.
 class TypeExp : public AST {
@@ -201,22 +202,25 @@ public:
   Name* getName() const { return name; }
 };
 
-/// @brief A read-only or writable reference type expression.
+/// @brief A borrowed or owned reference type expression.
 class RefTypeExp : public TypeExp {
   TypeExp* pointeeType;
+  bool owned;
 public:
-  RefTypeExp(Location loc, TypeExp* pointeeType)
-    : TypeExp(REF_TEXP, loc), pointeeType(pointeeType) {}
+  RefTypeExp(Location loc, TypeExp* pointeeType, bool owned)
+    : TypeExp(REF_TEXP, loc), pointeeType(pointeeType), owned(owned) {}
   ~RefTypeExp() { deleteAST(pointeeType); }
   static RefTypeExp* downcast(AST* ast) {
     return ast->getID() == REF_TEXP ? static_cast<RefTypeExp*>(ast) : nullptr;
   }
   TypeExp* getPointeeType() const { return pointeeType; }
+  bool isBorrowed() const { return !owned; }
+  bool isOwned() const { return owned; }
 };
 
-////////////////////////////////////////////////////////////////////////////////
-// EXPRESSIONS
-////////////////////////////////////////////////////////////////////////////////
+//============================================================================//
+//=== EXPRESSIONS
+//============================================================================//
 
 /// @brief An expression or statement (currently there is no distinction).
 class Exp : public AST {
@@ -516,9 +520,35 @@ public:
   llvm::StringRef getTypeName() const { return typeName; }
 };
 
-////////////////////////////////////////////////////////////////////////////////
-// DECLARATIONS
-////////////////////////////////////////////////////////////////////////////////
+/// @brief A borrow expression that returns a borrowed reference from an owned
+/// reference.
+class BorrowExp : public Exp {
+  Exp* refExp;
+public:
+  BorrowExp(Location loc, Exp* refExp) : Exp(BORROW, loc), refExp(refExp) {}
+  ~BorrowExp() { deleteAST(refExp); }
+  static BorrowExp* downcast(AST* ast) {
+    return ast->getID() == BORROW ? static_cast<BorrowExp*>(ast) : nullptr;
+  }
+  Exp* getRefExp() const { return refExp; }
+};
+
+/// @brief A borrow expression that returns a borrowed reference from an owned
+/// reference.
+class MoveExp : public Exp {
+  Exp* refExp;
+public:
+  MoveExp(Location loc, Exp* refExp) : Exp(MOVE, loc), refExp(refExp) {}
+  ~MoveExp() { deleteAST(refExp); }
+  static MoveExp* downcast(AST* ast) {
+    return ast->getID() == MOVE ? static_cast<MoveExp*>(ast) : nullptr;
+  }
+  Exp* getRefExp() const { return refExp; }
+};
+
+//============================================================================//
+//=== DECLARATIONS
+//============================================================================//
 
 /// @brief A declaration.
 class Decl : public AST {
@@ -627,9 +657,9 @@ public:
   ParamList* getFields() const { return fields; }
 };
 
-////////////////////////////////////////////////////////////////////////////////
-// DELETE AST
-////////////////////////////////////////////////////////////////////////////////
+//============================================================================//
+//=== DELETE AST
+//============================================================================//
 
 /// @brief Safely deletes an AST node by first downcasting to the lowest type
 /// in the inheritance hierarchy before calling the destructor. It is safe to
@@ -658,6 +688,8 @@ void deleteAST(AST* _ast) {
   else if (auto ast = DerefExp::downcast(_ast)) delete ast;
   else if (auto ast = IndexExp::downcast(_ast)) delete ast;
   else if (auto ast = IndexFieldExp::downcast(_ast)) delete ast;
+  else if (auto ast = BorrowExp::downcast(_ast)) delete ast;
+  else if (auto ast = MoveExp::downcast(_ast)) delete ast;
   else if (auto ast = DeclList::downcast(_ast)) delete ast;
   else if (auto ast = ModuleDecl::downcast(_ast)) delete ast;
   else if (auto ast = NamespaceDecl::downcast(_ast)) delete ast;
@@ -667,13 +699,14 @@ void deleteAST(AST* _ast) {
   else llvm_unreachable("deleteAST case not supported!");
 }
 
-////////////////////////////////////////////////////////////////////////////////
+//============================================================================//
 
 const char* ASTIDToString(AST::ID nt) {
   switch (nt) {
   case AST::ID::ADD:                return "ADD";
   case AST::ID::ASCRIP:             return "ASCRIP";
   case AST::ID::BLOCK:              return "BLOCK";
+  case AST::ID::BORROW:             return "BORROW";
   case AST::ID::BOOL_LIT:           return "BOOL_LIT";
   case AST::ID::CALL:               return "CALL";
   case AST::ID::CONSTR:             return "CONSTR";
@@ -691,6 +724,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::LE:                 return "LE";
   case AST::ID::LET:                return "LET";
   case AST::ID::LT:                 return "LT";
+  case AST::ID::MOVE:               return "MOVE";
   case AST::ID::MUL:                return "MUL";
   case AST::ID::NE:                 return "NE";
   case AST::ID::REF_EXP:            return "REF_EXP";
@@ -729,6 +763,7 @@ AST::ID stringToASTID(const std::string& str) {
        if (str == "ADD")                 return AST::ID::ADD;
   else if (str == "ASCRIP")              return AST::ID::ASCRIP;
   else if (str == "BLOCK")               return AST::ID::BLOCK;
+  else if (str == "BORROW")              return AST::ID::BORROW;
   else if (str == "BOOL_LIT")            return AST::ID::BOOL_LIT;
   else if (str == "CALL")                return AST::ID::CALL;
   else if (str == "CONSTR")              return AST::ID::CONSTR;
@@ -746,6 +781,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "LE")                  return AST::ID::LE;
   else if (str == "LET")                 return AST::ID::LET;
   else if (str == "LT")                  return AST::ID::LT;
+  else if (str == "MOVE")                return AST::ID::MOVE;
   else if (str == "MUL")                 return AST::ID::MUL;
   else if (str == "NE")                  return AST::ID::NE;
   else if (str == "REF_EXP")             return AST::ID::REF_EXP;
@@ -790,6 +826,8 @@ llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
     return { ast->getAscriptee(), ast->getAscripter() };
   if (auto ast = BlockExp::downcast(_ast))
     return { ast->getStatements() };
+  if (auto ast = BorrowExp::downcast(_ast))
+    return { ast->getRefExp() };
   if (auto ast = CallExp::downcast(_ast))
     return { ast->getFunction(), ast->getArguments() };
   if (auto ast = DataDecl::downcast(_ast))
@@ -829,6 +867,8 @@ llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
   }
   if (auto ast = ModuleDecl::downcast(_ast))
     return { ast->getName(), ast->getDecls() };
+  if (auto ast = MoveExp::downcast(_ast))
+    return { ast->getRefExp() };
   if (auto ast = NamespaceDecl::downcast(_ast))
     return { ast->getName(), ast->getDecls() };
   if (auto ast = NameTypeExp::downcast(_ast))
