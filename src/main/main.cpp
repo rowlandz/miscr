@@ -3,6 +3,8 @@
 #include "parser/Parser.hpp"
 #include "typer/Typer.hpp"
 #include "codegen/Codegen.hpp"
+#include "borrowchecker/AccessPath.hpp"
+#include "borrowchecker/BorrowChecker.hpp"
 
 int main(int argc, char* argv[]) {
 
@@ -22,23 +24,32 @@ int main(int argc, char* argv[]) {
   }
 
   Parser parser(lexer.getTokens());
-  DeclList* parsedDeclList = parser.decls0();
-  if (parsedDeclList == nullptr) {
+  DeclList* decls = parser.decls0();
+  if (decls == nullptr) {
     llvm::outs() << parser.getError().render(text.data(), lexer.getLocationTable());
     exit(1);
   }
 
   Typer typer;
-  typer.typeDeclList(parsedDeclList);
+  typer.typeDeclList(decls);
   if (!typer.errors.empty()) {
-    for (auto err : *typer.unifier.getErrors()) {
+    for (auto err : typer.errors) {
+      llvm::outs() << err.render(text.data(), lexer.getLocationTable());
+    }
+    exit(1);
+  }
+
+  BorrowChecker bc(typer.getTypeContext());
+  bc.checkDecls(decls);
+  if (!bc.errors.empty()) {
+    for (auto err : bc.errors) {
       llvm::outs() << err.render(text.data(), lexer.getLocationTable());
     }
     exit(1);
   }
 
   Codegen codegen(typer.getTypeContext(), typer.ont);
-  codegen.genDeclList(parsedDeclList);
+  codegen.genDeclList(decls);
   codegen.mod->setModuleIdentifier(argv[1]);
   codegen.mod->setSourceFileName(argv[1]);
 
@@ -50,7 +61,7 @@ int main(int argc, char* argv[]) {
   outDotLL << *codegen.mod;
   outDotLL.flush();
 
-  delete parsedDeclList;
+  delete decls;
 
   return 0;
 }

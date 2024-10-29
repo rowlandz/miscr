@@ -57,8 +57,6 @@ public:
 
   const TypeContext& getTypeContext() const { return tc; }
 
-  const std::vector<LocatedError>* getErrors() { return &errors; }
-
   /// @brief Enforces an equality relation in `bindings` between the two type
   /// variables. Returns `true` if this is possible and `false` otherwise.
   bool unify(TVar v1, TVar v2) {

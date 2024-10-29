@@ -237,3 +237,11 @@ p := anotherOwnedPointer
 ## Notes:
 
 Use `clang -mllvm -opaque-pointers` to compile with clang version 14.
+
+TODO: Make a better error for when you use a name that has no binding.
+e.g.,
+
+    data String(ptr: #i8, len: i64)
+    func foo(p: #i8): String = {
+      String(ptr, 10)
+    };

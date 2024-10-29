@@ -13,6 +13,9 @@ public:
 
   Location(unsigned short row, unsigned short col, unsigned int sz)
     : row(row), col(col), sz(sz) {}
+
+  /// @brief Returns true iff the row and col are both greater than zero. 
+  bool exists() { return row > 0 && col > 0; }
 };
 
 #endif
