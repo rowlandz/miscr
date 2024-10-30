@@ -1,6 +1,7 @@
 #ifndef BORROWCHECKER_HPP
 #define BORROWCHECKER_HPP
 
+#include <llvm/ADT/DenseMap.h>
 #include "common/AST.hpp"
 #include "common/LocatedError.hpp"
 #include "common/TypeContext.hpp"
@@ -47,44 +48,52 @@ public:
     checkDecls(m->getDecls());
   }
 
-  /// @brief Main borrow checking function for a function. The `accessPaths`,
+  /// @brief Main borrow checking function for a function. The
   /// `ownerCreations`, and `ownerUses` are reset.
   void checkFunctionDecl(FunctionDecl* funcDecl) {
     if (funcDecl->getBody() == nullptr) return;
-    accessPaths.clear();
     ownerCreations.clear();
     ownerUses.clear();
     for (auto param : funcDecl->getParameters()->asArrayRef()) {
       llvm::StringRef paramName = param.first->asStringRef();
-      accessPaths[paramName] = apm.getRoot(paramName);
+      // accessPaths[paramName] = apm.getRoot(paramName);
       if (auto paramType = RefTypeExp::downcast(param.second)) {
         if (paramType->isOwned()) {
-          ownerCreations[paramName] = param.first->getLocation();
+          AccessPath* paramRoot = apm.getRoot(paramName);
+          ownerCreations[paramRoot] = param.first->getLocation();
         }
       }
     }
 
-    check(funcDecl->getBody());
+    AccessPath* retAP = check(funcDecl->getBody());
+    if (isOwnedRef(funcDecl->getBody()->getTVar())) {
+      // TODO: make helper function to narrow the location for block exps
+      if (auto block = BlockExp::downcast(funcDecl->getBody())) {
+        use(retAP, block->getStatements()->asArrayRef().back()->getLocation());
+      } else {
+        use(retAP, funcDecl->getBody()->getLocation());
+      }
+    }
 
     // If any owned references weren't used, produce an error.
-    for (llvm::StringRef owner : ownerCreations.keys()) {
-      Location use = ownerUses.lookup(owner);
+    for (auto owner : ownerCreations) {
+      Location use = ownerUses.lookup(owner.first);
       if (!use.exists()) {
         LocatedError err;
         err.append("Owned reference is never used.\n");
-        err.append(ownerCreations[owner]);
+        err.append(owner.second);
         errors.push_back(err);
       }
     }
   }
 
   /// @brief Main borrow checking function for expressions.
-  /// @param borrowed True iff this expression occurs in a position that
-  /// dictates it is borrowed (such as in a `borrow` or deref expression).
-  void check(Exp* _e, bool borrowed = false) {
+  /// @return If @p _e has a reference or `data` type, the access path for
+  /// the expression is returned, otherwise `nullptr`.
+  AccessPath* check(Exp* _e) {
 
     if (auto e = AscripExp::downcast(_e)) {
-      check(e->getAscriptee());
+      return check(e->getAscriptee());
     }
     else if (auto e = BinopExp::downcast(_e)) {
       // no binary operator should operate over owned references
@@ -92,8 +101,10 @@ public:
       assert(!isOwnedRef(e->getRHS()->getTVar()));
       check(e->getLHS());
       check(e->getRHS());
+      return nullptr;
     }
     else if (auto e = BlockExp::downcast(_e)) {
+      if (e->getStatements()->asArrayRef().empty()) return nullptr;
       llvm::ArrayRef<Exp*> stmts = e->getStatements()->asArrayRef().drop_back();
       Exp* returnExp = e->getStatements()->asArrayRef().back();
       for (auto stmt : stmts) {
@@ -105,52 +116,51 @@ public:
           errors.push_back(err);
         }
       }
-      check(returnExp);
+      return check(returnExp);
     }
     else if (BoolLit::downcast(_e)) {
-
+      return nullptr;
     }
     else if (auto e = BorrowExp::downcast(_e)) {
-      check(e->getRefExp(), true);
+      AccessPath* ret = check(e->getRefExp());
+      borrow(ret, e->getRefExp()->getLocation());
+      return ret;
     }
     else if (auto e = CallExp::downcast(_e)) {
       if (e->isConstr())
         llvm_unreachable("Constructor calls not supported yet by borrow checker.");
-      for (auto arg : e->getArguments()->asArrayRef()) check(arg);
+      for (auto arg : e->getArguments()->asArrayRef()) {
+        AccessPath* argAP = check(arg);
+        if (isOwnedRef(arg->getTVar()))
+          use(argAP, arg->getLocation());
+      }
+      AccessPath* ret = apm.getRoot(freshInternalVar());
+      if (isOwnedRef(e->getTVar())) {
+        createOwner(ret, e->getLocation());
+      }
+      return ret;
     }
     else if (DecimalLit::downcast(_e)) {
-
+      return nullptr;
     }
     else if (IntLit::downcast(_e)) {
-
+      return nullptr;
     }
     else if (auto e = NameExp::downcast(_e)) {
       llvm::StringRef name = e->getName()->asStringRef();
-      if (isOwnedRef(e->getTVar())) {
-        Location use = ownerUses.lookup(name);
-        if (use.exists()) {
-          LocatedError err;
-          err.append("Owned reference ");
-          err.append(name);
-          err.append(" has already been used.\n");
-          err.append(e->getLocation());
-          err.append("Use occurs here:\n");
-          err.append(use);
-          errors.push_back(err);
-        } else if (!borrowed) {
-          ownerUses[name] = e->getLocation();
-        }
-      }
+      return apm.getRoot(name);
     }
     else if (auto e = LetExp::downcast(_e)) {
-      check(e->getDefinition());
+      AccessPath* defAP = check(e->getDefinition());
       if (isOwnedRef(e->getDefinition()->getTVar())) {
-        ownerCreations[e->getBoundIdent()->asStringRef()] =
-          e->getBoundIdent()->getLocation();
+        use(defAP, e->getDefinition()->getLocation());
+        AccessPath* ret = apm.getRoot(e->getBoundIdent()->asStringRef());
+        createOwner(ret, e->getBoundIdent()->getLocation());
       }
+      return nullptr;
     }
     else if (StringLit::downcast(_e)) {
-
+      return nullptr;
     }
     else llvm_unreachable("BorrowChecker::check(Exp*): unexpected syntax");
 
@@ -165,20 +175,67 @@ private:
 
   const TypeContext& tc;
 
-  /// @brief Maps identifiers to access paths they are bound to.
-  llvm::StringMap<AccessPath*> accessPaths;
+  /// @brief Maps local owners to their source code creation locations.
+  llvm::DenseMap<AccessPath*, Location> ownerCreations;
 
-  /// @brief Maps owner identifiers to the locations where they are created.
-  llvm::StringMap<Location> ownerCreations;
-
-  /// @brief Maps owner identifiers to the locations where they are used.
+  /// @brief Maps local owners to the locations where they are used.
   /// The keyset of this map must be a subset of ownerCreations.
-  llvm::StringMap<Location> ownerUses;
+  llvm::DenseMap<AccessPath*, Location> ownerUses;
+
+  int nextInternalVar = 0;
+
+  /// @brief Returns a fresh internal variable (like `$42`).
+  std::string freshInternalVar()
+    { return std::string("$") + std::to_string(++nextInternalVar); }
 
   /// @brief Returns true iff type variable @p v resolves to an oref type. 
   bool isOwnedRef(TVar v) {
     Type blah = tc.resolve(v).second;
     return blah.getID() == Type::ID::OREF;
+  }
+
+  /// @brief Marks @p ap as an owner, created at @p loc.
+  void createOwner(AccessPath* ap, Location loc) {
+    ownerCreations[ap] = loc;
+  }
+
+  /// @brief Checks that @p ap has not been used yet and can be borrowed. It is
+  /// safe to pass `nullptr` to this function.
+  /// @param loc Location where @p ap is borrowed.
+  void borrow(AccessPath* ap, Location loc) {
+    if (ap == nullptr) return;
+    Location useLoc = ownerUses.lookup(ap);
+    if (useLoc.exists()) {
+      LocatedError err;
+      err.append("Owned reference ");
+      err.append(ap->asString());
+      err.append(" has already been used.\n");
+      err.append(loc);
+      err.append("Use occurs here:\n");
+      err.append(useLoc);
+      errors.push_back(err);
+    }
+  }
+
+  /// @brief Marks @p ap as used. @p ap should be the access path of an owned
+  /// reference. Pushes an error if @p ap has already been used. If @p ap is
+  /// `nullptr`, then does nothing.
+  /// @param loc the location where the use occurs
+  void use(AccessPath* ap, Location loc) {
+    if (ap == nullptr) return;
+    Location useLoc = ownerUses.lookup(ap);
+    if (useLoc.exists()) {
+      LocatedError err;
+      err.append("Owned reference ");
+      err.append(ap->asString());
+      err.append(" has already been used.\n");
+      err.append(loc);
+      err.append("Use occurs here:\n");
+      err.append(useLoc);
+      errors.push_back(err);
+    } else {
+      ownerUses[ap] = loc;
+    }
   }
 };
 

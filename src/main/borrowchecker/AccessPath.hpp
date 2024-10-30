@@ -8,24 +8,26 @@
 
 class AccessPath;
 class AccessPathManager;
-void dumpAccessPath(const AccessPath*);
+std::string accessPathAsString(const AccessPath*);
 
-/// @brief Represents a sequence of pointer offsets and dereferences used to
+/// @brief Represents a sequence of struct projections and dereferences used to
 /// access a value.
+///
+/// An example is something like `myval.field1!.field2!`
 ///
 /// AccessPath objects must be created, managed, and destroyed by an
 /// AccessPathManager.
 class AccessPath {
 public:
-  enum Tag { ROOT, STRUCT_OFFSET, ARRAY_OFFSET, DEREF };
+  enum Tag { ROOT, PROJECTION, ARRAY_OFFSET, DEREF };
   const Tag tag;
 protected:
   AccessPath(Tag tag) : tag(tag) {}
   ~AccessPath() {}
 public:
-  /// @brief Dump a human-readable version of ap to stderr for debugging. A
-  /// newline is also printed at the end.
-  void dump() const { dumpAccessPath(this); llvm::errs() << "\n"; }
+
+  /// @brief Returns this access path as a string for error messages.
+  std::string asString() const { return accessPathAsString(this); };
 };
 
 /// @brief The root of an access path.
@@ -51,24 +53,25 @@ public:
   const AccessPath* getBase() const { return base; }
 };
 
-/// @brief An access path that ends with `[.field]`.
-class StructOffsetPath : public NonRootPath {
+/// @brief An access path that ends with `.field`.
+class ProjectionPath : public NonRootPath {
   friend class AccessPathManager;
   std::string field;
-  StructOffsetPath(AccessPath* base, llvm::StringRef field)
-    : NonRootPath(STRUCT_OFFSET, base), field(field) {}
-  ~StructOffsetPath() {}
+  ProjectionPath(AccessPath* base, llvm::StringRef field)
+    : NonRootPath(PROJECTION, base), field(field) {}
+  ~ProjectionPath() {}
 public:
-  static StructOffsetPath* downcast(AccessPath* ap)
-    { return ap->tag == STRUCT_OFFSET ?
-      static_cast<StructOffsetPath*>(ap) : nullptr; }
-  static const StructOffsetPath* downcast(const AccessPath* ap)
-    { return ap->tag == STRUCT_OFFSET ?
-      static_cast<const StructOffsetPath*>(ap) : nullptr; }
+  static ProjectionPath* downcast(AccessPath* ap)
+    { return ap->tag == PROJECTION ?
+      static_cast<ProjectionPath*>(ap) : nullptr; }
+  static const ProjectionPath* downcast(const AccessPath* ap)
+    { return ap->tag == PROJECTION ?
+      static_cast<const ProjectionPath*>(ap) : nullptr; }
   llvm::StringRef getField() const { return field; }
 };
 
-/// @brief An access path that ends with `[number]`.
+/// @brief The equivalent of struct projection, but for arrays (whose "fields"
+/// are simply nonnegative integers).
 class ArrayOffsetPath : public NonRootPath {
   friend class AccessPathManager;
   int offset;
@@ -113,7 +116,7 @@ public:
     }
     for (auto pair : nonRootPaths) {
       for (NonRootPath* nrp : pair.getSecond()) {
-        if (auto path = StructOffsetPath::downcast(nrp)) {
+        if (auto path = ProjectionPath::downcast(nrp)) {
           delete path;
         } else if (auto path = ArrayOffsetPath::downcast(nrp)) {
           delete path;
@@ -133,28 +136,28 @@ public:
     return ret;
   }
 
-  /// @brief Finds or creates an access path equivalent to `base[.field]`.
-  StructOffsetPath* getStructOffset(AccessPath* base,
+  /// @brief Finds or creates an access path equivalent to `base.field`.
+  ProjectionPath* getProjection(AccessPath* base,
       llvm::StringRef field) {
     llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
     if (!candidates.empty()) {
       for (NonRootPath* nrp : candidates) {
-        if (auto sop = StructOffsetPath::downcast(nrp)) {
+        if (auto sop = ProjectionPath::downcast(nrp)) {
           if (sop->getField() == field) return sop;
         }
       }
-      StructOffsetPath* ret = new StructOffsetPath(base, field);
+      ProjectionPath* ret = new ProjectionPath(base, field);
       candidates.push_back(ret);
       nonRootPaths[base] = candidates;
       return ret;
     } else {
-      StructOffsetPath* ret = new StructOffsetPath(base, field);
+      ProjectionPath* ret = new ProjectionPath(base, field);
       nonRootPaths[base] = { ret };
       return ret;
     }
   }
 
-  /// @brief Finds or creates an access path equivalent to `base[offset]`.
+  /// @brief Finds or creates an access path equivalent to `base.offset`.
   ArrayOffsetPath* getArrayOffset(AccessPath* base, int offset) {
     llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
     if (!candidates.empty()) {
@@ -213,21 +216,24 @@ private:
   llvm::StringMap<AccessPath*> aliases;
 };
 
-/// @brief Dump a human-readable version of @p ap to stderr for debugging.
-/// A newline is _not_ printed at the end.
-void dumpAccessPath(const AccessPath* ap) {
+std::string accessPathAsString(const AccessPath* ap) {
   if (auto path = RootPath::downcast(ap)) {
-    llvm::errs() << path->asString();
-  } else if (auto path = StructOffsetPath::downcast(ap)) {
-    dumpAccessPath(path->getBase());
-    llvm::errs() << "[." << path->getField() << "]";
+    return path->asString().str();
+  } else if (auto path = ProjectionPath::downcast(ap)) {
+    std::string ret = path->getBase()->asString();
+    ret += ".";
+    ret += path->getField();
+    return ret;
   } else if (auto path = ArrayOffsetPath::downcast(ap)) {
-    dumpAccessPath(path->getBase());
-    llvm::errs() << "[" << path->getOffset() << "]";
+    std::string ret = path->getBase()->asString();
+    ret += ".";
+    ret += path->getOffset();
+    return ret;
   } else if (auto path = DerefPath::downcast(ap)) {
-    dumpAccessPath(path->getBase());
-    llvm::errs() << "!";
-  }
+    std::string ret = path->getBase()->asString();
+    ret += "!";
+    return ret;
+  } else llvm_unreachable("accessPathAsString: unexpected case");
 }
 
 #endif

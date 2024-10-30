@@ -234,6 +234,56 @@ move p
 // cannot dereference p
 p := anotherOwnedPointer
 
+## Access Paths and Borrow Checking
+
+For every identifier, there is a tree of memory locations that can be reached
+via struct projections and dereferencing. For example, let's say we have a
+linked list type that contains C-style strings:
+
+    abstract data List()
+    data Cons(super: List, head: &i8, tail: #List)
+    data Nil(super: List)
+
+Now imagine every memory location you could access starting from a List `l`.
+Here's how you would access them all in code. Depending on what the value of `l`
+turns out to be, some of these will be invalid.
+
+    l            : List
+    l.head       : &i8
+    l.head!      : i8
+    l.tail       : #List
+    l.tail!      : List
+    l.tail!.head : &i8
+    ...
+
+The sequences of field accesses (i.e., projections) and dereferencing that is
+used to reach a particular value (really its memory location) forms a "path"
+through memory that is called the "access path".
+
+An owned pointer passed _by value_ counts as a use, but passing a _reference_
+to an owned pointer does _not_ count as a use of the owned pointer:
+
+    let x = malloc(5);    // x becomes an owner
+    consume(x);           // x is used
+    let y = &malloc(5);   // y! becomes an owner
+    blah(y);              // NOT A USE
+    consume(y!);          // y! is used
+
+Owned pointers in memory cannot be overwritten with a store expression:
+
+    let x = &malloc(5);   // x! becomes an owner
+    x := malloc(5);       // ILLEGAL discard of owned reference x!
+
+A function that does not _create_ an owned pointer cannot _use_ the owned ptr:
+
+    function foo(x: &#i8): unit = {
+      let z = borrow x!;  // borrowing is okay
+      let y = x!;         // ILLEGAL use of x!
+    };
+
+
+
+
 ## Notes:
 
 Use `clang -mllvm -opaque-pointers` to compile with clang version 14.

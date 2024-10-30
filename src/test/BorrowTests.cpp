@@ -93,5 +93,15 @@ namespace BorrowTests {
     );
   }
 
+  TEST(immediately_borrowed_malloc) {
+    declsShouldFail(
+      "extern func malloc(size: i64): #i8;\n"
+      "func main(): i32 = {\n"
+      "  let y = borrow malloc(10);\n"
+      "  0\n"
+      "};"
+    );
+  }
+
 
 }
