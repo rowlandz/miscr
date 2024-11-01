@@ -75,6 +75,30 @@ public:
     return std::pair<TVar, Type>(v, Type::notype());
   }
 
+  /// @brief Converts a type expression into a `Type` with fresh type variables.
+  TVar freshFromTypeExp(TypeExp* _texp) {
+    AST::ID id = _texp->getID();
+
+    if (auto texp = NameTypeExp::downcast(_texp)) {
+      return fresh(Type::name(texp->getName()));
+    }
+    if (auto texp = RefTypeExp::downcast(_texp)) {
+      if (texp->isOwned())
+        return fresh(Type::oref(freshFromTypeExp(texp->getPointeeType())));
+      else
+        return fresh(Type::bref(freshFromTypeExp(texp->getPointeeType())));
+    }
+    if (id == AST::ID::BOOL_TEXP) return fresh(Type::bool_());
+    if (id == AST::ID::f32_TEXP) return fresh(Type::f32());
+    if (id == AST::ID::f64_TEXP) return fresh(Type::f64());
+    if (id == AST::ID::i8_TEXP) return fresh(Type::i8());
+    if (id == AST::ID::i16_TEXP) return fresh(Type::i16());
+    if (id == AST::ID::i32_TEXP) return fresh(Type::i32());
+    if (id == AST::ID::i64_TEXP) return fresh(Type::i64());
+    if (id == AST::ID::UNIT_TEXP) return fresh(Type::unit());
+    llvm_unreachable("Ahhh!!!");
+  }
+
   std::string TVarToString(TVar v) const {
     if (!v.exists()) return std::string("__nonexistant_tvar__");
     auto res = resolve(v);

@@ -26,36 +26,12 @@ class Unifier {
   
   TypeContext tc;
 
-  /// @brief Converts a type expression into a `Type` with fresh type variables.
-  TVar freshFromTypeExp(TypeExp* _texp) {
-    AST::ID id = _texp->getID();
-
-    if (auto texp = NameTypeExp::downcast(_texp)) {
-      return tc.fresh(Type::name(texp->getName()));
-    }
-    if (auto texp = RefTypeExp::downcast(_texp)) {
-      if (texp->isOwned())
-        return tc.fresh(Type::oref(freshFromTypeExp(texp->getPointeeType())));
-      else
-        return tc.fresh(Type::bref(freshFromTypeExp(texp->getPointeeType())));
-    }
-    if (id == AST::ID::BOOL_TEXP) return tc.fresh(Type::bool_());
-    if (id == AST::ID::f32_TEXP) return tc.fresh(Type::f32());
-    if (id == AST::ID::f64_TEXP) return tc.fresh(Type::f64());
-    if (id == AST::ID::i8_TEXP) return tc.fresh(Type::i8());
-    if (id == AST::ID::i16_TEXP) return tc.fresh(Type::i16());
-    if (id == AST::ID::i32_TEXP) return tc.fresh(Type::i32());
-    if (id == AST::ID::i64_TEXP) return tc.fresh(Type::i64());
-    if (id == AST::ID::UNIT_TEXP) return tc.fresh(Type::unit());
-    llvm_unreachable("Ahhh!!!");
-  }
-
 public:
 
   Unifier(Ontology& ont, std::vector<LocatedError>& errors)
     : ont(ont), errors(errors) {}
 
-  const TypeContext& getTypeContext() const { return tc; }
+  TypeContext& getTypeContext() { return tc; }
 
   /// @brief Enforces an equality relation in `bindings` between the two type
   /// variables. Returns `true` if this is possible and `false` otherwise.
@@ -179,7 +155,7 @@ public:
     AST::ID id = _e->getID();
 
     if (auto e = AscripExp::downcast(_e)) {
-      TVar ty = freshFromTypeExp(e->getAscripter());
+      TVar ty = tc.freshFromTypeExp(e->getAscripter());
       expectTypeToBe(e->getAscriptee(), ty);
       e->setTVar(ty);
     }
@@ -229,7 +205,7 @@ public:
         auto paramList = callee->getParameters()->asArrayRef();
         int idx = 0;
         while (idx < argList.size() && idx < paramList.size()) {
-          TVar paramType = freshFromTypeExp(paramList[idx].second);
+          TVar paramType = tc.freshFromTypeExp(paramList[idx].second);
           expectTypeToBe(argList[idx], paramType);
           ++idx;
         }
@@ -246,14 +222,14 @@ public:
           errors.push_back(err);
         }
         /*** set this expression's type to the callee's return type ***/
-        e->setTVar(freshFromTypeExp(callee->getReturnType()));
+        e->setTVar(tc.freshFromTypeExp(callee->getReturnType()));
       }
       else if (auto callee = DataDecl::downcast(_callee)) {
         auto args = e->getArguments()->asArrayRef();
         auto params = callee->getFields()->asArrayRef();
         int idx = 0;
         while (idx < args.size() && idx < params.size()) {
-          TVar paramType = freshFromTypeExp(params[idx].second);
+          TVar paramType = tc.freshFromTypeExp(params[idx].second);
           expectTypeToBe(args[idx], paramType);
           ++idx;
         }
@@ -322,7 +298,7 @@ public:
         e->setTypeName(dd->getName()->asStringRef());
         llvm::StringRef field = e->getFieldName()->asStringRef();
         if (TypeExp* pt = dd->getFields()->findParamType(field)) {
-          e->setTVar(tc.fresh(Type::bref(freshFromTypeExp(pt))));
+          e->setTVar(tc.fresh(Type::bref(tc.freshFromTypeExp(pt))));
         } else {
           LocatedError err;
           err.append(field);
@@ -349,7 +325,7 @@ public:
     else if (auto e = LetExp::downcast(_e)) {
       TVar rhsTy;
       if (e->getAscrip() != nullptr) {
-        rhsTy = freshFromTypeExp(e->getAscrip());
+        rhsTy = tc.freshFromTypeExp(e->getAscrip());
         expectTypeToBe(e->getDefinition(), rhsTy);
       } else {
         rhsTy = unifyExp(e->getDefinition());
@@ -394,7 +370,7 @@ public:
     if (func->getID() == AST::ID::EXTERN_FUNC) return;
     localVarTypes.push();
     addParamsToLocalVarTypes(func->getParameters());
-    TVar retTy = freshFromTypeExp(func->getReturnType());
+    TVar retTy = tc.freshFromTypeExp(func->getReturnType());
     unifyWith(func->getBody(), retTy);
     localVarTypes.pop();
   }
@@ -421,7 +397,7 @@ public:
   void addParamsToLocalVarTypes(ParamList* paramList) {
     for (auto param : paramList->asArrayRef()) {
       std::string paramName = param.first->asStringRef().str();
-      TVar paramTy = freshFromTypeExp(param.second);
+      TVar paramTy = tc.freshFromTypeExp(param.second);
       localVarTypes.add(paramName, paramTy);
     }
   }

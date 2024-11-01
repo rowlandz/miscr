@@ -24,7 +24,7 @@ namespace BorrowTests {
         errStr.append(err.render(declsText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
-    BorrowChecker bc(typer.getTypeContext());
+    BorrowChecker bc(typer.getTypeContext(), typer.ont);
     bc.checkDecls(parsed);
     if (!bc.errors.empty()) {
       std::string errStr;
@@ -48,7 +48,7 @@ namespace BorrowTests {
         errStr.append(err.render(declsText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
-    BorrowChecker bc(typer.getTypeContext());
+    BorrowChecker bc(typer.getTypeContext(), typer.ont);
     bc.checkDecls(parsed);
     if (bc.errors.empty()) {
       throw std::runtime_error("Expected borrow checking to fail.");
@@ -57,14 +57,13 @@ namespace BorrowTests {
 
   //////////////////////////////////////////////////////////////////////////////
 
-  TEST(simple_borrow_checking) {
+  TEST(malloc_then_free) {
     declsShouldPass(
       "extern func malloc(size: i64): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
-      "func main(): i32 = {\n"
+      "func foo(): unit = {\n"
       "  let x = malloc(10);\n"
       "  free(x);\n"
-      "  0\n"
       "};"
     );
   }
@@ -73,9 +72,8 @@ namespace BorrowTests {
     declsShouldFail(
       "extern func malloc(size: i64): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
-      "func main(): i32 = {\n"
+      "func foo(): unit = {\n"
       "  let x = malloc(10);\n"
-      "  0\n"
       "};"
     );
   }
@@ -84,11 +82,10 @@ namespace BorrowTests {
     declsShouldFail(
       "extern func malloc(size: i64): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
-      "func main(): i32 = {\n"
+      "func foo(): unit = {\n"
       "  let x = malloc(10);\n"
       "  free(x);\n"
       "  free(x);\n"
-      "  0\n"
       "};"
     );
   }
@@ -96,10 +93,7 @@ namespace BorrowTests {
   TEST(immediately_borrowed_malloc) {
     declsShouldFail(
       "extern func malloc(size: i64): #i8;\n"
-      "func main(): i32 = {\n"
-      "  let y = borrow malloc(10);\n"
-      "  0\n"
-      "};"
+      "func foo(): &i8 = borrow malloc(10);"
     );
   }
 

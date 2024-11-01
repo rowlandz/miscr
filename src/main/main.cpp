@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  BorrowChecker bc(typer.getTypeContext());
+  BorrowChecker bc(typer.getTypeContext(), typer.ont);
   bc.checkDecls(decls);
   if (!bc.errors.empty()) {
     for (auto err : bc.errors) {

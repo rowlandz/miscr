@@ -8,7 +8,6 @@
 
 class AccessPath;
 class AccessPathManager;
-std::string accessPathAsString(const AccessPath*);
 
 /// @brief Represents a sequence of struct projections and dereferences used to
 /// access a value.
@@ -27,7 +26,10 @@ protected:
 public:
 
   /// @brief Returns this access path as a string for error messages.
-  std::string asString() const { return accessPathAsString(this); };
+  std::string asString() const;
+
+  /// @brief Returns true iff this access path begins with @p prefix.
+  bool startsWith(const AccessPath* prefix) const;
 };
 
 /// @brief The root of an access path.
@@ -50,7 +52,23 @@ protected:
   NonRootPath(Tag tag, AccessPath* base) : AccessPath(tag), base(base) {}
   ~NonRootPath() {}
 public:
-  const AccessPath* getBase() const { return base; }
+  AccessPath* getBase() const { return base; }
+
+  static const NonRootPath* downcast(const AccessPath* ap) {
+    switch (ap->tag) {
+    case PROJECTION: case ARRAY_OFFSET: case DEREF:
+      return static_cast<const NonRootPath*>(ap);
+    default: return nullptr;
+    }
+  }
+
+  static NonRootPath* downcast(AccessPath* ap) {
+    switch (ap->tag) {
+    case PROJECTION: case ARRAY_OFFSET: case DEREF:
+      return static_cast<NonRootPath*>(ap);
+    default: return nullptr;
+    }
+  }
 };
 
 /// @brief An access path that ends with `.field`.
@@ -204,6 +222,28 @@ public:
     return true;
   }
 
+  /// @brief Gets the access path that is the same as @p of except with
+  /// @p prefix replaced with @p with.
+  /// @return If @p prefix is not a prefix of @p of, returns `nullptr`. 
+  AccessPath* replacePrefix(AccessPath* of, AccessPath* prefix,
+      AccessPath* with) {
+    if (of == prefix) return with;
+    if (RootPath::downcast(of)) return nullptr;
+    else if (auto pp = ProjectionPath::downcast(of)) {
+      AccessPath* ret = replacePrefix(pp->getBase(), prefix, with);
+      if (ret == nullptr) return nullptr;
+      return getProjection(ret, pp->getField());
+    } else if (auto aop = ArrayOffsetPath::downcast(of)) {
+      AccessPath* ret = replacePrefix(aop->getBase(), prefix, with);
+      if (ret == nullptr) return nullptr;
+      return getArrayOffset(ret, aop->getOffset());
+    } else if (auto dp = DerefPath::downcast(of)) {
+      AccessPath* ret = replacePrefix(dp->getBase(), prefix, with);
+      if (ret == nullptr) return nullptr;
+      return getDeref(ret);
+    } else llvm_unreachable("unexpected case");
+  }
+
 private:
 
   /// @brief Stores all root paths.
@@ -216,24 +256,36 @@ private:
   llvm::StringMap<AccessPath*> aliases;
 };
 
-std::string accessPathAsString(const AccessPath* ap) {
-  if (auto path = RootPath::downcast(ap)) {
+std::string AccessPath::asString() const {
+  if (auto path = RootPath::downcast(this)) {
     return path->asString().str();
-  } else if (auto path = ProjectionPath::downcast(ap)) {
+  } else if (auto path = ProjectionPath::downcast(this)) {
     std::string ret = path->getBase()->asString();
     ret += ".";
     ret += path->getField();
     return ret;
-  } else if (auto path = ArrayOffsetPath::downcast(ap)) {
+  } else if (auto path = ArrayOffsetPath::downcast(this)) {
     std::string ret = path->getBase()->asString();
     ret += ".";
     ret += path->getOffset();
     return ret;
-  } else if (auto path = DerefPath::downcast(ap)) {
+  } else if (auto path = DerefPath::downcast(this)) {
     std::string ret = path->getBase()->asString();
     ret += "!";
     return ret;
   } else llvm_unreachable("accessPathAsString: unexpected case");
+}
+
+bool AccessPath::startsWith(const AccessPath* prefix) const {
+  const AccessPath* this_ = this;
+  for (;;) {
+    if (this_ == prefix) return true;
+    if (RootPath::downcast(this_))
+      return false;
+    else if (auto nrp = NonRootPath::downcast(this_))
+      this_ = nrp->getBase();
+    else llvm_unreachable("unrecognized case");
+  }
 }
 
 #endif

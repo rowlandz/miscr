@@ -166,8 +166,8 @@ public:
     for (;;) {
       switch(p->tag) {
       case Token::EXCLAIM: {
-        e = new DerefExp(hereFrom(t), e);
         ++p;
+        e = new DerefExp(hereFrom(t), e);
         break;
       }
       case Token::LBRACKET: {

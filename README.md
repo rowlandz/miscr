@@ -260,29 +260,56 @@ The sequences of field accesses (i.e., projections) and dereferencing that is
 used to reach a particular value (really its memory location) forms a "path"
 through memory that is called the "access path".
 
-An owned pointer passed _by value_ counts as a use, but passing a _reference_
-to an owned pointer does _not_ count as a use of the owned pointer:
+Every access path is one of three types:
+* Positive Access Path (PAP) -- owned by the current scope
+* Zero Access Path (ZAP) -- owned by a surrounding scope
+* Negative Access Path (NAP) -- a "missing" value
 
-    let x = malloc(5);    // x becomes an owner
-    consume(x);           // x is used
-    let y = &malloc(5);   // y! becomes an owner
-    blah(y);              // NOT A USE
-    consume(y!);          // y! is used
+Suppose an identifier `x: &#i8` is in scope. Then, `x!` is an access path. There are four things you can do with an access path:
 
-Owned pointers in memory cannot be overwritten with a store expression:
+    myfunc(x!)            // use
+    let y = borrow x!;    // borrow
+    let z = move x;       // move
+    x := C::malloc(10);   // set
 
-    let x = &malloc(5);   // x! becomes an owner
-    x := malloc(5);       // ILLEGAL discard of owned reference x!
+The actions that are allowed depend on whether `x!` is a positive, zero, or negative access path:
 
-A function that does not _create_ an owned pointer cannot _use_ the owned ptr:
+|     | use | borrow | move | set |
+|-----|-----|--------|------|-----|
+| PAP | yes |  yes   | no   | no  |
+| ZAP | no  |  yes   | yes  | no  |
+| NAP | no  |  no    | no   | yes |
 
-    function foo(x: &#i8): unit = {
-      let z = borrow x!;  // borrowing is okay
-      let y = x!;         // ILLEGAL use of x!
-    };
+## Safety Properties:
 
+MISCR should guarantee the following safety properties:
 
+* Every malloc-d reference is freed exactly once
 
+MISCR does _not_ guarantee these:
+
+The absence of use-after-frees. There is no lifetime analysis, so borrowed references are just as unsafe as C pointers. e.g.,
+
+```
+func main(): i32 = {
+  let x: #i8 = C::malloc(10);
+  let y: &i8 = borrow x;
+  C::free(x);
+  C::write(0, y, 10);   // SEGFAULT
+};
+```
+
+## Problems with Double-Owned Pointers:
+
+A generic `free` function should look like this:
+
+    extern func free<T>(ptr: #T): unit;
+
+But what if `T` is itself an owned reference? The current move rule is that
+every owned ref _not_ hidden behind a borrowed pointer gets moved when passed
+to a function. However, `free` will _not recursively_ free the pointers.
+We need some way to cast a `##something` into a `#unit` so that `free` can
+properly handle it.
 
 ## Notes:
 

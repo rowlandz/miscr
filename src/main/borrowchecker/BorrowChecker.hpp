@@ -7,24 +7,11 @@
 #include "common/TypeContext.hpp"
 #include "borrowchecker/AccessPath.hpp"
 
-/// @brief _Borrow Checker Identifier_. Represents an explicit identifier bound
-/// in the source code or an internal identifier (e.g., `$42`).
-class BCIdent {
-  union { llvm::StringRef strVal; int intVal; } data;
-  enum { EXPLICIT, INTERNAL } tag;
-public:
-  BCIdent(llvm::StringRef explicitIdent)
-    : data({.strVal=explicitIdent}), tag(EXPLICIT) {}
-  BCIdent(int internalIdent)
-    : data({.intVal=internalIdent}), tag(INTERNAL) {}
-  bool isExplicit() const { return tag == EXPLICIT; }
-  bool isInternal() const { return tag == INTERNAL; }
-};
-
 /// @brief The borrow checker.
 class BorrowChecker {
 public:
-  BorrowChecker(const TypeContext& tc) : tc(tc) {}
+  BorrowChecker(TypeContext& tc, const Ontology& ont)
+    : tc(tc), ont(ont) {}
 
   /// @brief Borrow-check a declaration.
   void checkDecl(Decl* d) {
@@ -55,32 +42,30 @@ public:
     ownerCreations.clear();
     ownerUses.clear();
     for (auto param : funcDecl->getParameters()->asArrayRef()) {
-      llvm::StringRef paramName = param.first->asStringRef();
-      // accessPaths[paramName] = apm.getRoot(paramName);
-      if (auto paramType = RefTypeExp::downcast(param.second)) {
-        if (paramType->isOwned()) {
-          AccessPath* paramRoot = apm.getRoot(paramName);
-          ownerCreations[paramRoot] = param.first->getLocation();
-        }
+      AccessPath* paramAPRoot = apm.getRoot(param.first->asStringRef());
+      TVar paramTy = tc.freshFromTypeExp(param.second);
+      for (auto ownedExt : ownedExtensionsOf(paramAPRoot, paramTy)) {
+        createOwner(ownedExt, param.first->getLocation());
       }
     }
 
     AccessPath* retAP = check(funcDecl->getBody());
-    if (isOwnedRef(funcDecl->getBody()->getTVar())) {
-      // TODO: make helper function to narrow the location for block exps
-      if (auto block = BlockExp::downcast(funcDecl->getBody())) {
-        use(retAP, block->getStatements()->asArrayRef().back()->getLocation());
-      } else {
-        use(retAP, funcDecl->getBody()->getLocation());
-      }
-    }
+    // TODO: make helper function to narrow the location for block exps
+    Location loc;
+    if (auto block = BlockExp::downcast(funcDecl->getBody()))
+      loc = block->getStatements()->asArrayRef().back()->getLocation();
+    else
+      loc = funcDecl->getBody()->getLocation();
+    use(retAP, funcDecl->getBody()->getTVar(), loc);
 
     // If any owned references weren't used, produce an error.
     for (auto owner : ownerCreations) {
       Location use = ownerUses.lookup(owner.first);
       if (!use.exists()) {
         LocatedError err;
-        err.append("Owned reference is never used.\n");
+        err.append("Owned reference ");
+        err.append(owner.first->asString());
+        err.append(" is never used.\n");
         err.append(owner.second);
         errors.push_back(err);
       }
@@ -96,27 +81,18 @@ public:
       return check(e->getAscriptee());
     }
     else if (auto e = BinopExp::downcast(_e)) {
-      // no binary operator should operate over owned references
-      assert(!isOwnedRef(e->getLHS()->getTVar()));
-      assert(!isOwnedRef(e->getRHS()->getTVar()));
-      check(e->getLHS());
-      check(e->getRHS());
+      AccessPath* lhsAP = check(e->getLHS());
+      AccessPath* rhsAP = check(e->getRHS());
+      // no binary operator should operate over references or data types.
+      assert(lhsAP == nullptr);
+      assert(rhsAP == nullptr);
       return nullptr;
     }
     else if (auto e = BlockExp::downcast(_e)) {
-      if (e->getStatements()->asArrayRef().empty()) return nullptr;
-      llvm::ArrayRef<Exp*> stmts = e->getStatements()->asArrayRef().drop_back();
-      Exp* returnExp = e->getStatements()->asArrayRef().back();
-      for (auto stmt : stmts) {
-        check(stmt);
-        if (isOwnedRef(stmt->getTVar())) {
-          LocatedError err;
-          err.append("Owned reference is discarded.\n");
-          err.append(stmt->getLocation());
-          errors.push_back(err);
-        }
-      }
-      return check(returnExp);
+      AccessPath* ret = nullptr;
+      for (auto stmt : e->getStatements()->asArrayRef())
+        ret = check(stmt);
+      return ret;
     }
     else if (BoolLit::downcast(_e)) {
       return nullptr;
@@ -124,21 +100,37 @@ public:
     else if (auto e = BorrowExp::downcast(_e)) {
       AccessPath* ret = check(e->getRefExp());
       borrow(ret, e->getRefExp()->getLocation());
-      return ret;
+      return apm.getRoot(freshInternalVar());
     }
     else if (auto e = CallExp::downcast(_e)) {
-      if (e->isConstr())
-        llvm_unreachable("Constructor calls not supported yet by borrow checker.");
-      for (auto arg : e->getArguments()->asArrayRef()) {
-        AccessPath* argAP = check(arg);
-        if (isOwnedRef(arg->getTVar()))
-          use(argAP, arg->getLocation());
+      if (e->isConstr()) {
+        AccessPath* ret = apm.getRoot(freshInternalVar());
+        DataDecl* dataDecl = ont.getType(e->getFunction()->asStringRef());
+        llvm::ArrayRef<Exp*> args = e->getArguments()->asArrayRef();
+        auto fields = dataDecl->getFields()->asArrayRef();
+        assert(args.size() == fields.size());
+        for (int i = 0; i < args.size(); ++i) {
+          llvm::StringRef fieldName = fields[i].first->asStringRef();
+          AccessPath* argAP = check(args[i]);
+          auto usedAPs = use(argAP, args[i]->getTVar(), args[i]->getLocation());
+          for (AccessPath* usedAP : usedAPs) {
+            AccessPath* newPrefix = apm.getProjection(ret, fieldName);
+            AccessPath* newAP = apm.replacePrefix(usedAP, argAP, newPrefix);
+            createOwner(newAP, e->getLocation());
+          }
+        }
+        return ret;
+      } else {
+        for (auto arg : e->getArguments()->asArrayRef()) {
+          AccessPath* argAP = check(arg);
+          use(argAP, arg->getTVar(), arg->getLocation());
+        }
+        AccessPath* ret = apm.getRoot(freshInternalVar());
+        for (auto ownedExt : ownedExtensionsOf(ret, e->getTVar())) {
+          createOwner(ownedExt, e->getLocation());
+        }
+        return ret;
       }
-      AccessPath* ret = apm.getRoot(freshInternalVar());
-      if (isOwnedRef(e->getTVar())) {
-        createOwner(ret, e->getLocation());
-      }
-      return ret;
     }
     else if (DecimalLit::downcast(_e)) {
       return nullptr;
@@ -151,11 +143,13 @@ public:
       return apm.getRoot(name);
     }
     else if (auto e = LetExp::downcast(_e)) {
-      AccessPath* defAP = check(e->getDefinition());
-      if (isOwnedRef(e->getDefinition()->getTVar())) {
-        use(defAP, e->getDefinition()->getLocation());
-        AccessPath* ret = apm.getRoot(e->getBoundIdent()->asStringRef());
-        createOwner(ret, e->getBoundIdent()->getLocation());
+      Exp* def = e->getDefinition();
+      AccessPath* defAP = check(def);
+      auto usedAPs = use(defAP, def->getTVar(), def->getLocation());
+      for (AccessPath* usedAP : usedAPs) {
+        AccessPath* newPrefix = apm.getRoot(e->getBoundIdent()->asStringRef());
+        AccessPath* newAP = apm.replacePrefix(usedAP, defAP, newPrefix);
+        createOwner(newAP, e->getBoundIdent()->getLocation());
       }
       return nullptr;
     }
@@ -173,9 +167,13 @@ private:
   
   AccessPathManager apm;
 
-  const TypeContext& tc;
+  TypeContext& tc;
 
-  /// @brief Maps local owners to their source code creation locations.
+  const Ontology& ont;
+
+  /// @brief The keyset of this map is the set of all (used or unused) owners.
+  /// For building error messages, the location where each owner was created
+  /// is also stored.
   llvm::DenseMap<AccessPath*, Location> ownerCreations;
 
   /// @brief Maps local owners to the locations where they are used.
@@ -188,15 +186,47 @@ private:
   std::string freshInternalVar()
     { return std::string("$") + std::to_string(++nextInternalVar); }
 
-  /// @brief Returns true iff type variable @p v resolves to an oref type. 
-  bool isOwnedRef(TVar v) {
-    Type blah = tc.resolve(v).second;
-    return blah.getID() == Type::ID::OREF;
-  }
-
   /// @brief Marks @p ap as an owner, created at @p loc.
   void createOwner(AccessPath* ap, Location loc) {
     ownerCreations[ap] = loc;
+  }
+
+  /// @brief Returns all _owned extensions_ of @p path. An owned extension is
+  /// an AP that has @p path as a prefix and where all dereferences occuring
+  /// after @p path dereference _owned_ refs (not borrowed refs).
+  ///
+  /// When a new value is introduced into a scope, the owned extensions of that
+  /// value are precisely the additional access paths that must be used before
+  /// the scope closes. Function parameters and function call returns are both
+  /// examples of such value introductions.
+  /// @param v The type of @p path
+  llvm::SmallVector<AccessPath*> ownedExtensionsOf(AccessPath* path, TVar v) {
+    Type ty = tc.resolve(v).second;
+    switch (ty.getID()) {
+    case Type::ID::BOOL: case Type::ID::BREF: case Type::ID::DECIMAL:
+    case Type::ID::f32: case Type::ID::f64: case Type::ID::i8:
+    case Type::ID::i16: case Type::ID::i32: case Type::ID::i64:
+    case Type::ID::NUMERIC: case Type::ID::UNIT:
+      return {};
+    case Type::ID::NAME: {
+      llvm::SmallVector<AccessPath*> ret;
+      DataDecl* dataDecl = ont.getType(ty.getName()->asStringRef());
+      for (auto field : dataDecl->getFields()->asArrayRef()) {
+        llvm::StringRef fName = field.first->asStringRef();
+        TVar fTy = tc.freshFromTypeExp(field.second);
+        // TODO: a recursive type would cause a stack overflow.
+        ret.append(ownedExtensionsOf(apm.getProjection(path, fName), fTy));
+      }
+      return ret;
+    }
+    case Type::ID::OREF: {
+      llvm::SmallVector<AccessPath*> ret = { path };
+      ret.append(ownedExtensionsOf(apm.getDeref(path), ty.getInner()));
+      return ret;
+    }
+    case Type::ID::NOTYPE:
+      llvm_unreachable("Didn't expect NOTYPE here.");
+    }
   }
 
   /// @brief Checks that @p ap has not been used yet and can be borrowed. It is
@@ -209,110 +239,43 @@ private:
       LocatedError err;
       err.append("Owned reference ");
       err.append(ap->asString());
-      err.append(" has already been used.\n");
-      err.append(loc);
-      err.append("Use occurs here:\n");
+      err.append(" is already used here:\n");
       err.append(useLoc);
+      err.append("so it cannot be borrowed later:\n");
+      err.append(loc);
       errors.push_back(err);
     }
   }
 
-  /// @brief Marks @p ap as used. @p ap should be the access path of an owned
-  /// reference. Pushes an error if @p ap has already been used. If @p ap is
-  /// `nullptr`, then does nothing.
-  /// @param loc the location where the use occurs
-  void use(AccessPath* ap, Location loc) {
-    if (ap == nullptr) return;
-    Location useLoc = ownerUses.lookup(ap);
-    if (useLoc.exists()) {
-      LocatedError err;
-      err.append("Owned reference ");
-      err.append(ap->asString());
-      err.append(" has already been used.\n");
-      err.append(loc);
-      err.append("Use occurs here:\n");
-      err.append(useLoc);
-      errors.push_back(err);
-    } else {
-      ownerUses[ap] = loc;
+  /// @brief Uses all owned extensions of @p path.
+  /// @param path If `nullptr`, then nothing is used and `{}` is returned.
+  /// @param v the type of @p path
+  /// @param loc location where @p path is used. For example in `myfunc(bob)`,
+  /// if @p path corresponds to `bob`, then @p loc is the location of `bob`.
+  /// @return The projection extensions of @p path that were used. Could be
+  /// empty.
+  llvm::SmallVector<AccessPath*> use(AccessPath* path, TVar v, Location loc) {
+    if (path == nullptr) return {};
+    llvm::SmallVector<AccessPath*> ret;
+    for (auto owner : ownedExtensionsOf(path, v)) {
+      assert(ownerCreations.lookup(owner).exists());
+      Location useLoc = ownerUses.lookup(owner);
+      if (useLoc.exists()) {
+        LocatedError err;
+        err.append("Owned reference ");
+        err.append(owner->asString());
+        err.append(" is already used here:\n");
+        err.append(useLoc);
+        err.append("so it cannot be used later:\n");
+        err.append(loc);
+        errors.push_back(err);
+      } else {
+        ownerUses[owner] = loc;
+        ret.push_back(owner);
+      }
     }
+    return ret;
   }
 };
-
-/*
-
-Owned references can be "used" by these expression forms:
-
-BinopExp (not really, but maybe if there's a binop that acts on refs)
-IfExp
-  - The two branches must agree on which orefs are used inside it.
-BlockExp
-  - Any statement other than the last cannot be an oref.
-CallExp
-AscripExp
-  - Can consume an oref as long as it produces the same oref.
-LetExp
-  - Binding an oref to a ident counts as a use.
-ReturnExp
-StoreExp
-  - oref on RHS counts as a "use"
-  - oref is not allowed on LHS.
-RefExp
-MoveExp
-  - kind of. The owned reference must be accessed through a bref.
-
-
-Example translating String::append into BCIR
-
-func append(s1: &String, s2: &String): unit = {
-  let s1len: i64 = s1[.len]!;
-  let newLen: i64 = s1len + s2[.len]!;
-  let newPtr: #i8 = C::realloc(move s1[.ptr], newLen + 1);
-  C::strcpy((borrow newPtr)[s1len], borrow s2[.ptr]!);
-  s1[.ptr] := newPtr;
-  s1[.len] := newLen;
-  {}
-};
-
-// start with no owners
-intro s1      disjoint           // s1 is an access path (disjoint from prev)
-intro s2      disjoint
-intro s1len   s1 [String.len] !  // s1len is an AP eq to s1[String.len]!
-intro $0      s2 [String.len] !
-intro newLen  disjoint
-intro $1      s1 [String.ptr]
-mov   $1                         // invalidate AP $1! until unmov $1
-intro $2      disjoint owner     // the result of the "move" expr.
-use   $2                         // immediately use $2 as a function arg
-intro $3      disjoint owner     // the result of C::realloc
-use   $3                         // use $3 in RHS of let-expr
-intro newPtr  disjoint owner     // introduction via let-expr
-intro $4      newPtr             // "borrow" creates a new ident without a "use"
-intro $5      $4 [s1len]
-intro $6      s2 [String.ptr] !  // the deref implicitly borrows the owned ptr.
-intro $7      s1 [String.ptr]
-use   newPtr
-unmov $7                         // $7 == $1, so $1 has been unmoved now
-
-BC Interpretation State:
-  Access path bindings
-  for each owner identifier:
-    where it is created
-    where it is used (if anywhere)
-  for each moved access path:
-    where the move occurred
-
-
-
-
-An identifier can "own" a reference.
-An owner must be "used" exactly once before going out of scope.
-
-An access path can be "invalidated" by a move expression.
-An invalidated access path can be "revalidated" by a store expression.
-
-
-
-*/
 
 #endif
