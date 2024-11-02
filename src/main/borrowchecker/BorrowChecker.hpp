@@ -81,11 +81,8 @@ public:
       return check(e->getAscriptee());
     }
     else if (auto e = BinopExp::downcast(_e)) {
-      AccessPath* lhsAP = check(e->getLHS());
-      AccessPath* rhsAP = check(e->getRHS());
-      // no binary operator should operate over references or data types.
-      assert(lhsAP == nullptr);
-      assert(rhsAP == nullptr);
+      check(e->getLHS());
+      check(e->getRHS());
       return nullptr;
     }
     else if (auto e = BlockExp::downcast(_e)) {
@@ -152,6 +149,10 @@ public:
         createOwner(newAP, e->getBoundIdent()->getLocation());
       }
       return nullptr;
+    }
+    else if (auto e = ProjectExp::downcast(_e)) {
+      AccessPath* baseAP = check(e->getBase());
+      return apm.getProjection(baseAP, e->getFieldName()->asStringRef());
     }
     else if (StringLit::downcast(_e)) {
       return nullptr;

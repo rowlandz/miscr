@@ -31,7 +31,7 @@ public:
     // expressions and statements
     ADD, ASCRIP, BLOCK, BORROW, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF, DIV,
     ENAME, EQ, GE, GT, IF, INDEX, INDEX_FIELD, INT_LIT, LE, LET, LT, MOVE, MUL,
-    NE, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
+    NE, PROJECT, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
 
     // declarations
     DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
@@ -60,8 +60,8 @@ public:
     case ADD: case ASCRIP: case BLOCK: case BOOL_LIT: case CALL: case CONSTR:
     case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ: case GE: case GT:
     case IF: case INDEX: case INDEX_FIELD: case INT_LIT: case LE: case LET:
-    case LT: case MUL: case NE: case REF_EXP: case RETURN: case STORE:
-    case STRING_LIT: case SUB:
+    case LT: case MUL: case NE: case PROJECT: case REF_EXP: case RETURN:
+    case STORE: case STRING_LIT: case SUB:
       return true;
     default: return false;
     }
@@ -481,6 +481,27 @@ public:
   Exp* getOf() const { return of; }
 };
 
+/// @brief An expression that extracts a field from a `data` value
+/// (e.g., `bob.age`).
+class ProjectExp : public Exp {
+  Exp* base;
+  Name* fieldName;
+  std::string typeName;   // name of the datatype being indexed
+public:
+  ProjectExp(Location loc, Exp* base, Name* fieldName)
+    : Exp(PROJECT, loc), base(base), fieldName(fieldName) {}
+  ~ProjectExp() { deleteAST(base); delete fieldName; }
+  static ProjectExp* downcast(AST* ast)
+    {return ast->getID() == PROJECT ? static_cast<ProjectExp*>(ast) : nullptr;}
+  Exp* getBase() const { return base; }
+  Name* getFieldName() const { return fieldName; }
+
+  /// Used the the unifier to set the name of the data decl.
+  void setTypeName(llvm::StringRef name) { typeName = name.str(); }
+
+  llvm::StringRef getTypeName() const { return typeName; }
+};
+
 /// @brief An expression that calculates an address from a base reference and
 /// offset (e.g., `myarrayref[3]`).
 class IndexExp : public Exp {
@@ -502,7 +523,7 @@ public:
 class IndexFieldExp : public Exp {
   Exp* base;
   Name* fieldName;
-  std::string typeName;   // name of the datatype being index
+  std::string typeName;   // name of the datatype being indexed
 public:
   IndexFieldExp(Location loc, Exp* base, Name* fieldName)
     : Exp(INDEX_FIELD, loc), base(base), fieldName(fieldName) {}
@@ -686,6 +707,7 @@ void deleteAST(AST* _ast) {
   else if (auto ast = StoreExp::downcast(_ast)) delete ast;
   else if (auto ast = RefExp::downcast(_ast)) delete ast;
   else if (auto ast = DerefExp::downcast(_ast)) delete ast;
+  else if (auto ast = ProjectExp::downcast(_ast)) delete ast;
   else if (auto ast = IndexExp::downcast(_ast)) delete ast;
   else if (auto ast = IndexFieldExp::downcast(_ast)) delete ast;
   else if (auto ast = BorrowExp::downcast(_ast)) delete ast;
@@ -727,6 +749,7 @@ const char* ASTIDToString(AST::ID nt) {
   case AST::ID::MOVE:               return "MOVE";
   case AST::ID::MUL:                return "MUL";
   case AST::ID::NE:                 return "NE";
+  case AST::ID::PROJECT:            return "PROJECT";
   case AST::ID::REF_EXP:            return "REF_EXP";
   case AST::ID::RETURN:             return "RETURN";
   case AST::ID::STORE:              return "STORE";
@@ -784,6 +807,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "MOVE")                return AST::ID::MOVE;
   else if (str == "MUL")                 return AST::ID::MUL;
   else if (str == "NE")                  return AST::ID::NE;
+  else if (str == "PROJECT")             return AST::ID::PROJECT;
   else if (str == "REF_EXP")             return AST::ID::REF_EXP;
   else if (str == "RETURN")              return AST::ID::RETURN;
   else if (str == "STORE")               return AST::ID::STORE;
@@ -881,6 +905,8 @@ llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
     }
     return ret;
   }
+  if (auto ast = ProjectExp::downcast(_ast))
+    return { ast->getBase(), ast->getFieldName() };
   if (auto ast = RefExp::downcast(_ast))
     return { ast->getInitializer() };
   if (auto ast = RefTypeExp::downcast(_ast))

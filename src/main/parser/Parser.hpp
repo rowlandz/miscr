@@ -170,6 +170,12 @@ public:
         e = new DerefExp(hereFrom(t), e);
         break;
       }
+      case Token::DOT: {
+        ++p;
+        Name* fieldName = ident(); ARREST_IF_ERROR
+        e = new ProjectExp(hereFrom(t), e, fieldName);
+        break;
+      }
       case Token::LBRACKET: {
         ++p;
         if (p->tag == Token::DOT) {

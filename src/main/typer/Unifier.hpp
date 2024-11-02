@@ -341,6 +341,34 @@ public:
       e->setTVar(retTy);
     }
 
+    else if (auto e = ProjectExp::downcast(_e)) {
+      TVar dataTVar = unifyExp(e->getBase());
+      Type t = tc.resolve(dataTVar).second;
+      if (t.getID() == Type::ID::NAME) {
+        DataDecl* dd = ont.getType(t.getName()->asStringRef());
+        e->setTypeName(dd->getName()->asStringRef());
+        llvm::StringRef field = e->getFieldName()->asStringRef();
+        if (TypeExp* pt = dd->getFields()->findParamType(field)) {
+          e->setTVar(tc.freshFromTypeExp(pt));
+        } else {
+          LocatedError err;
+          err.append(field);
+          err.append(" is not a field of data type ");
+          err.append(dd->getName()->asStringRef());
+          err.append(".\n");
+          err.append(e->getLocation());
+          errors.push_back(err);
+          e->setTVar(tc.fresh());
+        }
+      } else {
+        LocatedError err;
+        err.append("Could not infer what data type is being accessed.\n");
+        err.append(e->getLocation());
+        errors.push_back(err);
+        e->setTVar(tc.fresh());
+      }
+    }
+
     else if (auto e = RefExp::downcast(_e)) {
       TVar initializerTy = unifyExp(e->getInitializer());
       e->setTVar(tc.fresh(Type::bref(initializerTy)));

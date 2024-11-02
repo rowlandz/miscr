@@ -244,6 +244,18 @@ public:
       llvm::Type* tyToLoad = genType(e->getTVar());
       return b->CreateLoad(tyToLoad, refExp);
     }
+    else if (auto e = ProjectExp::downcast(_exp)) {
+      llvm::Value* baseV = genExp(e->getBase());
+      DataDecl* typeDecl = ont.getType(e->getTypeName());
+      llvm::StringRef fieldName = e->getFieldName()->asStringRef();
+      unsigned int fieldIndex = 0;
+      for (auto field : typeDecl->getFields()->asArrayRef()) {
+        if (field.first->asStringRef() == fieldName) break;
+        ++fieldIndex;
+      }
+      assert(fieldIndex < typeDecl->getFields()->asArrayRef().size());
+      return b->CreateExtractValue(baseV, fieldIndex);
+    }
     else if (auto e = RefExp::downcast(_exp)) {
       llvm::Value* v = genExp(e->getInitializer());
       TVar initTy = e->getInitializer()->getTVar();
