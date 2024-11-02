@@ -7,22 +7,26 @@
 #include "lexer/Lexer.hpp"
 
 void print_tokens(const std::vector<Token>& tokens) {
-  for (auto token: tokens) {
+  for (Token token: tokens) {
     llvm::outs() << token.tagAsString() << "  ";
   }
   llvm::outs() << "\n";
 }
 
 void print_tokens_verbose(const std::vector<Token>& tokens) {
-  for (auto token: tokens) {
-    printf("r%3d c%3d   %-15s   %s\n", token.loc.row, token.loc.col, token.tagAsString(), token.asString().data());
+  for (Token token: tokens) {
+    llvm::outs() << llvm::formatv("r{0,-3} c{1,-3}   {2,-15}   {3}\n",
+      token.loc.row,
+      token.loc.col,
+      token.tagAsString(),
+      token.asString().data());
   }
 }
 
 void play_with_lexer(bool verbose) {
   llvm::StringRef line;
 
-  while (!std::cin.eof()) {
+  while (true) {
     llvm::outs() << "\x1B[34m>\x1B[0m ";
     llvm::outs().flush();
     auto res = llvm::MemoryBuffer::getSTDIN();
@@ -31,7 +35,8 @@ void play_with_lexer(bool verbose) {
 
     Lexer lexer(line.data());
     if (!lexer.run()) {
-      std::cout << lexer.getError().render(line.data(), lexer.getLocationTable()) << std::endl;
+      llvm::outs() <<
+        lexer.getError().render(line.data(), lexer.getLocationTable()) << "\n";
       continue;
     }
     if (verbose)

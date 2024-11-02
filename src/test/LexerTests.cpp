@@ -1,13 +1,32 @@
-#include <memory>
-#include <cstring>
+#include <llvm/Support/FormatVariadic.h>
 #include "lexer/Lexer.hpp"
 #include "test.hpp"
 
 namespace LexerTests {
   TESTGROUP("Lexer Tests")
 
-  /// @brief Succeeds if `text` is lexed into `expected`.
-  void tokensShouldBe(const char* text, std::vector<Token::Tag> expected);
+  /// @brief Succeeds if @p text is lexed into @p expected.
+  void tokensShouldBe(const char* text, std::vector<Token::Tag> expected) {
+    Lexer lexer(text);
+    if (!lexer.run()) {
+      throw std::runtime_error(lexer.getError().render(text,
+        lexer.getLocationTable()));
+    }
+    std::vector<Token> observed = lexer.getTokens();
+    if (observed.size() != expected.size()) {
+      throw std::runtime_error(llvm::formatv("Got {0} tokens but expected {1}",
+        observed.size(), expected.size()));
+    }
+    std::size_t end = observed.size();
+    for (int i = 0; i < end; i++) {
+      if (observed[i].tag != expected[i]) {
+        throw std::runtime_error(
+          llvm::formatv("First mismatched token is at index {0}", i));
+      }
+    }
+  }
+
+  //==========================================================================//
 
   TEST(simple_example_1) {
     tokensShouldBe("(1 + 2) * 3", {
@@ -52,35 +71,8 @@ namespace LexerTests {
   TEST(strings) {
     tokensShouldBe(
       "\"a string\"\n"
-      "\"string with \\\" excaped quote\"\n"
+      "\"string with \\\" escaped quote\"\n"
     , { Token::LIT_STRING, Token::LIT_STRING, Token::END }
     );
-  }
-
-  //==========================================================================//
-
-  template<typename ... Args>
-  std::string string_format(const std::string& format, Args ... args)
-  {
-    int size_s = std::snprintf(nullptr, 0, format.c_str(), args ...) + 1;
-    if (size_s <= 0) { throw std::runtime_error("Error during formatting."); }
-    auto size = static_cast<size_t>(size_s);
-    std::unique_ptr<char[]> buf(new char[size]);
-    std::snprintf(buf.get(), size, format.c_str(), args ...);
-    return std::string(buf.get(), buf.get() + size - 1);
-  }
-
-  void tokensShouldBe(const char* text, std::vector<Token::Tag> expected) {
-    Lexer lexer(text);
-    lexer.run();
-    auto observed = lexer.getTokens();
-    auto end = observed.size() < expected.size() ? observed.size() : expected.size();
-    for (int i = 0; i < end; i++) {
-      if (observed.at(i).tag != expected[i]) {
-        throw std::runtime_error(string_format("First mismatched token was at index %d", i));
-      }
-    }
-    if (expected.size() != observed.size())
-      throw std::runtime_error(string_format("Expected %d tokens but lexed %d.", expected.size(), observed.size()));
   }
 }

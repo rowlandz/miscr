@@ -2,24 +2,33 @@
 #define LEXER_SCANNER
 
 #include <vector>
+#include <llvm/ADT/StringRef.h>
 #include "common/Token.hpp"
 #include "common/Location.hpp"
 #include "common/LocationTable.hpp"
 
-/// Abstracts out the functionality of scanning text and identifying tokens.
-/// 
-/// ```
+/// @brief Defines low-level functionality associated with scanning text and
+/// generating a token stream.
+///
+/// Separating this from the Lexer helps keep the Lexer itself concise and free
+/// of clutter. A Scanner has three jobs:
+///   - Efficiently calculates a source code Location for each Token.
+///   - Builds a LocationTable.
+///   - Maintains the lexer state of type S.
+///
+/// Below is some sample text that is being scanned.
+///
+/// @code
 ///    voila sample text
 ///          ~~~^
-/// ```
-/// - selected text is "sam"
-/// - current char is "p"
-/// - `step` would make the selection "samp" and current char "l"
-/// - `capture` would empty the selection and make "sam" a new token
-/// - `discard` would empty the selection without making a new token
+/// @endcode
+///
+/// The _selection_ is "sam". The _cursor_ points to the _current char_
+/// which is 'p'. step() would make the selection "samp" and move the cursor to
+/// 'l'. capture() would empty the selection and push "sam" onto the token
+/// stream. discard() would empty the selection without pushing a token.
 template<typename S>
 class Scanner {
-
 public:
   Scanner(llvm::StringRef text, S _initialState) : _locTable(text.data()) {
     p1 = p2 = text.data();
@@ -29,9 +38,8 @@ public:
     _state = initialState = _initialState;
   }
 
-  /// Moves the cursor one char to the right (which adds the current char to
-  /// the selection) and sets the state to `newState`.
-  /// @note the current character should *not* be a newline.
+  /// @brief Moves the cursor one char to the right (which adds the current
+  /// char to the selection) and sets the state to `newState`.
   void step(S newState) {
     if (*p2 == '\n') {
       newlines++;
@@ -42,11 +50,11 @@ public:
     _state = newState;
   }
 
-  /// Captures selected characters as a new token of type `ty`. Selection is
-  /// cleared and state is reset.
-  void capture(Token::Tag ty) {
+  /// @brief Captures the selected characters as a new token with @p tag.
+  /// The selection is cleared and state is reset to the initial state.
+  void capture(Token::Tag tag) {
     u_int8_t tokenSize = (u_int8_t)(p2 - p1);
-    _tokens.push_back(Token(ty, p1, Location(row, col, tokenSize)));
+    _tokens.push_back(Token(tag, p1, Location(row, col, tokenSize)));
     _state = initialState;
     p1 = p2;
     if (newlines == 0) {
@@ -59,7 +67,8 @@ public:
     lastNewline = nullptr;
   }
 
-  /// Starts selection over at current cursor position and resets state.
+  /// @brief Starts the selection over at current cursor position and resets
+  /// state to the initial state.
   void discard() {
     u_int8_t tokenSize = (u_int8_t)(p2 - p1);
     _state = initialState;
@@ -74,41 +83,43 @@ public:
     lastNewline = nullptr;
   }
 
-  /// Equivalent to `step(_); capture(ty)`
-  void stepAndCapture(Token::Tag ty) {
+  /// @brief Equivalent to step() followed by capture(tag)
+  void stepAndCapture(Token::Tag tag) {
     step(initialState);
-    capture(ty);
+    capture(tag);
   }
 
-  /// Equivalent to `step(_); discard()`. Moves the cursor one char to the
-  /// right and clears the selection without capturing a token.
+  /// @brief Equivalent to step() followed by discard().
   void stepAndDiscard() {
     step(initialState);
     discard();
   }
 
-  /// Returns the current token state.
+  /// @brief Returns the current token state.
   S state() { return _state; }
 
-  /// Returns the tokens. */
+  /// @brief Returns the token stream.
   const std::vector<Token>& tokens() { return _tokens; }
 
-  /// Returns true if there are unprocessed chars left.
+  /// @brief Returns true iff there are unprocessed chars left. The end of the
+  /// character buffer is indicated by a null character.
   bool thereAreMoreChars() { return *p2 != '\0'; }
 
-  /// Returns the first unprocessed char (the current char).
+  /// @brief Returns the first unprocessed char (the current char).
   char currentChar() { return *p2; }
 
-  /// Returns a pointer to the selection.
-  const char* selectionPtr() { return p1; }
+  /// @brief Returns the current selection. 
+  llvm::StringRef selection() { return llvm::StringRef(p1, p2 - p1); }
 
-  /// Returns the number of selected chars.
-  u_int16_t selectionSize() { return p2 - p1; }
+  /// @brief Returns the Location of the current selection.
+  Location selectionLocation()
+    { return Location(row, col, static_cast<unsigned int>(p2 - p1)); }
 
-  /// Returns the current row and column as a Location of size one.
-  Location currentLocation() { return { row, col, 1 }; }
+  /// @brief Returns the location (with size 1) of the first character of the
+  /// current selection.
+  Location selectionBeginLocation() { return Location(row, col, 1); }
 
-  /// Returns the location table.
+  /// @brief Returns the location table.
   const LocationTable& locationTable() { return _locTable; }
 
 private:
