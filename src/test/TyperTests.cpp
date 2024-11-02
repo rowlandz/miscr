@@ -7,7 +7,7 @@
 namespace TyperTests {
   TESTGROUP("Typer Tests")
 
-  //////////////////////////////////////////////////////////////////////////////
+  //==========================================================================//
 
   void expShouldHaveType(const char* expText, const char* expectedTy) {
     Lexer lexer(expText);
@@ -69,7 +69,7 @@ namespace TyperTests {
       throw std::runtime_error("Expected failure, but it succeeded.");
   }
 
-  //////////////////////////////////////////////////////////////////////////////
+  //==========================================================================//
 
   TEST(primitive_literals) {
     expShouldHaveType("true", "bool");

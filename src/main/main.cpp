@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
   outDotLL << *codegen.mod;
   outDotLL.flush();
 
-  delete decls;
+  decls->deleteRecursive();
 
   return 0;
 }

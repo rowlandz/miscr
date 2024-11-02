@@ -69,7 +69,9 @@ public:
     return err;
   }
 
-  // ---------- Idents and QIdents ----------
+  //==========================================================================//
+  //=== Idents and QIdents
+  //==========================================================================//
 
   /// @brief Parses an identifier (i.e., an unqualified name). 
   Name* ident() {
@@ -97,7 +99,9 @@ public:
     return new Name(hereFrom(t), s);
   }
 
-  // ---------- Expressions ----------
+  //==========================================================================//
+  //=== Expressions
+  //==========================================================================//
 
   BoolLit* boolLit() {
     if (p->tag == Token::KW_FALSE) return new BoolLit((p++)->loc, false);
@@ -239,10 +243,10 @@ public:
     Exp* lhs = expLv3();
     RETURN_IF_ERROR
     while (p->tag == Token::OP_MUL || p->tag == Token::OP_DIV) {
-      AST::ID op = (p->tag == Token::OP_MUL) ? AST::ID::MUL : AST::ID::DIV;
+      auto op = (p->tag == Token::OP_MUL) ? BinopExp::MUL : BinopExp::DIV;
       ++p;
       Exp* rhs = expLv3(); ARREST_IF_ERROR
-      lhs = new BinopExp(op, hereFrom(t), lhs, rhs);
+      lhs = new BinopExp(hereFrom(t), op, lhs, rhs);
     }
     return lhs;
   }
@@ -251,10 +255,10 @@ public:
     Token t = *p;
     Exp* lhs = expLv4(); RETURN_IF_ERROR
     while (p->tag == Token::OP_ADD || p->tag == Token::OP_SUB) {
-      AST::ID op = (p->tag == Token::OP_ADD) ? AST::ID::ADD : AST::ID::SUB;
+      auto op = (p->tag == Token::OP_ADD) ? BinopExp::ADD : BinopExp::SUB;
       ++p;
       Exp* rhs = expLv4(); ARREST_IF_ERROR
-      lhs = new BinopExp(op, hereFrom(t), lhs, rhs);
+      lhs = new BinopExp(hereFrom(t), op, lhs, rhs);
     }
     return lhs;
   }
@@ -264,15 +268,15 @@ public:
     Exp* lhs = expLv5(); RETURN_IF_ERROR
     while (p->tag == Token::OP_EQ || p->tag == Token::OP_NE || p->tag == Token::OP_GE
     || p->tag == Token::OP_GT || p->tag == Token::OP_LE || p->tag == Token::OP_LT) {
-      AST::ID op = p->tag == Token::OP_EQ ? AST::ID::EQ :
-                   p->tag == Token::OP_NE ? AST::ID::NE :
-                   p->tag == Token::OP_GE ? AST::ID::GE :
-                   p->tag == Token::OP_GT ? AST::ID::GT :
-                   p->tag == Token::OP_LE ? AST::ID::LE :
-                                            AST::ID::LT;
+      auto op = p->tag == Token::OP_EQ ? BinopExp::EQ :
+                p->tag == Token::OP_NE ? BinopExp::NE :
+                p->tag == Token::OP_GE ? BinopExp::GE :
+                p->tag == Token::OP_GT ? BinopExp::GT :
+                p->tag == Token::OP_LE ? BinopExp::LE :
+                                         BinopExp::LT;
       ++p;
       Exp* rhs = expLv5(); ARREST_IF_ERROR
-      lhs = new BinopExp(op, hereFrom(t), lhs, rhs);
+      lhs = new BinopExp(hereFrom(t), op, lhs, rhs);
     }
     return lhs;
   }
@@ -325,17 +329,27 @@ public:
     }
   }
 
-  // ---------- Type Expressions ----------
+  //==========================================================================//
+  //=== Type Expressions
+  //==========================================================================//
 
   TypeExp* typeExpLv0() {
-    if (p->tag == Token::KW_f32) return PrimitiveTypeExp::newF32((p++)->loc);
-    if (p->tag == Token::KW_f64) return PrimitiveTypeExp::newF64((p++)->loc);
-    if (p->tag == Token::KW_i8) return PrimitiveTypeExp::newI8((p++)->loc);
-    if (p->tag == Token::KW_i16) return PrimitiveTypeExp::newI16((p++)->loc);
-    if (p->tag == Token::KW_i32) return PrimitiveTypeExp::newI32((p++)->loc);
-    if (p->tag == Token::KW_i64) return PrimitiveTypeExp::newI64((p++)->loc);
-    if (p->tag == Token::KW_BOOL) return PrimitiveTypeExp::newBool((p++)->loc);
-    if (p->tag == Token::KW_UNIT) return PrimitiveTypeExp::newUnit((p++)->loc);
+    if (p->tag == Token::KW_f32)
+      return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::f32);
+    if (p->tag == Token::KW_f64)
+      return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::f64);
+    if (p->tag == Token::KW_i8)
+      return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::i8);
+    if (p->tag == Token::KW_i16)
+      return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::i16);
+    if (p->tag == Token::KW_i32)
+      return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::i32);
+    if (p->tag == Token::KW_i64)
+      return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::i64);
+    if (p->tag == Token::KW_BOOL)
+      return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::BOOL);
+    if (p->tag == Token::KW_UNIT)
+       return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::UNIT);
     TypeExp* ret;
     ret = nameTypeExp(); CONTINUE_ON_EPSILON(ret)
     EPSILON_ERROR
@@ -412,7 +426,9 @@ public:
     }
   }
 
-  // ---------- Declarations ----------
+  //==========================================================================//
+  //=== Declarations
+  //==========================================================================//
 
   /// Parses parameter list of length zero or higher with optional terminal
   /// comma (wotc). This parser never returns an epsilon error.
@@ -520,7 +536,7 @@ public:
     }
   }
 
-  // ----------
+  //==========================================================================//
 
   /// @brief Returns the location that spans from the beginning of @p first to
   /// the end of the token before the current one. Make sure there _is_ a

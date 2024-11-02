@@ -60,11 +60,11 @@ check_input:
         print_parse_tree(parsed, indents, &typer.getTypeContext());
       }
 
-      deleteAST(parsed);
+      parsed->deleteRecursive();
       goto next_input;
     } else if (line.size() == 0) {
       std::cout << parser.getError().render(usrInput.c_str(), lexer.getLocationTable()) << std::endl;
-      deleteAST(parsed);
+      parsed->deleteRecursive();
       goto next_input;
     } else goto next_line;
   } else if (line.size() == 0) {

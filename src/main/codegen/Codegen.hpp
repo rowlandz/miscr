@@ -69,14 +69,18 @@ public:
   }
 
   llvm::Type* genType(TypeExp* _texp) {
-    if (_texp->getID() == AST::ID::BOOL_TEXP) return b->getInt1Ty();
-    if (_texp->getID() == AST::ID::f32_TEXP) return b->getFloatTy();
-    if (_texp->getID() == AST::ID::f64_TEXP) return b->getDoubleTy();
-    if (_texp->getID() == AST::ID::i8_TEXP) return b->getInt8Ty();
-    if (_texp->getID() == AST::ID::i16_TEXP) return b->getInt16Ty();
-    if (_texp->getID() == AST::ID::i32_TEXP) return b->getInt32Ty();
-    if (_texp->getID() == AST::ID::i64_TEXP) return b->getInt64Ty();
-    if (_texp->getID() == AST::ID::UNIT_TEXP) return b->getVoidTy();
+    if (auto texp = PrimitiveTypeExp::downcast(_texp)) {
+      switch (texp->kind) {
+      case PrimitiveTypeExp::BOOL:   return b->getInt1Ty();
+      case PrimitiveTypeExp::f32:    return b->getFloatTy();
+      case PrimitiveTypeExp::f64:    return b->getDoubleTy();
+      case PrimitiveTypeExp::i8:     return b->getInt8Ty();
+      case PrimitiveTypeExp::i16:    return b->getInt16Ty();
+      case PrimitiveTypeExp::i32:    return b->getInt32Ty();
+      case PrimitiveTypeExp::i64:    return b->getInt64Ty();
+      case PrimitiveTypeExp::UNIT:   return b->getVoidTy();
+      }
+    }
     if (auto texp = NameTypeExp::downcast(_texp)) {
       return dataTypes[texp->getName()->asStringRef()];
     }
@@ -101,27 +105,25 @@ public:
 
   /// @brief Generates LLVM IR that performs the computation `_exp`.
   llvm::Value* genExp(Exp* _exp) {
-    AST::ID id = _exp->getID();
-
     if (auto exp = BinopExp::downcast(_exp)) {
       llvm::Value* v1 = genExp(exp->getLHS());
       llvm::Value* v2 = genExp(exp->getRHS());
-      switch (id) {
-      case AST::ID::ADD: return b->CreateAdd(v1, v2);
-      case AST::ID::DIV: return b->CreateSDiv(v1, v2);
-      case AST::ID::GE:  return b->CreateICmpSGE(v1, v2);
-      case AST::ID::GT:  return b->CreateICmpSGT(v1, v2);
-      case AST::ID::LE:  return b->CreateICmpSLE(v1, v2);
-      case AST::ID::LT:  return b->CreateICmpSLT(v1, v2);
-      case AST::ID::MUL: return b->CreateMul(v1, v2);
-      case AST::ID::SUB: return b->CreateSub(v1, v2);
-      case AST::ID::EQ: {
+      switch (exp->getBinop()) {
+      case BinopExp::ADD: return b->CreateAdd(v1, v2);
+      case BinopExp::DIV: return b->CreateSDiv(v1, v2);
+      case BinopExp::GE:  return b->CreateICmpSGE(v1, v2);
+      case BinopExp::GT:  return b->CreateICmpSGT(v1, v2);
+      case BinopExp::LE:  return b->CreateICmpSLE(v1, v2);
+      case BinopExp::LT:  return b->CreateICmpSLT(v1, v2);
+      case BinopExp::MUL: return b->CreateMul(v1, v2);
+      case BinopExp::SUB: return b->CreateSub(v1, v2);
+      case BinopExp::EQ: {
         llvm::Type* operandType = v1->getType();
         if (operandType->isIntegerTy()) return b->CreateICmpEQ(v1, v2);
         if (operandType->isFloatingPointTy()) return b->CreateFCmpOEQ(v1, v2);
         llvm_unreachable("Unsupported type for == operator");
       }
-      case AST::ID::NE: {
+      case BinopExp::NE: {
         llvm::Type* operandType = v1->getType();
         if (operandType->isIntegerTy()) return b->CreateICmpNE(v1, v2);
         if (operandType->isFloatingPointTy()) return b->CreateFCmpONE(v1, v2);
@@ -312,7 +314,7 @@ public:
       genModule(mod);
     else if (auto func = FunctionDecl::downcast(decl))
       genFunc(func);
-    else if (decl->getID() == AST::ID::DATA)
+    else if (decl->id == AST::ID::DATA)
       {}
     else llvm_unreachable("Unsupported decl");
   }

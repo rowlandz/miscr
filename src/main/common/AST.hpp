@@ -8,10 +8,7 @@
 #include <llvm/ADT/Twine.h>
 #include "common/Location.hpp"
 
-class AST;
-class Exp;
 class Name;
-void deleteAST(AST*);
 
 /// @brief An AST node is any syntactic form that appears in source code. All
 /// AST nodes have an `ID`, which is used to downcast to subclasses, and a
@@ -27,18 +24,20 @@ void deleteAST(AST*);
 /// AST should always truly be a tree structure to avoid double frees.
 class AST {
 public:
-  enum ID : unsigned short {
+
+  /// @brief There is one ID for every final descendant class of AST.
+  enum ID : unsigned char {
+
     // expressions and statements
-    ADD, ASCRIP, BLOCK, BORROW, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF, DIV,
-    ENAME, EQ, GE, GT, IF, INDEX, INDEX_FIELD, INT_LIT, LE, LET, LT, MOVE, MUL,
-    NE, PROJECT, REF_EXP, RETURN, STORE, STRING_LIT, SUB,
+    ASCRIP, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, DEC_LIT, DEREF, ENAME,
+    IF, INDEX, INDEX_FIELD, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN,
+    STORE, STRING_LIT,
 
     // declarations
-    DATA, EXTERN_FUNC, FUNC, MODULE, NAMESPACE,
+    DATA, FUNC, MODULE, NAMESPACE,
 
     // type expressions
-    ARRAY_TEXP, BOOL_TEXP, f32_TEXP, f64_TEXP, i8_TEXP, i16_TEXP, i32_TEXP,
-    i64_TEXP, NAME_TEXP, REF_TEXP, STR_TEXP, UNIT_TEXP, 
+    NAME_TEXP, PRIMITIVE_TEXP, REF_TEXP,
 
     // other
     DECLLIST, EXPLIST, NAME, PARAMLIST,
@@ -46,33 +45,31 @@ public:
 
 protected:
   Location location;
-  ID id;
-
   AST(ID id, Location location) : id(id), location(location) {}
   ~AST() {};
 
 public:
-  ID getID() const { return id; }
+
+  /// @brief Determines what type of AST node this is. Though this field can
+  /// be inspected directly, it is usually better to use the static `downcast`
+  /// functions in the AST-derived classes.
+  const ID id;
+
+  static const char* IDToString(AST::ID);
+
+  /// @brief Returns `id` as a string matching its name in the AST::ID enum.
+  const char* getIDAsString() const { return IDToString(id); }
+
+  /// @brief Returns where this syntax element appears in the source code. 
   Location getLocation() const { return location; }
 
-  bool isExp() const {
-    switch (id) {
-    case ADD: case ASCRIP: case BLOCK: case BOOL_LIT: case CALL: case CONSTR:
-    case DEC_LIT: case DEREF: case DIV: case ENAME: case EQ: case GE: case GT:
-    case IF: case INDEX: case INDEX_FIELD: case INT_LIT: case LE: case LET:
-    case LT: case MUL: case NE: case PROJECT: case REF_EXP: case RETURN:
-    case STORE: case STRING_LIT: case SUB:
-      return true;
-    default: return false;
-    }
-  }
+  /// @brief Returns the child syntax nodes of this AST node. 
+  llvm::SmallVector<AST*> getASTChildren();
 
-  bool isBinopExp() const {
-    switch (id) {
-    case ADD: case DIV: case EQ: case GE: case GT: case LE: case LT: case MUL:
-    case NE: case SUB: return true;
-    default: return false;
-    }
+  /// @brief Recursively deletes this whole `new`-allocated syntax tree.
+  void deleteRecursive() {
+    for (AST* child : getASTChildren()) child->deleteRecursive();
+    delete this;
   }
 };
 
@@ -133,15 +130,14 @@ public:
 
 /// @brief A qualified or unqualified name. Unqualified names are also called
 /// identifiers. The stored string should always be one or more identifiers
-/// separated by `::` and contain no whitespace. The source text may include
-/// whitespace surrounding the `::` tokens. This whitespace is discarded by
-/// the parser but still accounted for by the name's `location`.
+/// separated by `::` and contain no whitespace (though whitespace is allowed
+/// to surround the `::` tokens in the source code itself).
 class Name : public AST {
   std::string s;
 public:
   Name(Location loc, std::string s) : AST(NAME, loc), s(s) {}
   static Name* downcast(AST* ast)
-    { return ast->getID() == NAME ? static_cast<Name*>(ast) : nullptr; }
+    { return ast->id == NAME ? static_cast<Name*>(ast) : nullptr; }
   llvm::StringRef asStringRef() const { return s; }
   /// Sets this name to `s`.
   void set(const llvm::Twine& s) { this->s = s.str(); }
@@ -158,46 +154,46 @@ protected:
   ~TypeExp() {}
 };
 
+/// @brief A type expression representing a primitive type.
 class PrimitiveTypeExp : public TypeExp {
-  PrimitiveTypeExp(ID id, Location loc) : TypeExp(id, loc) {}
 public:
-  ~PrimitiveTypeExp() {}
-  static PrimitiveTypeExp* newUnit(Location loc)
-    { return new PrimitiveTypeExp(UNIT_TEXP, loc); }
-  static PrimitiveTypeExp* newBool(Location loc)
-    { return new PrimitiveTypeExp(BOOL_TEXP, loc); }
-  static PrimitiveTypeExp* newI8(Location loc)
-    { return new PrimitiveTypeExp(i8_TEXP, loc); }
-  static PrimitiveTypeExp* newI16(Location loc)
-    { return new PrimitiveTypeExp(i16_TEXP, loc); }
-  static PrimitiveTypeExp* newI32(Location loc)
-    { return new PrimitiveTypeExp(i32_TEXP, loc); }
-  static PrimitiveTypeExp* newI64(Location loc)
-    { return new PrimitiveTypeExp(i64_TEXP, loc); }
-  static PrimitiveTypeExp* newF32(Location loc)
-    { return new PrimitiveTypeExp(f32_TEXP, loc); }
-  static PrimitiveTypeExp* newF64(Location loc)
-    { return new PrimitiveTypeExp(f64_TEXP, loc); }
-  static PrimitiveTypeExp* newStr(Location loc)
-    { return new PrimitiveTypeExp(STR_TEXP, loc); }
+
+  enum Kind : unsigned char { BOOL, f32, f64, i8, i16, i32, i64, UNIT };
+
+  /// @brief The kind of primitive type this represents.
+  const Kind kind;
+
+  PrimitiveTypeExp(Location loc, Kind kind)
+    : TypeExp(PRIMITIVE_TEXP, loc), kind(kind) {}
+
   static PrimitiveTypeExp* downcast(AST* ast) {
-    switch (ast->getID()) {
-    case UNIT_TEXP: case BOOL_TEXP: case i8_TEXP: case i16_TEXP: case i32_TEXP:
-    case i64_TEXP: case f32_TEXP: case f64_TEXP: case STR_TEXP:
-      return static_cast<PrimitiveTypeExp*>(ast);
-    default: return nullptr;
+    return ast->id == PRIMITIVE_TEXP ?
+           static_cast<PrimitiveTypeExp*>(ast) : nullptr;
+  }
+
+  /// @brief Returns the kind as a string matching its syntax in source code. 
+  const char* getKindAsString() const {
+    switch (kind) {
+    case BOOL:   return "bool";
+    case f32:    return "f32";
+    case f64:    return "f64";
+    case i8:     return "i8";
+    case i16:    return "i16";
+    case i32:    return "i32";
+    case i64:    return "i64";
+    case UNIT:   return "unit";
     }
   }
 };
 
+/// @brief A Name used as a type expression.
 class NameTypeExp : public TypeExp {
   Name* name;
 public:
   NameTypeExp(Name* name)
     : TypeExp(NAME_TEXP, name->getLocation()), name(name) {}
-  ~NameTypeExp() { delete name; }
   static NameTypeExp* downcast(AST* ast) {
-    return ast->getID() == NAME_TEXP ? static_cast<NameTypeExp*>(ast) : nullptr;
+    return ast->id == NAME_TEXP ? static_cast<NameTypeExp*>(ast) : nullptr;
   }
   Name* getName() const { return name; }
 };
@@ -209,10 +205,8 @@ class RefTypeExp : public TypeExp {
 public:
   RefTypeExp(Location loc, TypeExp* pointeeType, bool owned)
     : TypeExp(REF_TEXP, loc), pointeeType(pointeeType), owned(owned) {}
-  ~RefTypeExp() { deleteAST(pointeeType); }
-  static RefTypeExp* downcast(AST* ast) {
-    return ast->getID() == REF_TEXP ? static_cast<RefTypeExp*>(ast) : nullptr;
-  }
+  static RefTypeExp* downcast(AST* ast)
+    { return ast->id == REF_TEXP ? static_cast<RefTypeExp*>(ast) : nullptr; }
   TypeExp* getPointeeType() const { return pointeeType; }
   bool isBorrowed() const { return !owned; }
   bool isOwned() const { return owned; }
@@ -225,12 +219,19 @@ public:
 /// @brief An expression or statement (currently there is no distinction).
 class Exp : public AST {
 protected:
-  TVar type = TVar::none();
-  Exp(ID id, Location loc) : AST(id, loc) {}
+  TVar type;
+  Exp(ID id, Location loc) : AST(id, loc), type(TVar::none()) {}
   ~Exp() {}
 public:
-  static Exp* downcast(AST* ast)
-    { return ast->isExp() ? static_cast<Exp*>(ast) : nullptr; }
+  static Exp* downcast(AST* ast) {
+    switch (ast->id) {
+    case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case CALL:
+    case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX:
+    case INDEX_FIELD: case INT_LIT: case LET: case PROJECT: case REF_EXP:
+    case RETURN: case STORE: case STRING_LIT: return static_cast<Exp*>(ast);
+    default: return nullptr;
+    }
+  }
   TVar getTVar() const { return type; };
   void setTVar(TVar type) { this->type = type; }
 };
@@ -242,6 +243,7 @@ public:
   ExpList(Location loc) : AST(EXPLIST, loc) {}
   ExpList(Location loc, llvm::SmallVector<Exp*, 4> exps)
     : AST(EXPLIST, loc), exps(exps) {}
+
   /// @brief Builds a new expression list from a head and tail. The tail is
   /// consumed and deleted and thus should not be used again. 
   ExpList(Location loc, Exp* head, ExpList* tail) : AST(EXPLIST, loc) {
@@ -252,9 +254,9 @@ public:
     tail->exps.clear();
     delete tail;
   }
-  ~ExpList() { for (Exp* e : exps) deleteAST(e); }
+
   static ExpList* downcast(AST* ast)
-    { return ast->getID() == EXPLIST ? static_cast<ExpList*>(ast) : nullptr; }
+    { return ast->id == EXPLIST ? static_cast<ExpList*>(ast) : nullptr; }
   bool isEmpty() const { return exps.empty(); }
   bool nonEmpty() const { return !exps.empty(); }
   llvm::ArrayRef<Exp*> asArrayRef() const { return exps; }
@@ -266,7 +268,7 @@ class BoolLit : public Exp {
 public:
   BoolLit(Location loc, bool value) : Exp(BOOL_LIT, loc), value(value) {}
   static BoolLit* downcast(AST* ast)
-    { return ast->getID() == BOOL_LIT ? static_cast<BoolLit*>(ast) : nullptr; }
+    { return ast->id == BOOL_LIT ? static_cast<BoolLit*>(ast) : nullptr; }
   bool getValue() const { return value; }
 };
 
@@ -276,7 +278,7 @@ class IntLit : public Exp {
 public:
   IntLit(Location loc, const char* ptr) : Exp(INT_LIT, loc), ptr(ptr) {}
   static IntLit* downcast(AST* ast)
-    { return ast->getID() == INT_LIT ? static_cast<IntLit*>(ast) : nullptr; }
+    { return ast->id == INT_LIT ? static_cast<IntLit*>(ast) : nullptr; }
   long asLong() const
     { return atol(std::string(ptr, getLocation().sz).c_str()); }
   unsigned int asUint() const
@@ -290,9 +292,8 @@ class DecimalLit : public Exp {
   const char* ptr;
 public:
   DecimalLit(Location loc, const char* ptr) : Exp(DEC_LIT, loc), ptr(ptr) {}
-  static DecimalLit* downcast(AST* ast) {
-    return ast->getID() == DEC_LIT ? static_cast<DecimalLit*>(ast) : nullptr;
-  }
+  static DecimalLit* downcast(AST* ast)
+    { return ast->id == DEC_LIT ? static_cast<DecimalLit*>(ast) : nullptr; }
   std::string asString() const { return std::string(ptr, getLocation().sz); }
   double asDouble() const
     { return atof(std::string(ptr, getLocation().sz).c_str()); }
@@ -302,16 +303,18 @@ public:
 class StringLit : public Exp {
   const char* ptr;
 public:
-  /// Creates a string literal. The `loc` and `ptr` should point to the open
-  /// quote of the string literal. 
+
+  /// @brief Creates a string literal. The @p loc and @p ptr should point to
+  /// the open quote of the string literal. 
   StringLit(Location loc, const char* ptr) : Exp(STRING_LIT, loc), ptr(ptr) {}
-  static StringLit* downcast(AST* ast) {
-    return ast->getID() == STRING_LIT ? static_cast<StringLit*>(ast) : nullptr;
-  }
-  /// Returns the contents of the string (excluding surrounding quotes).
+  static StringLit* downcast(AST* ast)
+    { return ast->id == STRING_LIT ? static_cast<StringLit*>(ast) : nullptr; }
+
+  /// @brief Returns the contents of the string (excluding surrounding quotes).
   std::string asString() const
     { return std::string(ptr+1, getLocation().sz-2); }
-  /// Returns the contents of the string with escape sequences processed. 
+
+  /// @brief Returns the contents of the string with escape sequences processed. 
   std::string processEscapes() const {
     std::string ret;
     ret.reserve(getLocation().sz);
@@ -334,22 +337,43 @@ class NameExp : public Exp {
   Name* name;
 public:
   NameExp(Location loc, Name* name) : Exp(ENAME, loc), name(name) {}
-  ~NameExp() { delete name; }
   static NameExp* downcast(AST* ast)
-    { return ast->getID() == ENAME ? static_cast<NameExp*>(ast) : nullptr; }
+    { return ast->id == ENAME ? static_cast<NameExp*>(ast) : nullptr; }
   Name* getName() const { return name; }
 };
 
 /// @brief A binary operator expression.
 class BinopExp : public Exp {
+public:
+  enum Binop { ADD, DIV, EQ, GE, GT, LE, LT, MUL, NE, SUB };
+private:
+  Binop binop;
   Exp* lhs;
   Exp* rhs;
 public:
-  BinopExp(ID id, Location loc, Exp* lhs, Exp* rhs)
-    : Exp(id, loc), lhs(lhs), rhs(rhs) {}
-  ~BinopExp() { deleteAST(lhs); deleteAST(rhs); }
+  BinopExp(Location loc, Binop binop, Exp* lhs, Exp* rhs)
+    : Exp(BINOP_EXP, loc), binop(binop), lhs(lhs), rhs(rhs) {}
   static BinopExp* downcast(AST* ast)
-    { return ast->isBinopExp() ? static_cast<BinopExp*>(ast) : nullptr; }
+    { return ast->id == BINOP_EXP ? static_cast<BinopExp*>(ast) : nullptr; }
+  
+  /// @brief Returns the binary operator as a string matching its appearance
+  /// in the Binop enum.
+  const char* getBinopAsEnumString() const {
+    switch (binop) {
+    case ADD:   return "ADD";
+    case DIV:   return "DIV";
+    case EQ:    return "EQ";
+    case GE:    return "GE";
+    case GT:    return "GT";
+    case LE:    return "LE";
+    case LT:    return "LT";
+    case MUL:   return "MUL";
+    case NE:    return "NE";
+    case SUB:   return "SUB";
+    }
+  }
+
+  Binop getBinop() const { return binop; }
   Exp* getLHS() const { return lhs; }
   Exp* getRHS() const { return rhs; }
 };
@@ -362,9 +386,8 @@ class IfExp : public Exp {
 public:
   IfExp(Location loc, Exp* condExp, Exp* thenExp, Exp* elseExp)
     : Exp(IF, loc), condExp(condExp), thenExp(thenExp), elseExp(elseExp) {}
-  ~IfExp() { deleteAST(condExp); deleteAST(thenExp); deleteAST(elseExp); }
   static IfExp* downcast(AST* ast)
-    { return ast->getID() == IF ? static_cast<IfExp*>(ast) : nullptr; }
+    { return ast->id == IF ? static_cast<IfExp*>(ast) : nullptr; }
   Exp* getCondExp() const { return condExp; }
   Exp* getThenExp() const { return thenExp; }
   Exp* getElseExp() const { return elseExp; }
@@ -375,30 +398,27 @@ class BlockExp : public Exp {
   ExpList* statements;
 public:
   BlockExp(Location loc, ExpList* stmts) : Exp(BLOCK, loc), statements(stmts) {}
-  ~BlockExp() { delete statements; }
   static BlockExp* downcast(AST* ast)
-    { return ast->getID() == BLOCK ? static_cast<BlockExp*>(ast) : nullptr; }
+    { return ast->id == BLOCK ? static_cast<BlockExp*>(ast) : nullptr; }
   ExpList* getStatements() const { return statements; }
 };
 
-/// @brief A function call or constructor invocation (CALL/CONSTR).
-/// The parser will always generate CALL and the canonicalizer flips the
-/// constructor calls to CONSTR.
+/// @brief A function call or constructor invocation. The parser will always
+/// create the call expression and the canonicalizer marks the constructor
+/// calls when it detects them.
 class CallExp : public Exp {
+  bool _isConstr;
   Name* function;
   ExpList* arguments;
 public:
-  CallExp(Location loc, Name* function, ExpList* arguments)
-    : Exp(CALL, loc), function(function), arguments(arguments) {}
-  ~CallExp() { delete function; delete arguments; }
-  static CallExp* downcast(AST* ast) {
-    return (ast->getID() == CALL || ast->getID() == CONSTR) ?
-           static_cast<CallExp*>(ast) : nullptr;
-  }
+  CallExp(Location loc, Name* function, ExpList* arguments) : Exp(CALL, loc),
+    _isConstr(false), function(function), arguments(arguments) {}
+  static CallExp* downcast(AST* ast)
+    { return (ast->id == CALL) ? static_cast<CallExp*>(ast) : nullptr; }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
-  void markAsConstr() { id = CONSTR; }
-  bool isConstr() { return id == CONSTR; }
+  void markAsConstr() { _isConstr = true; }
+  bool isConstr() { return _isConstr; }
 };
 
 /// @brief A type ascription expression.
@@ -408,9 +428,8 @@ class AscripExp : public Exp {
 public:
   AscripExp(Location loc, Exp* ascriptee, TypeExp* ascripter)
     : Exp(ASCRIP, loc), ascriptee(ascriptee), ascripter(ascripter) {}
-  ~AscripExp() { deleteAST(ascriptee); deleteAST(ascripter); }
   static AscripExp* downcast(AST* ast)
-    { return ast->getID() == ASCRIP ? static_cast<AscripExp*>(ast) : nullptr; }
+    { return ast->id == ASCRIP ? static_cast<AscripExp*>(ast) : nullptr; }
   Exp* getAscriptee() const { return ascriptee; }
   TypeExp* getAscripter() const { return ascripter; }
 };
@@ -423,9 +442,8 @@ class LetExp : public Exp {
 public:
   LetExp(Location loc, Name* ident, TypeExp* ascrip, Exp* def)
     : Exp(LET, loc), boundIdent(ident), ascrip(ascrip), definition(def) {}
-  ~LetExp() { delete boundIdent; deleteAST(ascrip); deleteAST(definition); }
   static LetExp* downcast(AST* ast)
-    { return ast->getID() == LET ? static_cast<LetExp*>(ast) : nullptr; }
+    { return ast->id == LET ? static_cast<LetExp*>(ast) : nullptr; }
   Name* getBoundIdent() const { return boundIdent; }
   TypeExp* getAscrip() const { return ascrip; }
   Exp* getDefinition() const { return definition; }
@@ -437,9 +455,8 @@ class ReturnExp : public Exp {
 public:
   ReturnExp(Location loc, Exp* returnee)
     : Exp(RETURN, loc), returnee(returnee) {}
-  ~ReturnExp() { deleteAST(returnee); }
   static ReturnExp* downcast(AST* ast)
-    { return ast->getID() == RETURN ? static_cast<ReturnExp*>(ast) : nullptr; }
+    { return ast->id == RETURN ? static_cast<ReturnExp*>(ast) : nullptr; }
   Exp* getReturnee() const { return returnee; }
 };
 
@@ -450,9 +467,8 @@ class StoreExp : public Exp {
 public:
   StoreExp(Location loc, Exp* lhs, Exp* rhs)
     : Exp(STORE, loc), lhs(lhs), rhs(rhs) {}
-  ~StoreExp() { deleteAST(lhs); deleteAST(rhs); }
   static StoreExp* downcast(AST* ast)
-    { return ast->getID() == STORE ? static_cast<StoreExp*>(ast) : nullptr; }
+    { return ast->id == STORE ? static_cast<StoreExp*>(ast) : nullptr; }
   Exp* getLHS() const { return lhs; }
   Exp* getRHS() const { return rhs; }
 };
@@ -464,9 +480,8 @@ class RefExp : public Exp {
 public:
   RefExp(Location loc, Exp* initializer)
     : Exp(REF_EXP, loc), initializer(initializer) {}
-  ~RefExp() { deleteAST(initializer); }
   static RefExp* downcast(AST* ast)
-    { return (ast->getID() == REF_EXP) ? static_cast<RefExp*>(ast) : nullptr; }
+    { return (ast->id == REF_EXP) ? static_cast<RefExp*>(ast) : nullptr; }
   Exp* getInitializer() const { return initializer; }
 };
 
@@ -475,9 +490,8 @@ class DerefExp : public Exp {
   Exp* of;
 public:
   DerefExp(Location loc, Exp* of) : Exp(DEREF, loc), of(of) {}
-  ~DerefExp() { deleteAST(of); }
   static DerefExp* downcast(AST* ast)
-    { return ast->getID() == DEREF ? static_cast<DerefExp*>(ast) : nullptr; }
+    { return ast->id == DEREF ? static_cast<DerefExp*>(ast) : nullptr; }
   Exp* getOf() const { return of; }
 };
 
@@ -490,9 +504,8 @@ class ProjectExp : public Exp {
 public:
   ProjectExp(Location loc, Exp* base, Name* fieldName)
     : Exp(PROJECT, loc), base(base), fieldName(fieldName) {}
-  ~ProjectExp() { deleteAST(base); delete fieldName; }
   static ProjectExp* downcast(AST* ast)
-    {return ast->getID() == PROJECT ? static_cast<ProjectExp*>(ast) : nullptr;}
+    { return ast->id == PROJECT ? static_cast<ProjectExp*>(ast) : nullptr; }
   Exp* getBase() const { return base; }
   Name* getFieldName() const { return fieldName; }
 
@@ -510,10 +523,8 @@ class IndexExp : public Exp {
 public:
   IndexExp(Location loc, Exp* base, Exp* index)
     : Exp(INDEX, loc), base(base), index(index) {}
-  ~IndexExp() { deleteAST(base); deleteAST(index); }
-  static IndexExp* downcast(AST* ast) {
-    return ast->getID() == INDEX ? static_cast<IndexExp*>(ast) : nullptr;
-  }
+  static IndexExp* downcast(AST* ast)
+    { return ast->id == INDEX ? static_cast<IndexExp*>(ast) : nullptr; }
   Exp* getBase() const { return base; }
   Exp* getIndex() const { return index; }
 };
@@ -527,9 +538,8 @@ class IndexFieldExp : public Exp {
 public:
   IndexFieldExp(Location loc, Exp* base, Name* fieldName)
     : Exp(INDEX_FIELD, loc), base(base), fieldName(fieldName) {}
-  ~IndexFieldExp() { deleteAST(base); delete fieldName; }
   static IndexFieldExp* downcast(AST* ast) {
-    return ast->getID() == INDEX_FIELD ?
+    return ast->id == INDEX_FIELD ?
            static_cast<IndexFieldExp*>(ast) : nullptr;
   }
   Exp* getBase() const { return base; }
@@ -547,10 +557,8 @@ class BorrowExp : public Exp {
   Exp* refExp;
 public:
   BorrowExp(Location loc, Exp* refExp) : Exp(BORROW, loc), refExp(refExp) {}
-  ~BorrowExp() { deleteAST(refExp); }
-  static BorrowExp* downcast(AST* ast) {
-    return ast->getID() == BORROW ? static_cast<BorrowExp*>(ast) : nullptr;
-  }
+  static BorrowExp* downcast(AST* ast)
+    { return ast->id == BORROW ? static_cast<BorrowExp*>(ast) : nullptr; }
   Exp* getRefExp() const { return refExp; }
 };
 
@@ -560,10 +568,8 @@ class MoveExp : public Exp {
   Exp* refExp;
 public:
   MoveExp(Location loc, Exp* refExp) : Exp(MOVE, loc), refExp(refExp) {}
-  ~MoveExp() { deleteAST(refExp); }
-  static MoveExp* downcast(AST* ast) {
-    return ast->getID() == MOVE ? static_cast<MoveExp*>(ast) : nullptr;
-  }
+  static MoveExp* downcast(AST* ast)
+    { return ast->id == MOVE ? static_cast<MoveExp*>(ast) : nullptr; }
   Exp* getRefExp() const { return refExp; }
 };
 
@@ -576,7 +582,7 @@ class Decl : public AST {
 protected:
   Name* name;
   Decl(ID id, Location loc, Name* name) : AST(id, loc), name(name) {}
-  ~Decl() { delete name; }
+  ~Decl() {}
 public:
   Name* getName() const { return name; }
 };
@@ -587,9 +593,8 @@ class DeclList : public AST {
 public:
   DeclList(Location loc, llvm::SmallVector<Decl*, 0> decls)
       : AST(DECLLIST, loc), decls(decls) {}
-  ~DeclList() { for (Decl* d : decls) deleteAST(d); }
   static DeclList* downcast(AST* ast)
-    { return ast->getID() == DECLLIST ? static_cast<DeclList*>(ast) : nullptr; }
+    { return ast->id == DECLLIST ? static_cast<DeclList*>(ast) : nullptr; }
   llvm::ArrayRef<Decl*> asArrayRef() const { return decls; }
 };
 
@@ -598,9 +603,8 @@ class ModuleDecl : public Decl {
 public:
   ModuleDecl(Location loc, Name* name, DeclList* decls)
       : Decl(MODULE, loc, name), decls(decls) {}
-  ~ModuleDecl() { delete decls; }
   static ModuleDecl* downcast(AST* ast)
-    { return ast->getID() == MODULE ? static_cast<ModuleDecl*>(ast) : nullptr; }
+    { return ast->id == MODULE ? static_cast<ModuleDecl*>(ast) : nullptr; }
   DeclList* getDecls() const { return decls; }
 };
 
@@ -609,9 +613,8 @@ class NamespaceDecl : public Decl {
 public:
   NamespaceDecl(Location loc, Name* name, DeclList* decls)
     : Decl(NAMESPACE, loc, name), decls(decls) {}
-  ~NamespaceDecl() { delete decls; }
   static NamespaceDecl* downcast(AST* ast) {
-    return ast->getID() == NAMESPACE ?
+    return ast->id == NAMESPACE ?
            static_cast<NamespaceDecl*>(ast) : nullptr;
   }
   DeclList* getDecls() const { return decls; }
@@ -624,11 +627,8 @@ class ParamList : public AST {
 public:
   ParamList(Location loc, llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> ps)
     : AST(PARAMLIST, loc), params(ps) {}
-  ~ParamList()
-    { for (auto p : params) { delete p.first; deleteAST(p.second); } }
-  static ParamList* downcast(AST* ast) {
-    return ast->getID() == PARAMLIST ? static_cast<ParamList*>(ast) : nullptr;
-  }
+  static ParamList* downcast(AST* ast)
+    { return ast->id == PARAMLIST ? static_cast<ParamList*>(ast) : nullptr; }
   llvm::ArrayRef<std::pair<Name*, TypeExp*>> asArrayRef() const
     { return params; }
 
@@ -649,20 +649,18 @@ class FunctionDecl : public Decl {
   Exp* body;
 public:
   FunctionDecl(Location loc, Name* name, ParamList* params, TypeExp* returnType,
-    Exp* body) : Decl(FUNC, loc, name), parameters(params),
+    Exp* body = nullptr) : Decl(FUNC, loc, name), parameters(params),
     returnType(returnType), body(body) {}
-  FunctionDecl(Location loc, Name* name, ParamList* params, TypeExp* returnType)
-    : Decl(EXTERN_FUNC, loc, name), parameters(params), returnType(returnType),
-    body(nullptr) {}
-  ~FunctionDecl() { delete parameters; deleteAST(returnType); deleteAST(body); }
-  static FunctionDecl* downcast(AST* ast) {
-    return ast->getID() == FUNC || ast->getID() == EXTERN_FUNC ?
-           static_cast<FunctionDecl*>(ast) : nullptr;
-  }
+  static FunctionDecl* downcast(AST* ast)
+    { return ast->id == FUNC ? static_cast<FunctionDecl*>(ast) : nullptr; }
   ParamList* getParameters() const { return parameters; }
   TypeExp* getReturnType() const { return returnType; }
   Exp* getBody() const { return body; }
-  /// True if the not an `extern` function and `getBody` is not nullptr. 
+
+  /// @brief Returns true iff this function has no body.
+  bool isExtern() const { return body == nullptr; }
+
+  /// True iff not an `extern` function and getBody() is not nullptr. 
   bool hasBody() const { return body != nullptr; }
 };
 
@@ -672,108 +670,120 @@ class DataDecl : public Decl {
 public:
   DataDecl(Location loc, Name* name, ParamList* fields)
     : Decl(DATA, loc, name), fields(fields) {}
-  ~DataDecl() { delete fields; }
   static DataDecl* downcast(AST* ast)
-    { return ast->getID() == DATA ? static_cast<DataDecl*>(ast) : nullptr; }
+    { return ast->id == DATA ? static_cast<DataDecl*>(ast) : nullptr; }
   ParamList* getFields() const { return fields; }
 };
 
 //============================================================================//
-//=== DELETE AST
-//============================================================================//
 
-/// @brief Safely deletes an AST node by first downcasting to the lowest type
-/// in the inheritance hierarchy before calling the destructor. It is safe to
-/// pass `nullptr` to this function.
-void deleteAST(AST* _ast) {
-       if (_ast == nullptr) {}
-  else if (auto ast = Name::downcast(_ast)) delete ast;
-  else if (auto ast = PrimitiveTypeExp::downcast(_ast)) delete ast;
-  else if (auto ast = NameTypeExp::downcast(_ast)) delete ast;
-  else if (auto ast = RefTypeExp::downcast(_ast)) delete ast;
-  else if (auto ast = ExpList::downcast(_ast)) delete ast;
-  else if (auto ast = BoolLit::downcast(_ast)) delete ast;
-  else if (auto ast = IntLit::downcast(_ast)) delete ast;
-  else if (auto ast = DecimalLit::downcast(_ast)) delete ast;
-  else if (auto ast = StringLit::downcast(_ast)) delete ast;
-  else if (auto ast = NameExp::downcast(_ast)) delete ast;
-  else if (auto ast = BinopExp::downcast(_ast)) delete ast;
-  else if (auto ast = IfExp::downcast(_ast)) delete ast;
-  else if (auto ast = BlockExp::downcast(_ast)) delete ast;
-  else if (auto ast = CallExp::downcast(_ast)) delete ast;
-  else if (auto ast = AscripExp::downcast(_ast)) delete ast;
-  else if (auto ast = LetExp::downcast(_ast)) delete ast;
-  else if (auto ast = ReturnExp::downcast(_ast)) delete ast;
-  else if (auto ast = StoreExp::downcast(_ast)) delete ast;
-  else if (auto ast = RefExp::downcast(_ast)) delete ast;
-  else if (auto ast = DerefExp::downcast(_ast)) delete ast;
-  else if (auto ast = ProjectExp::downcast(_ast)) delete ast;
-  else if (auto ast = IndexExp::downcast(_ast)) delete ast;
-  else if (auto ast = IndexFieldExp::downcast(_ast)) delete ast;
-  else if (auto ast = BorrowExp::downcast(_ast)) delete ast;
-  else if (auto ast = MoveExp::downcast(_ast)) delete ast;
-  else if (auto ast = DeclList::downcast(_ast)) delete ast;
-  else if (auto ast = ModuleDecl::downcast(_ast)) delete ast;
-  else if (auto ast = NamespaceDecl::downcast(_ast)) delete ast;
-  else if (auto ast = ParamList::downcast(_ast)) delete ast;
-  else if (auto ast = FunctionDecl::downcast(_ast)) delete ast;
-  else if (auto ast = DataDecl::downcast(_ast)) delete ast;
-  else llvm_unreachable("deleteAST case not supported!");
+llvm::SmallVector<AST*> AST::getASTChildren() {
+  if (auto ast = BinopExp::downcast(this))
+    return { ast->getLHS(), ast->getRHS() };
+  if (auto ast = AscripExp::downcast(this))
+    return { ast->getAscriptee(), ast->getAscripter() };
+  if (auto ast = BlockExp::downcast(this))
+    return { ast->getStatements() };
+  if (auto ast = BorrowExp::downcast(this))
+    return { ast->getRefExp() };
+  if (auto ast = CallExp::downcast(this))
+    return { ast->getFunction(), ast->getArguments() };
+  if (auto ast = DataDecl::downcast(this))
+    return { ast->getName(), ast->getFields() };
+  if (auto ast = DeclList::downcast(this)) {
+    llvm::SmallVector<AST*> ret;
+    ret.reserve(ast->asArrayRef().size());
+    for (auto elem : ast->asArrayRef()) ret.push_back(elem);
+    return ret;
+  }
+  if (auto ast = DerefExp::downcast(this))
+    return { ast->getOf() };
+  if (auto ast = NameExp::downcast(this))
+    return { ast->getName() };
+  if (auto ast = ExpList::downcast(this)) {
+    llvm::SmallVector<AST*> ret;
+    for (auto elem : ast->asArrayRef()) ret.push_back(elem);
+    return ret;
+  }
+  if (auto ast = FunctionDecl::downcast(this)) {
+    if (ast->hasBody())
+      return { ast->getName(), ast->getParameters(), ast->getReturnType(),
+          ast->getBody() };
+    else
+      return { ast->getName(), ast->getParameters(), ast->getReturnType() };
+  }
+  if (auto ast = IfExp::downcast(this))
+    return { ast->getCondExp(), ast->getThenExp(), ast->getElseExp() };
+  if (auto ast = IndexExp::downcast(this))
+    return { ast->getBase(), ast->getIndex() };
+  if (auto ast = IndexFieldExp::downcast(this))
+    return { ast->getBase(), ast->getFieldName() };
+  if (auto ast = LetExp::downcast(this)) {
+    if (ast->getAscrip() != nullptr)
+      return { ast->getBoundIdent(), ast->getAscrip(), ast->getDefinition() };
+    else
+      return { ast->getBoundIdent(), ast->getDefinition() };
+  }
+  if (auto ast = ModuleDecl::downcast(this))
+    return { ast->getName(), ast->getDecls() };
+  if (auto ast = MoveExp::downcast(this))
+    return { ast->getRefExp() };
+  if (auto ast = NamespaceDecl::downcast(this))
+    return { ast->getName(), ast->getDecls() };
+  if (auto ast = NameTypeExp::downcast(this))
+    return { ast->getName() };
+  if (auto ast = ParamList::downcast(this)) {
+    llvm::SmallVector<AST*> ret;
+    for (auto param : ast->asArrayRef()) {
+      ret.push_back(param.first);
+      ret.push_back(param.second);
+    }
+    return ret;
+  }
+  if (auto ast = ProjectExp::downcast(this))
+    return { ast->getBase(), ast->getFieldName() };
+  if (auto ast = RefExp::downcast(this))
+    return { ast->getInitializer() };
+  if (auto ast = RefTypeExp::downcast(this))
+    return { ast->getPointeeType() };
+  if (auto ast = ReturnExp::downcast(this))
+    return { ast->getReturnee() };
+  if (auto ast = StoreExp::downcast(this))
+    return { ast->getLHS(), ast->getRHS() };
+  return {};
 }
 
-//============================================================================//
-
-const char* ASTIDToString(AST::ID nt) {
-  switch (nt) {
-  case AST::ID::ADD:                return "ADD";
+const char* AST::IDToString(AST::ID id) {
+  switch (id) {
   case AST::ID::ASCRIP:             return "ASCRIP";
+  case AST::ID::BINOP_EXP:          return "BINOP_EXP";
   case AST::ID::BLOCK:              return "BLOCK";
   case AST::ID::BORROW:             return "BORROW";
   case AST::ID::BOOL_LIT:           return "BOOL_LIT";
   case AST::ID::CALL:               return "CALL";
-  case AST::ID::CONSTR:             return "CONSTR";
   case AST::ID::DEC_LIT:            return "DEC_LIT";
   case AST::ID::DEREF:              return "DEREF";
-  case AST::ID::DIV:                return "DIV";
   case AST::ID::ENAME:              return "ENAME";
-  case AST::ID::EQ:                 return "EQ";
   case AST::ID::IF:                 return "IF";
-  case AST::ID::GE:                 return "GE";
-  case AST::ID::GT:                 return "GT";
   case AST::ID::INDEX:              return "INDEX";
   case AST::ID::INDEX_FIELD:        return "INDEX_FIELD";
   case AST::ID::INT_LIT:            return "INT_LIT";
-  case AST::ID::LE:                 return "LE";
   case AST::ID::LET:                return "LET";
-  case AST::ID::LT:                 return "LT";
   case AST::ID::MOVE:               return "MOVE";
-  case AST::ID::MUL:                return "MUL";
-  case AST::ID::NE:                 return "NE";
   case AST::ID::PROJECT:            return "PROJECT";
   case AST::ID::REF_EXP:            return "REF_EXP";
   case AST::ID::RETURN:             return "RETURN";
   case AST::ID::STORE:              return "STORE";
   case AST::ID::STRING_LIT:         return "STRING_LIT";
-  case AST::ID::SUB:                return "SUB";
 
   case AST::ID::DATA:               return "DATA";
-  case AST::ID::EXTERN_FUNC:        return "EXTERN_FUNC";
   case AST::ID::FUNC:               return "FUNC";
   case AST::ID::MODULE:             return "MODULE";
   case AST::ID::NAMESPACE:          return "NAMESPACE";
 
-  case AST::ID::ARRAY_TEXP:         return "ARRAY_TEXP";
-  case AST::ID::BOOL_TEXP:          return "BOOL_TEXP";
-  case AST::ID::f32_TEXP:           return "f32_TEXP";
-  case AST::ID::f64_TEXP:           return "f64_TEXP";
-  case AST::ID::i8_TEXP:            return "i8_TEXP";
-  case AST::ID::i16_TEXP:           return "i16_TEXP";
-  case AST::ID::i32_TEXP:           return "i32_TEXP";
-  case AST::ID::i64_TEXP:           return "i64_TEXP";
   case AST::ID::NAME_TEXP:          return "NAME_TEXP";
+  case AST::ID::PRIMITIVE_TEXP:     return "PRIMITIVE_TEXP";
   case AST::ID::REF_TEXP:           return "REF_TEXP";
-  case AST::ID::STR_TEXP:           return "STR_TEXP";
-  case AST::ID::UNIT_TEXP:          return "UNIT_TEXP";
   
   case AST::ID::DECLLIST:           return "DECLLIST";
   case AST::ID::EXPLIST:            return "EXPLIST";
@@ -783,55 +793,35 @@ const char* ASTIDToString(AST::ID nt) {
 }
 
 AST::ID stringToASTID(const std::string& str) {
-       if (str == "ADD")                 return AST::ID::ADD;
-  else if (str == "ASCRIP")              return AST::ID::ASCRIP;
+       if (str == "ASCRIP")              return AST::ID::ASCRIP;
+  else if (str == "BINOP_EXP")           return AST::ID::BINOP_EXP;
   else if (str == "BLOCK")               return AST::ID::BLOCK;
   else if (str == "BORROW")              return AST::ID::BORROW;
   else if (str == "BOOL_LIT")            return AST::ID::BOOL_LIT;
   else if (str == "CALL")                return AST::ID::CALL;
-  else if (str == "CONSTR")              return AST::ID::CONSTR;
   else if (str == "DEC_LIT")             return AST::ID::DEC_LIT;
   else if (str == "DEREF")               return AST::ID::DEREF;
-  else if (str == "DIV")                 return AST::ID::DIV;
   else if (str == "ENAME")               return AST::ID::ENAME;
-  else if (str == "EQ")                  return AST::ID::EQ;
-  else if (str == "GE")                  return AST::ID::GE;
-  else if (str == "GT")                  return AST::ID::GT;
   else if (str == "IF")                  return AST::ID::IF;
   else if (str == "INDEX")               return AST::ID::INDEX;
   else if (str == "INDEX_FIELD")         return AST::ID::INDEX_FIELD;
   else if (str == "INT_LIT")             return AST::ID::INT_LIT;
-  else if (str == "LE")                  return AST::ID::LE;
   else if (str == "LET")                 return AST::ID::LET;
-  else if (str == "LT")                  return AST::ID::LT;
   else if (str == "MOVE")                return AST::ID::MOVE;
-  else if (str == "MUL")                 return AST::ID::MUL;
-  else if (str == "NE")                  return AST::ID::NE;
   else if (str == "PROJECT")             return AST::ID::PROJECT;
   else if (str == "REF_EXP")             return AST::ID::REF_EXP;
   else if (str == "RETURN")              return AST::ID::RETURN;
   else if (str == "STORE")               return AST::ID::STORE;
   else if (str == "STRING_LIT")          return AST::ID::STRING_LIT;
-  else if (str == "SUB")                 return AST::ID::SUB;
 
   else if (str == "DATA")                return AST::ID::DATA;
-  else if (str == "EXTERN_FUNC")         return AST::ID::EXTERN_FUNC;
   else if (str == "FUNC")                return AST::ID::FUNC;
   else if (str == "MODULE")              return AST::ID::MODULE;
   else if (str == "NAMESPACE")           return AST::ID::NAMESPACE;
   
-  else if (str == "ARRAY_TEXP")          return AST::ID::ARRAY_TEXP;
-  else if (str == "BOOL_TEXP")           return AST::ID::BOOL_TEXP;
-  else if (str == "f32_TEXP")            return AST::ID::f32_TEXP;
-  else if (str == "f64_TEXP")            return AST::ID::f64_TEXP;
-  else if (str == "i8_TEXP")             return AST::ID::i8_TEXP;
-  else if (str == "i16_TEXP")            return AST::ID::i16_TEXP;
-  else if (str == "i32_TEXP")            return AST::ID::i32_TEXP;
-  else if (str == "i64_TEXP")            return AST::ID::i64_TEXP;
   else if (str == "NAME_TEXP")           return AST::ID::NAME_TEXP;
+  else if (str == "PRIMITIVE_TEXP")      return AST::ID::PRIMITIVE_TEXP;
   else if (str == "REF_TEXP")            return AST::ID::REF_TEXP;
-  else if (str == "STR_TEXP")            return AST::ID::STR_TEXP;
-  else if (str == "UNIT_TEXP")           return AST::ID::UNIT_TEXP;
   
   else if (str == "DECLLIST")            return AST::ID::DECLLIST;
   else if (str == "EXPLIST")             return AST::ID::EXPLIST;
@@ -839,83 +829,6 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "PARAMLIST")           return AST::ID::PARAMLIST;
 
   else llvm_unreachable(("Invalid AST::ID string: " + str).c_str());
-}
-
-/// Returns the children of this AST node.
-llvm::SmallVector<AST*,4> getSubASTs(AST* _ast) {
-
-  if (auto ast = BinopExp::downcast(_ast))
-    return { ast->getLHS(), ast->getRHS() };
-  if (auto ast = AscripExp::downcast(_ast))
-    return { ast->getAscriptee(), ast->getAscripter() };
-  if (auto ast = BlockExp::downcast(_ast))
-    return { ast->getStatements() };
-  if (auto ast = BorrowExp::downcast(_ast))
-    return { ast->getRefExp() };
-  if (auto ast = CallExp::downcast(_ast))
-    return { ast->getFunction(), ast->getArguments() };
-  if (auto ast = DataDecl::downcast(_ast))
-    return { ast->getName(), ast->getFields() };
-  if (auto ast = DeclList::downcast(_ast)) {
-    llvm::SmallVector<AST*,4> ret;
-    for (auto elem : ast->asArrayRef()) ret.push_back(elem);
-    return ret;
-  }
-  if (auto ast = DerefExp::downcast(_ast))
-    return { ast->getOf() };
-  if (auto ast = NameExp::downcast(_ast))
-    return { ast->getName() };
-  if (auto ast = ExpList::downcast(_ast)) {
-    llvm::SmallVector<AST*,4> ret;
-    for (auto elem : ast->asArrayRef()) ret.push_back(elem);
-    return ret;
-  }
-  if (auto ast = FunctionDecl::downcast(_ast)) {
-    if (ast->hasBody())
-      return { ast->getName(), ast->getParameters(), ast->getReturnType(),
-          ast->getBody() };
-    else
-      return { ast->getName(), ast->getParameters(), ast->getReturnType() };
-  }
-  if (auto ast = IfExp::downcast(_ast))
-    return { ast->getCondExp(), ast->getThenExp(), ast->getElseExp() };
-  if (auto ast = IndexExp::downcast(_ast))
-    return { ast->getBase(), ast->getIndex() };
-  if (auto ast = IndexFieldExp::downcast(_ast))
-    return { ast->getBase(), ast->getFieldName() };
-  if (auto ast = LetExp::downcast(_ast)) {
-    if (ast->getAscrip() != nullptr)
-      return { ast->getBoundIdent(), ast->getAscrip(), ast->getDefinition() };
-    else
-      return { ast->getBoundIdent(), ast->getDefinition() };
-  }
-  if (auto ast = ModuleDecl::downcast(_ast))
-    return { ast->getName(), ast->getDecls() };
-  if (auto ast = MoveExp::downcast(_ast))
-    return { ast->getRefExp() };
-  if (auto ast = NamespaceDecl::downcast(_ast))
-    return { ast->getName(), ast->getDecls() };
-  if (auto ast = NameTypeExp::downcast(_ast))
-    return { ast->getName() };
-  if (auto ast = ParamList::downcast(_ast)) {
-    llvm::SmallVector<AST*,4> ret;
-    for (auto param : ast->asArrayRef()) {
-      ret.push_back(param.first);
-      ret.push_back(param.second);
-    }
-    return ret;
-  }
-  if (auto ast = ProjectExp::downcast(_ast))
-    return { ast->getBase(), ast->getFieldName() };
-  if (auto ast = RefExp::downcast(_ast))
-    return { ast->getInitializer() };
-  if (auto ast = RefTypeExp::downcast(_ast))
-    return { ast->getPointeeType() };
-  if (auto ast = ReturnExp::downcast(_ast))
-    return { ast->getReturnee() };
-  if (auto ast = StoreExp::downcast(_ast))
-    return { ast->getLHS(), ast->getRHS() };
-  return {};
 }
 
 #endif

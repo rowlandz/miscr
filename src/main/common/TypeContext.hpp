@@ -77,7 +77,7 @@ public:
 
   /// @brief Converts a type expression into a `Type` with fresh type variables.
   TVar freshFromTypeExp(TypeExp* _texp) {
-    AST::ID id = _texp->getID();
+    AST::ID id = _texp->id;
 
     if (auto texp = NameTypeExp::downcast(_texp)) {
       return fresh(Type::name(texp->getName()));
@@ -88,14 +88,18 @@ public:
       else
         return fresh(Type::bref(freshFromTypeExp(texp->getPointeeType())));
     }
-    if (id == AST::ID::BOOL_TEXP) return fresh(Type::bool_());
-    if (id == AST::ID::f32_TEXP) return fresh(Type::f32());
-    if (id == AST::ID::f64_TEXP) return fresh(Type::f64());
-    if (id == AST::ID::i8_TEXP) return fresh(Type::i8());
-    if (id == AST::ID::i16_TEXP) return fresh(Type::i16());
-    if (id == AST::ID::i32_TEXP) return fresh(Type::i32());
-    if (id == AST::ID::i64_TEXP) return fresh(Type::i64());
-    if (id == AST::ID::UNIT_TEXP) return fresh(Type::unit());
+    if (auto texp = PrimitiveTypeExp::downcast(_texp)) {
+      switch (texp->kind) {
+      case PrimitiveTypeExp::BOOL:   return fresh(Type::bool_());
+      case PrimitiveTypeExp::f32:    return fresh(Type::f32());
+      case PrimitiveTypeExp::f64:    return fresh(Type::f64());
+      case PrimitiveTypeExp::i8:     return fresh(Type::i8());
+      case PrimitiveTypeExp::i16:    return fresh(Type::i16());
+      case PrimitiveTypeExp::i32:    return fresh(Type::i32());
+      case PrimitiveTypeExp::i64:    return fresh(Type::i64());
+      case PrimitiveTypeExp::UNIT:   return fresh(Type::unit());
+      }
+    }
     llvm_unreachable("Ahhh!!!");
   }
 

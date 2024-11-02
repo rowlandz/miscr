@@ -79,7 +79,7 @@ private:
           return;
         }
         ont.recordMapName(fqn, func, "main");
-      } else if (func->getID() == AST::ID::EXTERN_FUNC) {
+      } else if (func->isExtern()) {
         std::string relNameString = relName.str();
         ont.recordMapName(fqn, func, relNameString);
       } else {
@@ -129,7 +129,7 @@ private:
         canonicalizeNonDecl(scope, arg);
     }
     else {
-      for (AST* node : getSubASTs(ast)) canonicalizeNonDecl(scope, node);
+      for (AST* node : ast->getASTChildren()) canonicalizeNonDecl(scope, node);
     }
   }
 

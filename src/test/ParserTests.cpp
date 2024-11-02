@@ -5,7 +5,7 @@
 namespace ParserTests {
   TESTGROUP("Parser Tests")
 
-  //////////////////////////////////////////////////////////////////////////////
+  //==========================================================================//
 
   bool isAlphaNumU(char c) {
     return ('0' <= c && c <= '9')
@@ -24,9 +24,9 @@ namespace ParserTests {
     return std::pair<int, AST::ID>(indent, ty);
   }
 
-  /** Checks that the `lines` starting with `currentLine` forms a tree with
-   * starting indentation `indent` that matches node `_n`. If successful,
-   * `currentLine` is updated to point immediately after the detected tree. */
+  /// Checks that the `lines` starting with `currentLine` forms a tree with
+  /// starting indentation `indent` that matches node `_n`. If successful,
+  /// `currentLine` is updated to point immediately after the detected tree.
   void expectMatch(
     AST* n,
     int indent,
@@ -37,19 +37,19 @@ namespace ParserTests {
     auto indAndTy = parseLine(lines[*currentLine]);
     if (indAndTy.first != indent) throw std::runtime_error("Unexpected indent");
     if (n == nullptr) throw std::runtime_error("Invalid node address");
-    if (n->getID() != indAndTy.second) {
+    if (n->id != indAndTy.second) {
       std::string errMsg("Node types did not match on line ");
       errMsg.append(std::to_string(*currentLine));
       errMsg.append(". Expected ");
-      errMsg.append(ASTIDToString(indAndTy.second));
+      errMsg.append(AST::IDToString(indAndTy.second));
       errMsg.append(" but got ");
-      errMsg.append(ASTIDToString(n->getID()));
+      errMsg.append(AST::IDToString(n->id));
       errMsg.append(".\n");
       throw std::runtime_error(errMsg);
     }
     *currentLine = *currentLine + 1;
 
-    for (AST* subnode : getSubASTs(n))
+    for (AST* subnode : n->getASTChildren())
       expectMatch(subnode, indent+4, lines, currentLine);
   }
 
@@ -73,7 +73,7 @@ namespace ParserTests {
     expectMatch(parsed, 0, expectedNodes, &currentLine);
   }
 
-  //////////////////////////////////////////////////////////////////////////////
+  //==========================================================================//
 
   TEST(qident) {
     expParseTreeShouldBe("global::MyModule::myfunc", {
@@ -84,7 +84,7 @@ namespace ParserTests {
 
   TEST(arithmetic) {
     expParseTreeShouldBe("1 + 1", {
-      "ADD",
+      "BINOP_EXP",
       "    INT_LIT",
       "    INT_LIT",
     });
@@ -107,7 +107,7 @@ namespace ParserTests {
       "FUNC",
       "    NAME",
       "    PARAMLIST",
-      "    i32_TEXP",
+      "    PRIMITIVE_TEXP",
       "    BLOCK",
       "        EXPLIST",
       "            CALL",
@@ -137,17 +137,17 @@ namespace ParserTests {
       "MODULE",
       "    NAME",
       "    DECLLIST",
-      "        EXTERN_FUNC",
+      "        FUNC",
       "            NAME",
       "            PARAMLIST",
-      "            UNIT_TEXP",
+      "            PRIMITIVE_TEXP",
       "        NAMESPACE",
       "            NAME",
       "            DECLLIST",
-      "                EXTERN_FUNC",
+      "                FUNC",
       "                    NAME",
       "                    PARAMLIST",
-      "                    UNIT_TEXP",
+      "                    PRIMITIVE_TEXP",
     });
   }
 

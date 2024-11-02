@@ -20,13 +20,17 @@ void print_parse_tree(
     }
     llvm::outs() << (indents.back() ? "├" : "└") << "── ";
   }
-  llvm::outs() << ASTIDToString(n->getID());
+  llvm::outs() << n->getIDAsString();
 
   // print optional extra information depending on the node type
   if (auto name = Name::downcast(n))
-    llvm::outs() << "  (" << name->asStringRef() << ")";
+    llvm::outs() << " (" << name->asStringRef() << ")";
   if (auto intLit = IntLit::downcast(n))
-    llvm::outs() << "  (" << intLit->asStringRef() << ")";
+    llvm::outs() << " (" << intLit->asStringRef() << ")";
+  if (auto binopExp = BinopExp::downcast(n))
+    llvm::outs() << " (" << binopExp->getBinopAsEnumString() << ")";
+  if (auto primTexp = PrimitiveTypeExp::downcast(n))
+    llvm::outs() << " (" << primTexp->getKindAsString() << ")";
   if (auto exp = Exp::downcast(n)) {
     if (tc != nullptr)
       llvm::outs() << " : " << tc->TVarToString(exp->getTVar());
@@ -34,7 +38,7 @@ void print_parse_tree(
 
   llvm::outs() << "\n";
 
-  auto subnodes = getSubASTs(n);
+  auto subnodes = n->getASTChildren();
   if (subnodes.size() == 1) {
     indents.push_back(false);
     print_parse_tree(subnodes[0], indents, tc);

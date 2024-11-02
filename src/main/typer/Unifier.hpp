@@ -152,7 +152,7 @@ public:
   /// Expressions or statements that bind local identifiers will cause
   /// `localVarTypes` to be updated.
   TVar unifyExp(Exp* _e) {
-    AST::ID id = _e->getID();
+    AST::ID id = _e->id;
 
     if (auto e = AscripExp::downcast(_e)) {
       TVar ty = tc.freshFromTypeExp(e->getAscripter());
@@ -161,18 +161,20 @@ public:
     }
 
     else if (auto e = BinopExp::downcast(_e)) {
-      if (id == AST::ID::ADD || id == AST::ID::SUB || id == AST::ID::MUL
-      || id == AST::ID::DIV) {
+      switch (e->getBinop()) {
+      case BinopExp::ADD: case BinopExp::SUB: case BinopExp::MUL:
+      case BinopExp::DIV: {
         TVar lhsTy = unifyWith(e->getLHS(), tc.fresh(Type::numeric()));
         unifyWith(e->getRHS(), lhsTy);
         e->setTVar(lhsTy);
+        break; 
       }
-
-      else if (id == AST::ID::EQ || id == AST::ID::GE || id == AST::ID::GT
-      || id == AST::ID::LE || id == AST::ID::LT || id == AST::ID::NE) {
+      case BinopExp::EQ: case BinopExp::NE: case BinopExp::GE:
+      case BinopExp::GT: case BinopExp::LE: case BinopExp::LT: {
         TVar lhsTy = unifyExp(e->getLHS());
         unifyWith(e->getRHS(), lhsTy);
         e->setTVar(tc.fresh(Type::bool_()));
+      }
       }
     }
 
@@ -395,7 +397,7 @@ public:
 
   /// Typechecks a function.
   void unifyFunc(FunctionDecl* func) {
-    if (func->getID() == AST::ID::EXTERN_FUNC) return;
+    if (func->isExtern()) return;
     localVarTypes.push();
     addParamsToLocalVarTypes(func->getParameters());
     TVar retTy = tc.freshFromTypeExp(func->getReturnType());
@@ -412,7 +414,7 @@ public:
       unifyFunc(func);
     else if (auto mod = ModuleDecl::downcast(_decl))
       unifyModule(mod);
-    else if (_decl->getID() == AST::ID::DATA)
+    else if (_decl->id == AST::ID::DATA)
       {}
     else
       llvm_unreachable("Didn't recognize decl");

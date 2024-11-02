@@ -6,7 +6,7 @@
 namespace LexerTests {
   TESTGROUP("Lexer Tests")
 
-  /** Succeeds if `text` is lexed into `expected`. */
+  /// @brief Succeeds if `text` is lexed into `expected`.
   void tokensShouldBe(const char* text, std::vector<Token::Tag> expected);
 
   TEST(simple_example_1) {
@@ -57,7 +57,7 @@ namespace LexerTests {
     );
   }
 
-  //////////////////////////////////////////////////////////////////////////////
+  //==========================================================================//
 
   template<typename ... Args>
   std::string string_format(const std::string& format, Args ... args)
