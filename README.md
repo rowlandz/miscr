@@ -1,65 +1,118 @@
 # Minimalist Safe C Replacement (MiSCR)
 
-Nice straight-to-the-point tutorial using the LLVM C API:
-https://www.pauladamsmith.com/blog/2015/01/how-to-get-started-with-llvm-c-api.html
+An aspiring replacement for C/C++ with a minimalist design and pointer safety
+powered by a borrow checker.
 
-Cool tutorial
-https://mukulrathi.com/create-your-own-programming-language/llvm-ir-cpp-api-tutorial/
+## Build
 
-C++ Core Documentation
-https://llvm.org/doxygen/group__LLVMCCore.html
+Minimalist includes minimal dependencies. All you need is
+  - LLVM-14 C++ libraries
+  - Clang++ compiler
+  - Bash
+  - A few common Unix utilities (echo, rm, basename)
+  - (optional) GNU `make` -- alternative to running the build script directly.
 
-Minimal Readline replacement:
-https://github.com/antirez/linenoise?tab=BSD-2-Clause-1-ov-file
+There's three executable you can build:
+  - `compiler` -- The MiSCR compiler.
+  - `tests` -- Automated unit tests.
+  - `playground` -- An interactive testing tool.
 
+Just run `build.sh` with the name of the executable you want to build. For
+example, to build the compiler:
 
-Minimal dependencies:
-* LLVM C++ libraries
-* Clang++ compiler
-* Bash
-* (optional) GNU make
-Dead-simple unit test infrastructure; The include file `test.hpp` is only 50 lines of code!
-
-
-## Module System
-
-Namespaces and modules are both collections of decls.
-A decl is a func, proc, extern func, extern proc, data type, module, or namespace.
-Thus, namespaces and modules form a scope tree.
-
-```
-namespace CoolMath {
-  data Fraction {
-    num: i32,
-    den: i32,
-  };
-  func add(x: i32, y: i32): i32 = x + y;
-  func double(x: i32): i32 = add(x, x);
-  ...
-}
-
-module Foo {
-
-}
+```shell
+./build.sh compiler
 ```
 
-The root of the scope tree is a namespace called `global`.
+If you ever need help, just run the build script with no arguments to get a
+help message:
 
-Decls can be accessed via their full path, which begins with `global`
-(global::CoolMath::add), or a path relative to the "current scope".
-(e.g., `add` from within `CoolMath` or `CoolMath::add` from within `Foo`).
-
-If the contents of an entire file are included in a namespace or module,
-then a namespace declaration can be used. The namespace declaration must
-be the first non-comment thing in the file:
-
-```
-namespace CoolMath;
-
-// rest of file
+```shell
+./build.sh
 ```
 
-Omitting the namespace or module declaration is the same as using `namespace global;`
+You can also use `make` to run the build script instead of running it
+directly:
+
+```shell
+make compiler
+```
+
+## Unit Testing
+
+MiSCR uses a dead-simple test infrastructure of only 50 lines of code found
+in `src/test/test.hpp`. Building and running tests is this simple:
+
+```shell
+./build.sh tests
+./tests
+```
+
+## Playground
+
+If you want to hack around with the components of the MiSCR compiler, try the
+playground! It will read input from stdin and pretty-print internal data
+structures such as token vectors and abstract syntax trees.
+
+## MiSCR Language Reference
+
+A MiSCR file (ending in `.miscr`) contains a list of declarations. A
+declaration is a module, a `data` type, or a function.
+
+### Module System
+
+A module contains a list of declarations.
+
+    module CoolMath {
+      data Fraction(num: i32, den: i32)
+
+      func mul(r1: Fraction, r2: Fraction): Fraction =
+        Fraction(r1.num * r2.num, r1.den * r2.den);
+    }
+
+Decls can be accessed via a path relative to the "current scope" (e.g.,
+`CoolMath::mul`).
+
+### References
+
+There are two types of references: borrowed references (denoted with `&`) and
+owned references (denoted with `#`).
+
+Let's look at borrowed references first:
+
+    // allocate new stack memory and initialize with value Person("Bob", 42)
+    let bobRef: &Person = &Person("Bob", 42);
+
+    // dereference operator
+    let bob: Person = bob!;
+
+    // pointer offset calculation
+    let ageRef: &i32 = bobRef[.age];
+
+Owned references point to heap-allocated memory that must eventually be freed.
+The borrow checker tracks _ownership_ of owned references similar to Rust.
+
+    // malloc creates an owned ref, which is moved to `name`
+    let name: #i8 = C::malloc(7);
+
+    // `name` is moved to `name2`
+    let name2: #i8 = name;
+
+    // It is now illegal to use `name`.
+    // let name3: #i8 = name;
+
+    // `name2` can be _borrowed_, which does not count as a _use_.
+    let borrowedName: &i8 = borrow name2;
+    C::strcpy(borrowedName, "hello\n");
+
+    // `name2` must be used before the scope ends
+    C::free(name2);
+
+    // borrowedName can still be used after name2 is freed because there is no
+    // lifetime analysis like Rust. So be careful with borrowed references!
+    // C::write(0, borrowedName, 6);
+
+Omitting the namespace or module declaration is the same as using `module global;`
 
 MiSCR is _not_ object oriented for the following reasons. A "class" is just
 a namespace combined with a data type. Classes have some frustrating
@@ -124,66 +177,6 @@ namespace Pair {
 ```
 
 But you cannot do that with a module.
-
-## Translation Units
-
-module A {
-  func f(x: i32): i32 = x + 1;
-}
-
-module B {
-  func g(x: i32): i32 = C::h();
-
-  module C {
-    func h(x: i32): i32 = x + 3;
-  }
-}
-
-# Arrays and References
-
-```
-              Ampersand means "read-only reference"
-&i32          read-only reference to an i32
-&x            read-only reference to x
-
-              Hash means "writable reference"
-#i32
-#x
-
-              Consistent array notation
-[10 of i32]   type of an 10-length array of i32s
-[10 of 0]     a literal array of length 10 filled with zeros
-
-              Postfix "." always means a projection function
-[10 of 0].3   The value of the array at index 3 (having type i32)
-mypos.x       The x field of the struct
-
-              Postfix `!` means plain dereference
-arrRef!       The array pointed to by `arrRef`
-myposRef!     The (whole) struct pointed to by `myposRef`
-
-              Postfix brackets mean address pointer calculation
-arrRef[2]     The address of the index-2 element of the array pointed to by arrRef
-mypos[x]      The address of the x field of the struct referenced by mypos
-
-              Postfix "->" always means projection _through a reference_
-arrRef->3     The value at index 3 of the array referred to by `arrRef`
-myposRef->x   The x field of the struct pointed to by `myposRef`
-
-
-Dereference and address calculation operators are all postfix.
-
-Creating references are all prefix.
-
-
-
-func foo() {
-  let x: #&BigData = ...;
-  x := &differentBigData;
-  x! := BigData();           // illegal store via read-only reference
-}
-
-```
 
 # Data Structures
 
@@ -322,3 +315,9 @@ e.g.,
     func foo(p: #i8): String = {
       String(ptr, 10)
     };
+
+C++ Core Documentation
+https://llvm.org/doxygen/group__LLVMCCore.html
+
+Minimal Readline replacement:
+https://github.com/antirez/linenoise?tab=BSD-2-Clause-1-ov-file

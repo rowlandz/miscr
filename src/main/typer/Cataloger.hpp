@@ -118,7 +118,7 @@ private:
 
   /// @brief Recursively canonicalizes `ast` which must not be or contain a
   /// declaration.
-  /// @param scope The (deepest) module or namespace in which `ast` appears.
+  /// @param scope The (deepest) module in which `ast` appears.
   void canonicalizeNonDecl(llvm::StringRef scope, AST* ast) {
     if (auto nameTExp = NameTypeExp::downcast(ast)) {
       canonicalize(scope, nameTExp->getName(), Ontology::Space::TYPE);

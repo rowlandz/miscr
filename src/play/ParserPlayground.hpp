@@ -7,14 +7,14 @@
 #include "parser/Parser.hpp"
 #include "printers.hpp"
 
-AST* parse_function(Parser& p, const char* whatToParse) {
-  if (!strcmp(whatToParse, "decl")) return p.decl();
-  if (!strcmp(whatToParse, "exp")) return p.exp();
-  std::cout << "I don't know how to parse a " << whatToParse << std::endl;
+AST* parse_function(Parser& p, llvm::StringRef whatToParse) {
+  if (whatToParse == "decl") return p.decl();
+  if (whatToParse == "exp") return p.exp();
+  llvm::outs() << "I don't know how to parse a " << whatToParse << "\n";
   exit(1);
 }
 
-int play_with_parser(char* grammarElement, bool multilineInput) {
+int play_with_parser(llvm::StringRef grammarElement) {
   std::string usrInput;
   std::string line;
 

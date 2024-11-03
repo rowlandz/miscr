@@ -34,7 +34,7 @@ public:
     STORE, STRING_LIT,
 
     // declarations
-    DATA, FUNC, MODULE, NAMESPACE,
+    DATA, FUNC, MODULE,
 
     // type expressions
     NAME_TEXP, PRIMITIVE_TEXP, REF_TEXP,
@@ -336,7 +336,7 @@ public:
 class NameExp : public Exp {
   Name* name;
 public:
-  NameExp(Location loc, Name* name) : Exp(ENAME, loc), name(name) {}
+  NameExp(Name* name) : Exp(ENAME, name->getLocation()), name(name) {}
   static NameExp* downcast(AST* ast)
     { return ast->id == ENAME ? static_cast<NameExp*>(ast) : nullptr; }
   Name* getName() const { return name; }
@@ -608,18 +608,6 @@ public:
   DeclList* getDecls() const { return decls; }
 };
 
-class NamespaceDecl : public Decl {
-  DeclList* decls;
-public:
-  NamespaceDecl(Location loc, Name* name, DeclList* decls)
-    : Decl(NAMESPACE, loc, name), decls(decls) {}
-  static NamespaceDecl* downcast(AST* ast) {
-    return ast->id == NAMESPACE ?
-           static_cast<NamespaceDecl*>(ast) : nullptr;
-  }
-  DeclList* getDecls() const { return decls; }
-};
-
 /// @brief A list of parameters in a function signature, or a list of
 /// fields in a data type.
 class ParamList : public AST {
@@ -728,8 +716,6 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     return { ast->getName(), ast->getDecls() };
   if (auto ast = MoveExp::downcast(this))
     return { ast->getRefExp() };
-  if (auto ast = NamespaceDecl::downcast(this))
-    return { ast->getName(), ast->getDecls() };
   if (auto ast = NameTypeExp::downcast(this))
     return { ast->getName() };
   if (auto ast = ParamList::downcast(this)) {
@@ -779,7 +765,6 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::DATA:               return "DATA";
   case AST::ID::FUNC:               return "FUNC";
   case AST::ID::MODULE:             return "MODULE";
-  case AST::ID::NAMESPACE:          return "NAMESPACE";
 
   case AST::ID::NAME_TEXP:          return "NAME_TEXP";
   case AST::ID::PRIMITIVE_TEXP:     return "PRIMITIVE_TEXP";
@@ -817,7 +802,6 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "DATA")                return AST::ID::DATA;
   else if (str == "FUNC")                return AST::ID::FUNC;
   else if (str == "MODULE")              return AST::ID::MODULE;
-  else if (str == "NAMESPACE")           return AST::ID::NAMESPACE;
   
   else if (str == "NAME_TEXP")           return AST::ID::NAME_TEXP;
   else if (str == "PRIMITIVE_TEXP")      return AST::ID::PRIMITIVE_TEXP;

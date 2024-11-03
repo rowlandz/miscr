@@ -262,7 +262,7 @@ private:
   }
 
   /// @brief If @p s is a keyword, returns the corresponding token tag,
-  /// otherwise returns TOK_IDENT.
+  /// otherwise returns Token::IDENT.
   static Token::Tag identOrKeywordTy(llvm::StringRef s) {
     switch (s.size()) {
     case 1:
@@ -271,7 +271,7 @@ private:
       if (s == "i8") return Token::KW_i8;
       if (s == "if") return Token::KW_IF;
       if (s == "of") return Token::KW_OF;
-      return Token::TOK_IDENT;
+      return Token::IDENT;
     case 3:
       if (s == "f32") return Token::KW_f32;
       if (s == "f64") return Token::KW_f64;
@@ -280,7 +280,7 @@ private:
       if (s == "i64") return Token::KW_i64;
       if (s == "let") return Token::KW_LET;
       if (s == "str") return Token::KW_STR;
-      return Token::TOK_IDENT;
+      return Token::IDENT;
     case 4:
       if (s == "bool") return Token::KW_BOOL;
       if (s == "case") return Token::KW_CASE;
@@ -292,22 +292,19 @@ private:
       if (s == "then") return Token::KW_THEN;
       if (s == "true") return Token::KW_TRUE;
       if (s == "unit") return Token::KW_UNIT;
-      return Token::TOK_IDENT;
+      return Token::IDENT;
     case 5:
       if (s == "false") return Token::KW_FALSE;
       if (s == "match") return Token::KW_MATCH;
-      return Token::TOK_IDENT;
+      return Token::IDENT;
     case 6:
       if (s == "borrow") return Token::KW_BORROW;
       if (s == "extern") return Token::KW_EXTERN;
       if (s == "module") return Token::KW_MODULE;
       if (s == "return") return Token::KW_RETURN;
-      return Token::TOK_IDENT;
-    case 9:
-      if (s == "namespace") return Token::KW_NAMESPACE;
-      return Token::TOK_IDENT;
+      return Token::IDENT;
     default:
-      return Token::TOK_IDENT;
+      return Token::IDENT;
     }
   }
 

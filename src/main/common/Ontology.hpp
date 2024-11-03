@@ -4,7 +4,8 @@
 #include "llvm/ADT/StringMap.h"
 #include "common/AST.hpp"
 
-/// Maps the fully qualified names of all decls to their definitions in the AST.
+/// @brief Maps the fully qualified names of all decls to their definitions in
+/// the AST.
 ///
 /// There are three distinct "spaces" of fully-qualified names (type space,
 /// function space, and module space). The type space and function space must
@@ -13,6 +14,8 @@
 class Ontology {
 
 public:
+
+  // TODO: make private
   llvm::StringMap<DataDecl*> typeSpace;
   llvm::StringMap<FunctionDecl*> functionSpace;
   llvm::StringMap<ModuleDecl*> moduleSpace;
@@ -21,7 +24,7 @@ public:
 
   enum struct Space { FUNCTION, MODULE, TYPE, FUNCTION_OR_TYPE };
 
-  /// The fully-qualified name of the "main" entry point procedure.
+  /// @brief The fully-qualified name of the "main" entry point procedure.
   /// Empty if no entry point has been found.
   std::string entryPoint;
 

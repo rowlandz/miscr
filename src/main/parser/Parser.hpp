@@ -6,39 +6,44 @@
 #include "common/LocatedError.hpp"
 #include "common/AST.hpp"
 
-#define CHOMP_ELSE_ARREST(tokenTy, expected, element) if (p->tag == tokenTy) \
+/// Try to chomp the token tag. ARREST if unsuccessful.
+#define CHOMP_ELSE_ARREST(tokenTag, expected, element) if (p->tag == tokenTag) \
   ++p; else { errTryingToParse = element; expectedTokens = expected; \
-  error = ARREST; return nullptr; }
+  error = ARRESTING_ERR; return nullptr; }
 
-#define EPSILON_ERROR { error = EPSILON; return nullptr; }
-
-#define ARRESTING_ERROR { error = ARREST; return nullptr; }
+/// Cause an epsilon error to occur.
+#define EPSILON { error = EPSILON_ERR; return nullptr; }
 
 /// If an error occurred, leave the error the same and return.
 #define RETURN_IF_ERROR if (error != NOERROR) { return nullptr; }
 
-/// If an error occurred, promote the error to an ARREST and return.
-#define ARREST_IF_ERROR if (error != NOERROR){error = ARREST; return nullptr;}
+/// If an error occurred, promote the error to an ARRESTING_ERR and return.
+#define ARREST_IF_ERROR if (error != NOERROR) \
+  {error = ARRESTING_ERR; return nullptr;}
 
 /// @brief Return `r` following an arresting error or successful parse.
 /// Otherwise reset `error` and continue this parse function. Used to implement
 /// non-backtracking choice.
-#define CONTINUE_ON_EPSILON(r) if (error != EPSILON) { return r; } else\
+#define CONTINUE_ON_EPSILON(r) if (error != EPSILON_ERR) { return r; } else\
   { error = NOERROR; }
 
 
-
-/// @brief The parser builds an AST on heap memory based on a vector of
-/// `Token`s. Parser functions are named after the AST element that they parse
-/// (e.g., `name`, `exp`, `decl`). If the parse was unsuccessful, `nullptr` is
-/// returned and `getError` will construct a printable error message.
+/// @brief The MiSCR parser. Builds an AST from a Token vector.
+///
+/// AST s are heap-allocated and should be destroyed via AST::deleteRecursive()
+/// when no longer needed.
+///
+/// Parsing methods are named after the AST element that they parse (e.g.,
+/// name(), exp(), decl()). If a parse is unsuccessful, the parsing function
+/// returns nullptr and getError() returns a printable error message.
+///
+/// @note Currently, allocated AST memory is not freed if the parse fails.
 class Parser {
-  const std::vector<Token>& tokens;
-  std::vector<Token>::const_iterator p;
-  std::vector<Token>::const_iterator end;
+  const std::vector<Token>& tokens;            // all the tokens
+  std::vector<Token>::const_iterator p;        // current token
 
   /// Set when an error occurs.
-  enum { NOERROR, EPSILON, ARREST } error = NOERROR;
+  enum { NOERROR, EPSILON_ERR, ARRESTING_ERR } error = NOERROR;
 
   /// Set when an error occurs.
   const char* errTryingToParse = nullptr;
@@ -48,7 +53,7 @@ class Parser {
 
 public:
   Parser(const std::vector<Token>& tokens)
-    : tokens(tokens), p(tokens.begin()), end(tokens.end()) {}
+    : tokens(tokens), p(tokens.begin()) {}
 
   /// @brief Returns the parser error after an unsuccessful parse.
   LocatedError getError() {
@@ -73,30 +78,30 @@ public:
   //=== Idents and QIdents
   //==========================================================================//
 
-  /// @brief Parses an identifier (i.e., an unqualified name). 
+  /// @brief Parses an identifier (i.e., an unqualified name).
   Name* ident() {
-    if (p->tag == Token::TOK_IDENT) return new Name(p->loc, (p++)->asString());
-    EPSILON_ERROR
+    if (p->tag == Token::IDENT) return new Name(p->loc, (p++)->asString());
+    EPSILON
   }
 
   /// @brief Same as ident() except the result is returned as an `std::string`.
+  /// An empty string is returned on epsilon error.
   std::string namePart() {
-    if (p->tag == Token::TOK_IDENT) return (p++)->asString();
-    error = EPSILON;
-    return std::string();
+    if (p->tag == Token::IDENT) return (p++)->asString();
+    error = EPSILON_ERR;
+    return "";
   }
 
-  /// @brief Parses a name (e.g., `MyModule::AnotherModule::myfunc`).
+  /// @brief Parses any Name, qualified or unqualified.
   Name* name() {
-    Token t = *p;
+    Token begin = *p;
     std::string s = namePart(); RETURN_IF_ERROR
-    while (p->tag == Token::COLON_COLON) {
-      ++p;
+    while (chomp(Token::COLON_COLON)) {
       std::string s2 = namePart(); ARREST_IF_ERROR
       s.append("::");
       s.append(s2);
     }
-    return new Name(hereFrom(t), s);
+    return new Name(hereFrom(begin), s);
   }
 
   //==========================================================================//
@@ -106,50 +111,51 @@ public:
   BoolLit* boolLit() {
     if (p->tag == Token::KW_FALSE) return new BoolLit((p++)->loc, false);
     if (p->tag == Token::KW_TRUE) return new BoolLit((p++)->loc, true);
-    EPSILON_ERROR
+    EPSILON
   }
 
   IntLit* intLit() {
     if (p->tag == Token::LIT_INT) return new IntLit(p->loc, (p++)->ptr);
-    EPSILON_ERROR
+    EPSILON
   }
 
   DecimalLit* decimalLit() {
     if (p->tag == Token::LIT_DEC) return new DecimalLit(p->loc, (p++)->ptr);
-    EPSILON_ERROR
+    EPSILON
   }
 
   StringLit* stringLit() {
     if (p->tag == Token::LIT_STRING) return new StringLit(p->loc, (p++)->ptr);
-    EPSILON_ERROR
+    EPSILON
   }
 
   Exp* parensExp() {
-    if (p->tag == Token::LPAREN) ++p; else EPSILON_ERROR
+    if (!chomp(Token::LPAREN)) EPSILON
     Exp* ret = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::RPAREN, ")", "parentheses expression")
     return ret;
   }
 
+  /// @brief Parses a Name or CallExp. Combining these into a single parser
+  /// function avoids backtracking.
   Exp* nameOrCallExp() {
-    Token t = *p;
+    Token begin = *p;
     Name* n = name(); RETURN_IF_ERROR
-    if (p->tag == Token::LPAREN) {
-      ++p;
+    if (chomp(Token::LPAREN)) {
       ExpList* argList = expListWotc0();
       CHOMP_ELSE_ARREST(Token::RPAREN, ")", "function call")
-      return new CallExp(hereFrom(t), n, argList);
+      return new CallExp(hereFrom(begin), n, argList);
     } else {
-      return new NameExp(n->getLocation(), n);  // TODO: reduce to only one argument
+      return new NameExp(n);
     }
   }
 
   BlockExp* blockExp() {
-    Token t = *p;
-    if (p->tag == Token::LBRACE) ++p; else EPSILON_ERROR
+    Token begin = *p;
+    if (!chomp(Token::LBRACE)) EPSILON
     ExpList* statements = stmts0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::RBRACE, "}", "block expression")
-    return new BlockExp(hereFrom(t), statements);
+    return new BlockExp(hereFrom(begin), statements);
   }
 
   Exp* expLv0() {
@@ -161,113 +167,96 @@ public:
     ret = stringLit(); CONTINUE_ON_EPSILON(ret)
     ret = parensExp(); CONTINUE_ON_EPSILON(ret)
     ret = blockExp(); CONTINUE_ON_EPSILON(ret)
-    EPSILON_ERROR
+    EPSILON
   }
 
   Exp* expLv1() {
-    Token t = *p;
+    Token begin = *p;
     Exp* e = expLv0(); RETURN_IF_ERROR
     for (;;) {
-      switch(p->tag) {
-      case Token::EXCLAIM: {
-        ++p;
-        e = new DerefExp(hereFrom(t), e);
-        break;
-      }
-      case Token::DOT: {
-        ++p;
+      if (chomp(Token::EXCLAIM)) {
+        e = new DerefExp(hereFrom(begin), e);
+      } else if (chomp(Token::DOT)) {
         Name* fieldName = ident(); ARREST_IF_ERROR
-        e = new ProjectExp(hereFrom(t), e, fieldName);
-        break;
-      }
-      case Token::LBRACKET: {
-        ++p;
-        if (p->tag == Token::DOT) {
-          ++p;
+        e = new ProjectExp(hereFrom(begin), e, fieldName);
+      } else if (chomp(Token::LBRACKET)) {
+        if (chomp(Token::DOT)) {
           Name* fieldName = ident(); ARREST_IF_ERROR
           CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index field expression")
-          e = new IndexFieldExp(hereFrom(t), e, fieldName);
-          break;
-        }
-        else {
+          e = new IndexFieldExp(hereFrom(begin), e, fieldName);
+        } else {
           Exp* indexExp = exp(); ARREST_IF_ERROR
           CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index expression")
-          e = new IndexExp(hereFrom(t), e, indexExp);
-          break;
+          e = new IndexExp(hereFrom(begin), e, indexExp);
         }
-      }
-      default: return e;
-      }
+      } else return e;
     }
   }
 
   Exp* expLv2() {
-    Token t = *p;
-    if (t.tag == Token::AMP) {
-      ++p;
+    Token begin = *p;
+    if (chomp(Token::AMP)) {
       Exp* e = expLv2(); ARREST_IF_ERROR
-      return new RefExp(hereFrom(t), e);
+      return new RefExp(hereFrom(begin), e);
     } else {
       return expLv1();
     }
   }
 
-  Exp* expLv25() {
-    Token t = *p;
-    if (t.tag == Token::KW_BORROW) {
-      ++p;
-      Exp* e = expLv25(); ARREST_IF_ERROR
-      return new BorrowExp(hereFrom(t), e);
-    } else if (t.tag == Token::KW_MOVE) {
-      ++p;
-      Exp* e = expLv25(); ARREST_IF_ERROR
-      return new MoveExp(hereFrom(t), e);
+  Exp* expLv3() {
+    Token begin = *p;
+    if (chomp(Token::KW_BORROW)) {
+      Exp* e = expLv3(); ARREST_IF_ERROR
+      return new BorrowExp(hereFrom(begin), e);
+    } else if (chomp(Token::KW_MOVE)) {
+      Exp* e = expLv3(); ARREST_IF_ERROR
+      return new MoveExp(hereFrom(begin), e);
     } else {
       return expLv2();
     }
   }
 
-  Exp* expLv3() {
-    Token t = *p;
-    Exp* e = expLv25(); RETURN_IF_ERROR
-    while (p->tag == Token::COLON) {
-      ++p;
+  Exp* expLv4() {
+    Token begin = *p;
+    Exp* e = expLv3(); RETURN_IF_ERROR
+    while (chomp(Token::COLON)) {
       TypeExp* tyAscrip = typeExp(); ARREST_IF_ERROR
-      e = new AscripExp(hereFrom(t), e, tyAscrip);
+      e = new AscripExp(hereFrom(begin), e, tyAscrip);
     }
     return e;
   }
 
-  Exp* expLv4() {
-    Token t = *p;
-    Exp* lhs = expLv3();
+  Exp* expLv5() {
+    Token begin = *p;
+    Exp* lhs = expLv4();
     RETURN_IF_ERROR
     while (p->tag == Token::OP_MUL || p->tag == Token::OP_DIV) {
       auto op = (p->tag == Token::OP_MUL) ? BinopExp::MUL : BinopExp::DIV;
       ++p;
-      Exp* rhs = expLv3(); ARREST_IF_ERROR
-      lhs = new BinopExp(hereFrom(t), op, lhs, rhs);
-    }
-    return lhs;
-  }
-
-  Exp* expLv5() {
-    Token t = *p;
-    Exp* lhs = expLv4(); RETURN_IF_ERROR
-    while (p->tag == Token::OP_ADD || p->tag == Token::OP_SUB) {
-      auto op = (p->tag == Token::OP_ADD) ? BinopExp::ADD : BinopExp::SUB;
-      ++p;
       Exp* rhs = expLv4(); ARREST_IF_ERROR
-      lhs = new BinopExp(hereFrom(t), op, lhs, rhs);
+      lhs = new BinopExp(hereFrom(begin), op, lhs, rhs);
     }
     return lhs;
   }
 
   Exp* expLv6() {
-    Token t = *p;
+    Token begin = *p;
     Exp* lhs = expLv5(); RETURN_IF_ERROR
-    while (p->tag == Token::OP_EQ || p->tag == Token::OP_NE || p->tag == Token::OP_GE
-    || p->tag == Token::OP_GT || p->tag == Token::OP_LE || p->tag == Token::OP_LT) {
+    while (p->tag == Token::OP_ADD || p->tag == Token::OP_SUB) {
+      auto op = (p->tag == Token::OP_ADD) ? BinopExp::ADD : BinopExp::SUB;
+      ++p;
+      Exp* rhs = expLv5(); ARREST_IF_ERROR
+      lhs = new BinopExp(hereFrom(begin), op, lhs, rhs);
+    }
+    return lhs;
+  }
+
+  Exp* expLv7() {
+    Token begin = *p;
+    Exp* lhs = expLv6(); RETURN_IF_ERROR
+    while (p->tag == Token::OP_EQ || p->tag == Token::OP_NE
+    || p->tag == Token::OP_GE || p->tag == Token::OP_GT
+    || p->tag == Token::OP_LE || p->tag == Token::OP_LT) {
       auto op = p->tag == Token::OP_EQ ? BinopExp::EQ :
                 p->tag == Token::OP_NE ? BinopExp::NE :
                 p->tag == Token::OP_GE ? BinopExp::GE :
@@ -275,55 +264,54 @@ public:
                 p->tag == Token::OP_LE ? BinopExp::LE :
                                          BinopExp::LT;
       ++p;
-      Exp* rhs = expLv5(); ARREST_IF_ERROR
-      lhs = new BinopExp(hereFrom(t), op, lhs, rhs);
+      Exp* rhs = expLv6(); ARREST_IF_ERROR
+      lhs = new BinopExp(hereFrom(begin), op, lhs, rhs);
     }
     return lhs;
   }
 
-  Exp* expLv7() {
-    Token t = *p;
-    Exp* lhs = expLv6(); RETURN_IF_ERROR
-    while (p->tag == Token::COLON_EQUAL) {
-      ++p;
-      Exp* rhs = expLv6(); ARREST_IF_ERROR
-      lhs = new StoreExp(hereFrom(t), lhs, rhs);
+  Exp* expLv8() {
+    Token begin = *p;
+    Exp* lhs = expLv7(); RETURN_IF_ERROR
+    while (chomp(Token::COLON_EQUAL)) {
+      Exp* rhs = expLv7(); ARREST_IF_ERROR
+      lhs = new StoreExp(hereFrom(begin), lhs, rhs);
     }
     return lhs;
   }
 
   IfExp* ifExp() {
-    Token t = *p;
-    if (p->tag == Token::KW_IF) ++p; else EPSILON_ERROR
+    Token begin = *p;
+    if (!chomp(Token::KW_IF)) EPSILON
     Exp* condExp = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::KW_THEN, "then", "if expression")
     Exp* thenExp = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::KW_ELSE, "else", "if expression")
     Exp* elseExp = exp(); ARREST_IF_ERROR
-    return new IfExp(hereFrom(t), condExp, thenExp, elseExp);
+    return new IfExp(hereFrom(begin), condExp, thenExp, elseExp);
   }
 
   Exp* exp() {
     Exp* ret = ifExp(); CONTINUE_ON_EPSILON(ret)
-    return expLv7();
+    return expLv8();
   }
 
   /// @brief Zero or more comma-separated expressions with optional trailing
   /// comma (wotc). Never epsilon fails.
   ExpList* expListWotc0() {
-    Token t = *p;
+    Token begin = *p;
     llvm::SmallVector<Exp*, 4> es;
     Exp* e;
     for (;;) {
       e = exp();
-      if (error == ARREST) ARRESTING_ERROR
-      if (error == EPSILON) {
+      if (error == ARRESTING_ERR) return nullptr;
+      if (error == EPSILON_ERR) {
         error = NOERROR;
-        return new ExpList(hereFrom(t), es);
+        return new ExpList(hereFrom(begin), es);
       }
       es.push_back(e);
       if (p->tag != Token::COMMA) {
-        return new ExpList(hereFrom(t), es);
+        return new ExpList(hereFrom(begin), es);
       }
       ++p;
     }
@@ -352,16 +340,16 @@ public:
        return new PrimitiveTypeExp((p++)->loc, PrimitiveTypeExp::UNIT);
     TypeExp* ret;
     ret = nameTypeExp(); CONTINUE_ON_EPSILON(ret)
-    EPSILON_ERROR
+    EPSILON
   }
 
   TypeExp* typeExp() {
-    Token t = *p;
-    if (t.tag == Token::AMP || t.tag == Token::HASH) {
-      bool owned = t.tag == Token::HASH;
+    Token begin = *p;
+    if (p->tag == Token::AMP || p->tag == Token::HASH) {
+      bool owned = p->tag == Token::HASH;
       ++p;
       TypeExp* n1 = typeExp(); ARREST_IF_ERROR
-      return new RefTypeExp(hereFrom(t), n1, owned);
+      return new RefTypeExp(hereFrom(begin), n1, owned);
     } else {
       return typeExpLv0();
     }
@@ -372,30 +360,31 @@ public:
     return new NameTypeExp(n);
   }
 
-  // ---------- Statements ----------
+  //==========================================================================//
+  //=== Statements
+  //==========================================================================//
 
   LetExp* letStmt() {
-    Token t = *p;
-    if (p->tag == Token::KW_LET) ++p; else EPSILON_ERROR
+    Token begin = *p;
+    if (!chomp(Token::KW_LET)) EPSILON
     Name* boundIdent = ident(); ARREST_IF_ERROR
     TypeExp* ascrip = nullptr;
-    if (p->tag == Token::COLON) {
-      ++p;
+    if (chomp(Token::COLON)) {
       ascrip = typeExp(); ARREST_IF_ERROR
       CHOMP_ELSE_ARREST(Token::EQUAL, "=", "let statement")
     } else {
       CHOMP_ELSE_ARREST(Token::EQUAL, ": =", "let statement")
     }
     Exp* definition = exp(); ARREST_IF_ERROR
-    return new LetExp(hereFrom(t), boundIdent, ascrip, definition);
+    return new LetExp(hereFrom(begin), boundIdent, ascrip, definition);
   }
 
   ReturnExp* returnStmt() {
-    Token t = *p;
-    if (p->tag == Token::KW_RETURN) ++p; else EPSILON_ERROR
+    Token begin = *p;
+    if (!chomp(Token::KW_RETURN)) EPSILON
     Exp* returnee = exp(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "return statement")
-    return new ReturnExp(hereFrom(t), returnee);
+    return new ReturnExp(hereFrom(begin), returnee);
   }
 
   Exp* stmt() {
@@ -403,26 +392,25 @@ public:
     ret = letStmt(); CONTINUE_ON_EPSILON(ret)
     ret = returnStmt(); CONTINUE_ON_EPSILON(ret)
     ret = exp(); CONTINUE_ON_EPSILON(ret)
-    EPSILON_ERROR
+    EPSILON
   }
 
   /// Zero or more statements separated by semicolons Never epsilon fails.
   ExpList* stmts0() {
-    Token t = *p;
+    Token begin = *p;
     llvm::SmallVector<Exp*, 4> ss;
     Exp* s;
     for (;;) {
       s = stmt();
-      if (error == ARREST) ARRESTING_ERROR
-      if (error == EPSILON) {
+      if (error == ARRESTING_ERR) return nullptr;
+      if (error == EPSILON_ERR) {
         error = NOERROR;
-        return new ExpList(hereFrom(t), ss);
+        return new ExpList(hereFrom(begin), ss);
       }
       ss.push_back(s);
-      if (p->tag != Token::SEMICOLON) {
-        return new ExpList(hereFrom(t), ss);
+      if (!chomp(Token::SEMICOLON)) {
+        return new ExpList(hereFrom(begin), ss);
       }
-      ++p;
     }
   }
 
@@ -430,113 +418,109 @@ public:
   //=== Declarations
   //==========================================================================//
 
-  /// Parses parameter list of length zero or higher with optional terminal
-  /// comma (wotc). This parser never returns an epsilon error.
+  /// @brief Parses parameter list of length zero or higher with optional
+  /// terminal comma (wotc). This parser never epsilon errors.
   ParamList* paramListWotc0() {
-    Token t = *p;
+    Token begin = *p;
     llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> params;
     Name* paramName;
     TypeExp* paramType;
     for (;;) {
       paramName = ident();
-      if (error == ARREST) return nullptr;
-      if (error == EPSILON) {
+      if (error == ARRESTING_ERR) return nullptr;
+      if (error == EPSILON_ERR) {
         error = NOERROR;
-        return new ParamList(hereFrom(t), params);
+        return new ParamList(hereFrom(begin), params);
       }
       CHOMP_ELSE_ARREST(Token::COLON, ":", "parameter list")
       paramType = typeExp(); ARREST_IF_ERROR
       params.push_back(std::pair<Name*, TypeExp*>(paramName, paramType));
       if (p->tag != Token::COMMA) {
-        return new ParamList(hereFrom(t), params);
+        return new ParamList(hereFrom(begin), params);
       }
       ++p;
     }
   }
 
   DataDecl* dataDecl() {
-    Token t = *p;
-    if (p->tag == Token::KW_DATA) ++p; else EPSILON_ERROR
+    Token begin = *p;
+    if (!chomp(Token::KW_DATA)) EPSILON
     Name* name = ident(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::LPAREN, "(", "data")
     ParamList* fields = paramListWotc0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::RPAREN, ")", "data")
-    return new DataDecl(hereFrom(t), name, fields);
+    return new DataDecl(hereFrom(begin), name, fields);
   }
 
   FunctionDecl* functionDecl() {
-    Token t = *p;
-    if (p->tag == Token::KW_FUNC) ++p; else EPSILON_ERROR
+    Token begin = *p;
+    bool hasBody = true;
+    if (chomp(Token::KW_EXTERN)) {
+      hasBody = false;
+      CHOMP_ELSE_ARREST(Token::KW_FUNC, "func", "function")
+    } else if (!chomp(Token::KW_FUNC)) EPSILON
     Name* name = ident(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::LPAREN, "(", "function")
     ParamList* params = paramListWotc0(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::RPAREN, ")", "function")
     CHOMP_ELSE_ARREST(Token::COLON, ":", "function")
     TypeExp* retType = typeExp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::EQUAL, "=", "function")
-    Exp* body = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
-    return new FunctionDecl(hereFrom(t), name, params, retType, body);
+    if (hasBody) {
+      CHOMP_ELSE_ARREST(Token::EQUAL, "=", "function")
+      Exp* body = exp(); ARREST_IF_ERROR
+      CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
+      return new FunctionDecl(hereFrom(begin), name, params, retType, body);
+    } else {
+      CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
+      return new FunctionDecl(hereFrom(begin), name, params, retType);
+    }
   }
 
-  FunctionDecl* externFunctionDecl() {
-    Token t = *p;
-    if (p->tag == Token::KW_EXTERN) ++p; else EPSILON_ERROR
-    CHOMP_ELSE_ARREST(Token::KW_FUNC, "func", "extern function")
-    Name* name = ident(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::LPAREN, "(", "extern function")
-    ParamList* params = paramListWotc0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "extern function")
-    CHOMP_ELSE_ARREST(Token::COLON, ":", "extern function")
-    TypeExp* retType = typeExp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "extern function")
-    return new FunctionDecl(hereFrom(t), name, params, retType);
-  }
-
-  /// @brief Parses a module or namespace with brace-syntax.
-  Decl* moduleOrNamespace() {
-    Token t = *p;
-    AST::ID ty;
-    if (p->tag == Token::KW_MODULE) { ty = AST::ID::MODULE; ++p; }
-    else if (p->tag == Token::KW_NAMESPACE) { ty = AST::ID::NAMESPACE; ++p; }
-    else EPSILON_ERROR
-    const char* whatThisIs = ty == AST::ID::MODULE ? "module" : "namespace";
-    Name* n1 = ident(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::LBRACE, "{", whatThisIs)
+  ModuleDecl* module_() {
+    Token begin = *p;
+    if (!chomp(Token::KW_MODULE)) EPSILON
+    Name* moduleName = ident(); ARREST_IF_ERROR
+    CHOMP_ELSE_ARREST(Token::LBRACE, "{", "module")
     DeclList* n2 = decls0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::RBRACE, "}", whatThisIs)
-    return ty == AST::ID::MODULE ?
-           static_cast<Decl*>(new ModuleDecl(hereFrom(t), n1, n2)) :
-           new NamespaceDecl(hereFrom(t), n1, n2);
+    CHOMP_ELSE_ARREST(Token::RBRACE, "}", "module")
+    return new ModuleDecl(hereFrom(begin), moduleName, n2);
   }
 
-  /// @brief A declaration is a func, proc, data type, module, or namespace.
   Decl* decl() {
     Decl* ret;
     ret = dataDecl(); CONTINUE_ON_EPSILON(ret)
     ret = functionDecl(); CONTINUE_ON_EPSILON(ret)
-    ret = externFunctionDecl(); CONTINUE_ON_EPSILON(ret)
-    ret = moduleOrNamespace(); CONTINUE_ON_EPSILON(ret)
-    EPSILON_ERROR
+    ret = module_(); CONTINUE_ON_EPSILON(ret)
+    EPSILON
   }
 
-  /// Parses zero or more declarations into a DECLLIST.
+  /// @brief Parses zero or more declarations.
   DeclList* decls0() {
-    Token t = *p;
+    Token begin = *p;
     llvm::SmallVector<Decl*, 0> ds;
     Decl* d;
     for (;;) {
       d = decl();
-      if (error == ARREST) ARRESTING_ERROR
-      if (error == EPSILON) {
+      if (error == ARRESTING_ERR) return nullptr;
+      if (error == EPSILON_ERR) {
         error = NOERROR;
-        return new DeclList(hereFrom(t), ds);
+        return new DeclList(hereFrom(begin), ds);
       }
       ds.push_back(d);
     }
   }
 
-  //==========================================================================//
+private:
+
+  /// @brief Consumes a token of type @p tag if possible, otherwise consumes
+  /// nothing. `error` is _not_ set.
+  /// @return True iff @p tag was consumed.
+  bool chomp(Token::Tag tag) {
+    if (p->tag == tag)
+      { ++p; return true; }
+    else
+      { return false; }
+  }
 
   /// @brief Returns the location that spans from the beginning of @p first to
   /// the end of the token before the current one. Make sure there _is_ a

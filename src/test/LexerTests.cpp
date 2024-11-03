@@ -37,7 +37,7 @@ namespace LexerTests {
 
   TEST(keywords_and_identifiers) {
     tokensShouldBe("func funcy let", {
-      Token::KW_FUNC, Token::TOK_IDENT, Token::KW_LET, Token::END
+      Token::KW_FUNC, Token::IDENT, Token::KW_LET, Token::END
     });
   }
 

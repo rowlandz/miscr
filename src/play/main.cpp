@@ -1,5 +1,3 @@
-#include <iostream>
-#include <cstring>
 #include "LexerPlayground.hpp"
 #include "ParserPlayground.hpp"
 #include "TyperPlayground.hpp"
@@ -9,19 +7,18 @@ char help_message[] =
   "\n"
   "USAGE\n"
   "    ./playground lexer [-v]\n"
-  "    ./playground parser (decl|exp|stmt) [-m]\n"
+  "    ./playground parser (decl|exp)\n"
   "    ./playground typer (decl|exp)\n"
   "\n"
   "OPTIONS\n"
   "    -v   verbose output\n"
-  "    -m   multiline input\n"
   ;
 
 
 int main(int argc, char* argv[]) {
   
   if (argc <= 1) {
-    std::cout << help_message;
+    llvm::outs() << help_message;
   }
 
   else if (!strcmp(argv[1], "lexer")) {
@@ -29,10 +26,7 @@ int main(int argc, char* argv[]) {
   }
 
   else if (!strcmp(argv[1], "parser")) {
-    if (argc >= 4 && !strcmp(argv[3], "-m"))
-      return play_with_parser(argv[2], true);
-    else if (argc >= 3)
-      return play_with_parser(argv[2], false);
+    return play_with_parser(argv[2]);
   }
 
   else if (!strcmp(argv[1], "typer")) {
@@ -42,7 +36,7 @@ int main(int argc, char* argv[]) {
   }
 
   else {
-    std::cout << "Unrecognized arguments" << std::endl;
+    llvm::outs() << "Unrecognized arguments\n";
     return 1;
   }
 

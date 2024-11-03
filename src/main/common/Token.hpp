@@ -11,18 +11,30 @@ public:
 
   /// @brief The type of token.
   enum Tag : unsigned char {
-    TOK_IDENT,
-    KW_BOOL, KW_BORROW, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_FALSE, KW_FUNC,
-    KW_IF, KW_LET, KW_MATCH, KW_MODULE, KW_MOVE, KW_NAMESPACE, KW_OF, KW_PROC,
-    KW_RETURN, KW_STR, KW_THEN, KW_TRUE, KW_UNIT,
-    KW_i8, KW_i16, KW_i32, KW_i64, KW_f32, KW_f64,
-    OP_ADD, OP_SUB, OP_MUL, OP_DIV,
-    OP_GE, OP_GT, OP_LE, OP_LT, OP_EQ, OP_NE,
+
+    // keywords
+    KW_BOOL, KW_BORROW, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_f32, KW_f64,
+    KW_FALSE, KW_FUNC, KW_i8, KW_i16, KW_i32, KW_i64, KW_IF, KW_LET, KW_MATCH,
+    KW_MODULE, KW_MOVE, KW_OF, KW_PROC, KW_RETURN, KW_STR, KW_THEN, KW_TRUE,
+    KW_UNIT,
+
+    // operators
+    OP_ADD, OP_DIV, OP_EQ, OP_GE, OP_GT, OP_LE, OP_LT, OP_MUL, OP_NE, OP_SUB,
+
+    // literal values
     LIT_DEC, LIT_INT, LIT_STRING,
-    LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-    AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
-    HASH, SEMICOLON, UNDERSCORE,
+
+    // comments
     COMMENT, DOC_COMMENT_L, DOC_COMMENT_R,
+
+    // grouping symbols
+    LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
+
+    // other
+    AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
+    HASH, IDENT, SEMICOLON, UNDERSCORE,
+
+    // end-of-file indicator
     END
   };
 
@@ -39,7 +51,7 @@ public:
 
   static const char* tagToString(Tag tag) {
     switch (tag) {
-    case TOK_IDENT:       return "TOK_IDENT";
+    case IDENT:           return "IDENT";
     case KW_UNIT:         return "KW_UNIT";
     case KW_BOOL:         return "KW_BOOL";
     case KW_BORROW:       return "KW_BORROW";
@@ -54,7 +66,6 @@ public:
     case KW_MATCH:        return "KW_MATCH";
     case KW_MODULE:       return "KW_MODULE";
     case KW_MOVE:         return "KW_MOVE";
-    case KW_NAMESPACE:    return "KW_NAMESPACE";
     case KW_OF:           return "KW_OF";
     case KW_PROC:         return "KW_PROC";
     case KW_RETURN:       return "KW_RETURN";

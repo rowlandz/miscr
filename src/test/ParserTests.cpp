@@ -129,7 +129,7 @@ namespace ParserTests {
     declParseTreeShouldBe(
       "module M {\n"
       "  extern func f(): unit;\n"
-      "  namespace N {\n"
+      "  module N {\n"
       "    extern func g(): unit;\n"
       "  }\n"
       "}\n"
@@ -141,7 +141,7 @@ namespace ParserTests {
       "            NAME",
       "            PARAMLIST",
       "            PRIMITIVE_TEXP",
-      "        NAMESPACE",
+      "        MODULE",
       "            NAME",
       "            DECLLIST",
       "                FUNC",
