@@ -219,18 +219,6 @@ public:
       llvm::Type* ofTy = genType(ofTVar);
       return b->CreateGEP(ofTy, baseV, indexV);
     }
-    else if (auto e = IndexFieldExp::downcast(_exp)) {
-      llvm::Value* baseV = genExp(e->getBase());
-      DataDecl* typeDecl = ont.getType(e->getTypeName());
-      llvm::StringRef fieldName = e->getFieldName()->asStringRef();
-      int fieldIndex = 0;
-      for (auto field : typeDecl->getFields()->asArrayRef()) {
-        if (field.first->asStringRef() == fieldName) break;
-        ++fieldIndex;
-      }
-      return b->CreateGEP(dataTypes[e->getTypeName()], baseV,
-        { b->getInt64(0), b->getInt32(fieldIndex) });
-    }
     else if (auto e = IntLit::downcast(_exp)) {
       return llvm::ConstantInt::get(genType(e->getTVar()), e->asLong());
     }
@@ -256,7 +244,12 @@ public:
         ++fieldIndex;
       }
       assert(fieldIndex < typeDecl->getFields()->asArrayRef().size());
-      return b->CreateExtractValue(baseV, fieldIndex);
+      if (e->isAddrCalc()) {
+        return b->CreateGEP(dataTypes[e->getTypeName()], baseV,
+          { b->getInt64(0), b->getInt32(fieldIndex) });
+      } else {
+        return b->CreateExtractValue(baseV, fieldIndex);
+      }
     }
     else if (auto e = RefExp::downcast(_exp)) {
       llvm::Value* v = genExp(e->getInitializer());

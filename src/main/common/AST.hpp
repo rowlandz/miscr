@@ -30,8 +30,7 @@ public:
 
     // expressions and statements
     ASCRIP, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, DEC_LIT, DEREF, ENAME,
-    IF, INDEX, INDEX_FIELD, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN,
-    STORE, STRING_LIT,
+    IF, INDEX, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN, STORE, STRING_LIT,
 
     // declarations
     DATA, FUNC, MODULE,
@@ -226,9 +225,9 @@ public:
   static Exp* downcast(AST* ast) {
     switch (ast->id) {
     case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case CALL:
-    case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX:
-    case INDEX_FIELD: case INT_LIT: case LET: case PROJECT: case REF_EXP:
-    case RETURN: case STORE: case STRING_LIT: return static_cast<Exp*>(ast);
+    case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX: case INT_LIT:
+    case LET: case PROJECT: case REF_EXP: case RETURN: case STORE:
+    case STRING_LIT: return static_cast<Exp*>(ast);
     default: return nullptr;
     }
   }
@@ -496,22 +495,32 @@ public:
 };
 
 /// @brief An expression that extracts a field from a `data` value
-/// (e.g., `bob.age`).
+/// (e.g., `bob.age`) or calculates the address of the field from a `data`
+/// value reference (e.g., `bobRef[.age]`).
 class ProjectExp : public Exp {
   Exp* base;
   Name* fieldName;
+  bool isAddrCalc_;
   std::string typeName;   // name of the datatype being indexed
 public:
-  ProjectExp(Location loc, Exp* base, Name* fieldName)
-    : Exp(PROJECT, loc), base(base), fieldName(fieldName) {}
+  ProjectExp(Location loc, Exp* base, Name* fieldName, bool isAddrCalc)
+    : Exp(PROJECT, loc), base(base), fieldName(fieldName),
+    isAddrCalc_(isAddrCalc) {}
   static ProjectExp* downcast(AST* ast)
     { return ast->id == PROJECT ? static_cast<ProjectExp*>(ast) : nullptr; }
   Exp* getBase() const { return base; }
   Name* getFieldName() const { return fieldName; }
 
-  /// Used the the unifier to set the name of the data decl.
+  /// @brief True iff the projection is of the form `base[.field]` rather than
+  /// `base.field` (i.e., this is an address calculation rather than a true
+  /// projection).
+  bool isAddrCalc() const { return isAddrCalc_; }
+
+  /// @brief Used in the unifier to set the name of the data decl.
   void setTypeName(llvm::StringRef name) { typeName = name.str(); }
 
+  /// @brief Returns the fully-qualified name of the data type being projected.
+  /// This is only valid after the type checker sets this value. 
   llvm::StringRef getTypeName() const { return typeName; }
 };
 
@@ -527,28 +536,6 @@ public:
     { return ast->id == INDEX ? static_cast<IndexExp*>(ast) : nullptr; }
   Exp* getBase() const { return base; }
   Exp* getIndex() const { return index; }
-};
-
-/// @brief An expression that computes the address of a field of a data type.
-/// (e.g., `bob[.age]`).
-class IndexFieldExp : public Exp {
-  Exp* base;
-  Name* fieldName;
-  std::string typeName;   // name of the datatype being indexed
-public:
-  IndexFieldExp(Location loc, Exp* base, Name* fieldName)
-    : Exp(INDEX_FIELD, loc), base(base), fieldName(fieldName) {}
-  static IndexFieldExp* downcast(AST* ast) {
-    return ast->id == INDEX_FIELD ?
-           static_cast<IndexFieldExp*>(ast) : nullptr;
-  }
-  Exp* getBase() const { return base; }
-  Name* getFieldName() const { return fieldName; }
-
-  /// Used the the unifier to set the name of the data decl being indexed.
-  void setTypeName(llvm::StringRef name) { typeName = name.str(); }
-
-  llvm::StringRef getTypeName() const { return typeName; }
 };
 
 /// @brief A borrow expression that returns a borrowed reference from an owned
@@ -704,8 +691,6 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     return { ast->getCondExp(), ast->getThenExp(), ast->getElseExp() };
   if (auto ast = IndexExp::downcast(this))
     return { ast->getBase(), ast->getIndex() };
-  if (auto ast = IndexFieldExp::downcast(this))
-    return { ast->getBase(), ast->getFieldName() };
   if (auto ast = LetExp::downcast(this)) {
     if (ast->getAscrip() != nullptr)
       return { ast->getBoundIdent(), ast->getAscrip(), ast->getDefinition() };
@@ -752,7 +737,6 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::ENAME:              return "ENAME";
   case AST::ID::IF:                 return "IF";
   case AST::ID::INDEX:              return "INDEX";
-  case AST::ID::INDEX_FIELD:        return "INDEX_FIELD";
   case AST::ID::INT_LIT:            return "INT_LIT";
   case AST::ID::LET:                return "LET";
   case AST::ID::MOVE:               return "MOVE";
@@ -789,7 +773,6 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "ENAME")               return AST::ID::ENAME;
   else if (str == "IF")                  return AST::ID::IF;
   else if (str == "INDEX")               return AST::ID::INDEX;
-  else if (str == "INDEX_FIELD")         return AST::ID::INDEX_FIELD;
   else if (str == "INT_LIT")             return AST::ID::INT_LIT;
   else if (str == "LET")                 return AST::ID::LET;
   else if (str == "MOVE")                return AST::ID::MOVE;

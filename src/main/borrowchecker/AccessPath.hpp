@@ -6,7 +6,6 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/Support/raw_ostream.h>
 
-class AccessPath;
 class AccessPathManager;
 
 /// @brief Represents a sequence of struct projections and dereferences used to
@@ -18,7 +17,7 @@ class AccessPathManager;
 /// AccessPathManager.
 class AccessPath {
 public:
-  enum Tag { ROOT, PROJECTION, ARRAY_OFFSET, DEREF };
+  enum Tag { ROOT, PROJECT, ARRAY_OFFSET, DEREF };
   const Tag tag;
 protected:
   AccessPath(Tag tag) : tag(tag) {}
@@ -26,10 +25,10 @@ protected:
 public:
 
   /// @brief Returns this access path as a string for error messages.
-  std::string asString() const;
+  std::string asString();
 
   /// @brief Returns true iff this access path begins with @p prefix.
-  bool startsWith(const AccessPath* prefix) const;
+  bool startsWith(const AccessPath* prefix);
 };
 
 /// @brief The root of an access path.
@@ -41,8 +40,6 @@ class RootPath : public AccessPath {
 public:
   static RootPath* downcast(AccessPath* ap)
     { return ap->tag == ROOT ? static_cast<RootPath*>(ap) : nullptr; }
-  static const RootPath* downcast(const AccessPath* ap)
-    { return ap->tag == ROOT ? static_cast<const RootPath*>(ap) : nullptr; }
   llvm::StringRef asString() const { return root; }
 };
 
@@ -54,38 +51,36 @@ protected:
 public:
   AccessPath* getBase() const { return base; }
 
-  static const NonRootPath* downcast(const AccessPath* ap) {
-    switch (ap->tag) {
-    case PROJECTION: case ARRAY_OFFSET: case DEREF:
-      return static_cast<const NonRootPath*>(ap);
-    default: return nullptr;
-    }
-  }
-
   static NonRootPath* downcast(AccessPath* ap) {
     switch (ap->tag) {
-    case PROJECTION: case ARRAY_OFFSET: case DEREF:
+    case PROJECT: case ARRAY_OFFSET: case DEREF:
       return static_cast<NonRootPath*>(ap);
     default: return nullptr;
     }
   }
 };
 
-/// @brief An access path that ends with `.field`.
-class ProjectionPath : public NonRootPath {
+/// @brief An access path that ends with `.field` or `[.field]`. Corresponds
+/// with ProjectExp.
+///
+/// It is important that access paths be structurally unique. ProjectPath
+/// presents a problem because `base!.field` is the same as `base[.field]!`.
+/// Therefore we decree that any access path that contains `[.field]` followed
+/// by a deref, `.field` projection, or `.index` projection is invalid. The
+/// AccessPathManager is responsible for performing the necessary
+/// transformations to enforce this.
+class ProjectPath : public NonRootPath {
   friend class AccessPathManager;
   std::string field;
-  ProjectionPath(AccessPath* base, llvm::StringRef field)
-    : NonRootPath(PROJECTION, base), field(field) {}
-  ~ProjectionPath() {}
+  bool isAddrCalc_;
+  ProjectPath(AccessPath* base, llvm::StringRef field, bool isAddrCalc)
+    : NonRootPath(PROJECT, base), field(field), isAddrCalc_(isAddrCalc) {}
+  ~ProjectPath() {}
 public:
-  static ProjectionPath* downcast(AccessPath* ap)
-    { return ap->tag == PROJECTION ?
-      static_cast<ProjectionPath*>(ap) : nullptr; }
-  static const ProjectionPath* downcast(const AccessPath* ap)
-    { return ap->tag == PROJECTION ?
-      static_cast<const ProjectionPath*>(ap) : nullptr; }
+  static ProjectPath* downcast(AccessPath* ap)
+    { return ap->tag == PROJECT ? static_cast<ProjectPath*>(ap) : nullptr; }
   llvm::StringRef getField() const { return field; }
+  bool isAddrCalc() const { return isAddrCalc_; }
 };
 
 /// @brief The equivalent of struct projection, but for arrays (whose "fields"
@@ -100,9 +95,6 @@ public:
   static ArrayOffsetPath* downcast(AccessPath* ap)
     { return ap->tag == ARRAY_OFFSET ?
       static_cast<ArrayOffsetPath*>(ap) : nullptr; }
-  static const ArrayOffsetPath* downcast(const AccessPath* ap)
-    { return ap->tag == ARRAY_OFFSET ?
-      static_cast<const ArrayOffsetPath*>(ap) : nullptr; }
   int getOffset() const { return offset; }
 };
 
@@ -114,15 +106,11 @@ class DerefPath : public NonRootPath {
 public:
   static DerefPath* downcast(AccessPath* ap)
     { return ap->tag == DEREF ? static_cast<DerefPath*>(ap) : nullptr; }
-  static const DerefPath* downcast(const AccessPath* ap)
-    { return ap->tag == DEREF ? static_cast<const DerefPath*>(ap) : nullptr; }
 };
 
 /// @brief Manages the memory of AccessPath objects. AccessPath objects are
 /// uniqued, so comparing the pointer values of two access paths should be
 /// equivalent to a deep comparison.
-///
-/// Note: be careful with aliases.
 class AccessPathManager {
 public:
 
@@ -134,7 +122,7 @@ public:
     }
     for (auto pair : nonRootPaths) {
       for (NonRootPath* nrp : pair.getSecond()) {
-        if (auto path = ProjectionPath::downcast(nrp)) {
+        if (auto path = ProjectPath::downcast(nrp)) {
           delete path;
         } else if (auto path = ArrayOffsetPath::downcast(nrp)) {
           delete path;
@@ -147,92 +135,86 @@ public:
 
   /// @brief Finds or creates an access path equivalent to @p root.
   AccessPath* getRoot(llvm::StringRef root) {
-    if (AccessPath* alias = aliases.lookup(root)) return alias;
     if (RootPath* path = rootPaths.lookup(root)) return path;
     RootPath* ret = new RootPath(root);
     rootPaths[root] = ret;
     return ret;
   }
 
-  /// @brief Finds or creates an access path equivalent to `base.field`.
-  ProjectionPath* getProjection(AccessPath* base,
-      llvm::StringRef field) {
-    llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
-    if (!candidates.empty()) {
-      for (NonRootPath* nrp : candidates) {
-        if (auto sop = ProjectionPath::downcast(nrp)) {
-          if (sop->getField() == field) return sop;
-        }
-      }
-      ProjectionPath* ret = new ProjectionPath(base, field);
-      candidates.push_back(ret);
-      nonRootPaths[base] = candidates;
-      return ret;
-    } else {
-      ProjectionPath* ret = new ProjectionPath(base, field);
-      nonRootPaths[base] = { ret };
-      return ret;
+  /// @brief Finds or creates an access path equivalent to `base.field` or
+  /// `base[.field]`.
+  ProjectPath*
+  getProject(AccessPath* base, llvm::StringRef field, bool isAddrCalc) {
+    if (!isAddrCalc) {
+      if (auto baseProjectExp = ProjectPath::downcast(base))
+        { assert(!baseProjectExp->isAddrCalc()); }
     }
+    llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
+    for (NonRootPath* nrp : candidates) {
+      if (auto sop = ProjectPath::downcast(nrp)) {
+        if (sop->isAddrCalc() == isAddrCalc && sop->getField() == field)
+          return sop;
+      }
+    }
+    ProjectPath* ret = new ProjectPath(base, field, isAddrCalc);
+    candidates.push_back(ret);
+    nonRootPaths[base] = candidates;
+    return ret;
   }
+
+  /// @brief Finds or creates an access path equivalent to `base[.field]`.
+  ProjectPath* getProjectAddrCalc(AccessPath* base, llvm::StringRef field)
+    { return getProject(base, field, true); }
 
   /// @brief Finds or creates an access path equivalent to `base.offset`.
   ArrayOffsetPath* getArrayOffset(AccessPath* base, int offset) {
+    if (auto baseProjectExp = ProjectPath::downcast(base))
+      { assert(!baseProjectExp->isAddrCalc()); }
     llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
-    if (!candidates.empty()) {
-      for (NonRootPath* nrp : candidates) {
-        if (auto aop = ArrayOffsetPath::downcast(nrp)) {
-          if (aop->getOffset() == offset) return aop;
-        }
+    for (NonRootPath* nrp : candidates) {
+      if (auto aop = ArrayOffsetPath::downcast(nrp)) {
+        if (aop->getOffset() == offset) return aop;
       }
-      ArrayOffsetPath* ret = new ArrayOffsetPath(base, offset);
-      candidates.push_back(ret);
-      nonRootPaths[base] = candidates;
-      return ret;
-    } else {
-      ArrayOffsetPath* ret = new ArrayOffsetPath(base, offset);
-      nonRootPaths[base] = { ret };
-      return ret;
     }
+    ArrayOffsetPath* ret = new ArrayOffsetPath(base, offset);
+    candidates.push_back(ret);
+    nonRootPaths[base] = candidates;
+    return ret;
   }
 
   /// @brief Finds or creates an access path equivalent to `base!`.
-  DerefPath* getDeref(AccessPath* base) {
-    llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
-    if (!candidates.empty()) {
-      for (NonRootPath* nrp : candidates) {
-        if (auto dp = DerefPath::downcast(nrp)) {
-          return dp;
-        }
+  NonRootPath* getDeref(AccessPath* base) {
+    
+    // transform `basebase[.field]!` into `basebase!.field` if possible
+    if (auto baseProject = ProjectPath::downcast(base)) {
+      if (baseProject->isAddrCalc()) {
+        AccessPath* basebase = baseProject->getBase();
+        return getProject(getDeref(basebase), baseProject->getField(), false);
       }
-      DerefPath* ret = new DerefPath(base);
-      candidates.push_back(ret);
-      nonRootPaths[base] = candidates;
-      return ret;
-    } else {
-      DerefPath* ret = new DerefPath(base);
-      nonRootPaths[base] = { ret };
-      return ret;
     }
-  }
 
-  bool addAlias(llvm::StringRef alias, AccessPath* ap) {
-    if (rootPaths.lookup(alias)) return false;
-    if (aliases.lookup(alias)) return false;
-    aliases[alias] = ap;
-    return true;
+    // otherwise append the `!` like normal
+    llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
+    for (NonRootPath* nrp : candidates) {
+      if (DerefPath::downcast(nrp)) return nrp;
+    }
+    DerefPath* ret = new DerefPath(base);
+    candidates.push_back(ret);
+    nonRootPaths[base] = candidates;
+    return ret;
   }
 
   /// @brief Gets the access path that is the same as @p of except with
   /// @p prefix replaced with @p with.
   /// @return If @p prefix is not a prefix of @p of, returns `nullptr`. 
-  AccessPath* replacePrefix(AccessPath* of, AccessPath* prefix,
-      AccessPath* with) {
+  AccessPath*
+  replacePrefix(AccessPath* of, AccessPath* prefix, AccessPath* with) {
     if (of == prefix) return with;
     if (RootPath::downcast(of)) return nullptr;
-    else if (auto pp = ProjectionPath::downcast(of)) {
+    else if (auto pp = ProjectPath::downcast(of)) {
       AccessPath* ret = replacePrefix(pp->getBase(), prefix, with);
       if (ret == nullptr) return nullptr;
-      return getProjection(ret, pp->getField());
+      return getProject(ret, pp->getField(), pp->isAddrCalc());
     } else if (auto aop = ArrayOffsetPath::downcast(of)) {
       AccessPath* ret = replacePrefix(aop->getBase(), prefix, with);
       if (ret == nullptr) return nullptr;
@@ -249,21 +231,27 @@ private:
   /// @brief Stores all root paths.
   llvm::StringMap<RootPath*> rootPaths;
 
-  /// @brief Stores all non-root paths.
+  /// @brief Stores all non-root paths. For uniquing purposes, non-root paths
+  /// are indexed by their prefix.
   llvm::DenseMap<AccessPath*, llvm::SmallVector<NonRootPath*>> nonRootPaths;
-
-  /// @brief Maps aliases to the access paths they alias.
-  llvm::StringMap<AccessPath*> aliases;
 };
 
-std::string AccessPath::asString() const {
+std::string AccessPath::asString() {
   if (auto path = RootPath::downcast(this)) {
     return path->asString().str();
-  } else if (auto path = ProjectionPath::downcast(this)) {
-    std::string ret = path->getBase()->asString();
-    ret += ".";
-    ret += path->getField();
-    return ret;
+  } else if (auto path = ProjectPath::downcast(this)) {
+    if (path->isAddrCalc()) {
+      std::string ret = path->getBase()->asString();
+      ret += "[.";
+      ret += path->getField();
+      ret += "]";
+      return ret;
+    } else {
+      std::string ret = path->getBase()->asString();
+      ret += ".";
+      ret += path->getField();
+      return ret;
+    }
   } else if (auto path = ArrayOffsetPath::downcast(this)) {
     std::string ret = path->getBase()->asString();
     ret += ".";
@@ -273,11 +261,11 @@ std::string AccessPath::asString() const {
     std::string ret = path->getBase()->asString();
     ret += "!";
     return ret;
-  } else llvm_unreachable("accessPathAsString: unexpected case");
+  } else llvm_unreachable("AccessPath::asString: unexpected case");
 }
 
-bool AccessPath::startsWith(const AccessPath* prefix) const {
-  const AccessPath* this_ = this;
+bool AccessPath::startsWith(const AccessPath* prefix) {
+  AccessPath* this_ = this;
   for (;;) {
     if (this_ == prefix) return true;
     if (RootPath::downcast(this_))

@@ -111,7 +111,7 @@ public:
           AccessPath* argAP = check(args[i]);
           auto usedAPs = use(argAP, args[i]->getTVar(), args[i]->getLocation());
           for (AccessPath* usedAP : usedAPs) {
-            AccessPath* newPrefix = apm.getProjection(ret, fieldName);
+            AccessPath* newPrefix = apm.getProject(ret, fieldName, false);
             AccessPath* newAP = apm.replacePrefix(usedAP, argAP, newPrefix);
             createOwner(newAP, e->getLocation());
           }
@@ -152,7 +152,7 @@ public:
     }
     else if (auto e = ProjectExp::downcast(_e)) {
       AccessPath* baseAP = check(e->getBase());
-      return apm.getProjection(baseAP, e->getFieldName()->asStringRef());
+      return apm.getProject(baseAP, e->getFieldName()->asStringRef(), false);
     }
     else if (StringLit::downcast(_e)) {
       return nullptr;
@@ -216,7 +216,7 @@ private:
         llvm::StringRef fName = field.first->asStringRef();
         TVar fTy = tc.freshFromTypeExp(field.second);
         // TODO: a recursive type would cause a stack overflow.
-        ret.append(ownedExtensionsOf(apm.getProjection(path, fName), fTy));
+        ret.append(ownedExtensionsOf(apm.getProject(path, fName, false), fTy));
       }
       return ret;
     }

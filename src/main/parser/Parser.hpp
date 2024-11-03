@@ -178,12 +178,12 @@ public:
         e = new DerefExp(hereFrom(begin), e);
       } else if (chomp(Token::DOT)) {
         Name* fieldName = ident(); ARREST_IF_ERROR
-        e = new ProjectExp(hereFrom(begin), e, fieldName);
+        e = new ProjectExp(hereFrom(begin), e, fieldName, false);
       } else if (chomp(Token::LBRACKET)) {
         if (chomp(Token::DOT)) {
           Name* fieldName = ident(); ARREST_IF_ERROR
           CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index field expression")
-          e = new IndexFieldExp(hereFrom(begin), e, fieldName);
+          e = new ProjectExp(hereFrom(begin), e, fieldName, true);
         } else {
           Exp* indexExp = exp(); ARREST_IF_ERROR
           CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index expression")
