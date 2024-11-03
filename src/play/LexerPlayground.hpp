@@ -1,8 +1,8 @@
 #ifndef LEXERPLAYGROUND
 #define LEXERPLAYGROUND
 
+#include <llvm/LineEditor/LineEditor.h>
 #include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/FormatVariadic.h>
 #include "lexer/Lexer.hpp"
 
@@ -24,14 +24,14 @@ void print_tokens_verbose(const std::vector<Token>& tokens) {
 }
 
 void play_with_lexer(bool verbose) {
-  llvm::StringRef line;
+  llvm::LineEditor lineEditor("");
 
   while (true) {
-    llvm::outs() << "\x1B[34m>\x1B[0m ";
-    llvm::outs().flush();
-    auto res = llvm::MemoryBuffer::getSTDIN();
-    assert(res && "Could not read from stdin");
-    line = res.get()->getBuffer();
+    llvm::outs() << "\x1B[34m";
+    auto maybeLine = lineEditor.readLine();
+    llvm::outs() << "\x1B[0m";
+    assert(maybeLine.hasValue() && "Could not read line from stdin");
+    llvm::StringRef line = maybeLine.getValue();
 
     Lexer lexer(line.data());
     if (!lexer.run()) {

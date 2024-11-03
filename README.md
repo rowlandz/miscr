@@ -9,7 +9,7 @@ Minimalist includes minimal dependencies. All you need is
   - LLVM-14 C++ libraries
   - Clang++ compiler
   - Bash
-  - A few common Unix utilities (echo, rm, basename)
+  - A few common Unix utilities (echo, rm, basename, dirname)
   - (optional) GNU `make` -- alternative to running the build script directly.
 
 There's three executable you can build:
