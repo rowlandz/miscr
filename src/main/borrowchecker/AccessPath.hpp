@@ -133,18 +133,17 @@ public:
     }
   }
 
-  /// @brief Finds or creates an access path equivalent to @p root.
-  AccessPath* getRoot(llvm::StringRef root) {
+  /// @brief Finds the access path @p root if it has been created before.
+  /// Otherwise returns nullptr. 
+  AccessPath* findRoot(llvm::StringRef root) const {
     if (RootPath* path = rootPaths.lookup(root)) return path;
-    RootPath* ret = new RootPath(root);
-    rootPaths[root] = ret;
-    return ret;
+    return nullptr;
   }
 
-  /// @brief Finds or creates an access path equivalent to `base.field` or
-  /// `base[.field]`.
+  /// @brief Finds the access path equivalent to `base.field` or `base[.field]`
+  /// if it has been created before. Otherwise returns nullptr.
   ProjectPath*
-  getProject(AccessPath* base, llvm::StringRef field, bool isAddrCalc) {
+  findProject(AccessPath* base, llvm::StringRef field, bool isAddrCalc) const {
     if (!isAddrCalc) {
       if (auto baseProjectExp = ProjectPath::downcast(base))
         { assert(!baseProjectExp->isAddrCalc()); }
@@ -156,18 +155,12 @@ public:
           return sop;
       }
     }
-    ProjectPath* ret = new ProjectPath(base, field, isAddrCalc);
-    candidates.push_back(ret);
-    nonRootPaths[base] = candidates;
-    return ret;
+    return nullptr;
   }
 
-  /// @brief Finds or creates an access path equivalent to `base[.field]`.
-  ProjectPath* getProjectAddrCalc(AccessPath* base, llvm::StringRef field)
-    { return getProject(base, field, true); }
-
-  /// @brief Finds or creates an access path equivalent to `base.offset`.
-  ArrayOffsetPath* getArrayOffset(AccessPath* base, int offset) {
+  /// @brief Finds the access path equivalent to `base.offset` if it has been
+  /// created before. Otherwise returns nullptr.
+  ArrayOffsetPath* findArrayOffset(AccessPath* base, int offset) const {
     if (auto baseProjectExp = ProjectPath::downcast(base))
       { assert(!baseProjectExp->isAddrCalc()); }
     llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
@@ -176,15 +169,61 @@ public:
         if (aop->getOffset() == offset) return aop;
       }
     }
+    return nullptr;
+  }
+
+  /// @brief Finds the access path equivalent to `base!` if created before.
+  /// Otherwise returns nullptr.
+  NonRootPath* findDeref(AccessPath* base) const {
+    
+    // find `basebase!.field` instead of `basebase[.field]!` if applicable
+    if (auto baseProject = ProjectPath::downcast(base)) {
+      if (baseProject->isAddrCalc()) {
+        AccessPath* basebase = baseProject->getBase();
+        AccessPath* basebaseDeref = findDeref(basebase);
+        if (basebaseDeref == nullptr) return nullptr;
+        return findProject(basebaseDeref, baseProject->getField(), false);        
+      }
+    }
+
+    // otherwise by prefix like normal
+    llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
+    for (NonRootPath* nrp : candidates) {
+      if (DerefPath::downcast(nrp)) return nrp;
+    }
+    return nullptr;
+  }
+
+  /// @brief Finds or creates an access path equivalent to @p root.
+  AccessPath* getRoot(llvm::StringRef root) {
+    if (AccessPath* ret = findRoot(root)) return ret;
+    RootPath* ret = new RootPath(root);
+    rootPaths[root] = ret;
+    return ret;
+  }
+
+  /// @brief Finds or creates an access path equivalent to `base.field` or
+  /// `base[.field]`.
+  ProjectPath*
+  getProject(AccessPath* base, llvm::StringRef field, bool isAddrCalc) {
+    if (ProjectPath* ret = findProject(base, field, isAddrCalc)) return ret;
+    ProjectPath* ret = new ProjectPath(base, field, isAddrCalc);
+    nonRootPaths[base].push_back(ret);
+    return ret;
+  }
+
+  /// @brief Finds or creates an access path equivalent to `base.offset`.
+  ArrayOffsetPath* getArrayOffset(AccessPath* base, int offset) {
+    if (ArrayOffsetPath* ret = findArrayOffset(base, offset)) return ret;
     ArrayOffsetPath* ret = new ArrayOffsetPath(base, offset);
-    candidates.push_back(ret);
-    nonRootPaths[base] = candidates;
+    nonRootPaths[base].push_back(ret);
     return ret;
   }
 
   /// @brief Finds or creates an access path equivalent to `base!`.
   NonRootPath* getDeref(AccessPath* base) {
-    
+    if (NonRootPath* ret = findDeref(base)) return ret;
+
     // transform `basebase[.field]!` into `basebase!.field` if possible
     if (auto baseProject = ProjectPath::downcast(base)) {
       if (baseProject->isAddrCalc()) {
@@ -193,20 +232,14 @@ public:
       }
     }
 
-    // otherwise append the `!` like normal
-    llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
-    for (NonRootPath* nrp : candidates) {
-      if (DerefPath::downcast(nrp)) return nrp;
-    }
     DerefPath* ret = new DerefPath(base);
-    candidates.push_back(ret);
-    nonRootPaths[base] = candidates;
+    nonRootPaths[base].push_back(ret);
     return ret;
   }
 
   /// @brief Gets the access path that is the same as @p of except with
   /// @p prefix replaced with @p with.
-  /// @return If @p prefix is not a prefix of @p of, returns `nullptr`. 
+  /// @return If @p prefix is not a prefix of @p of, returns `nullptr`.
   AccessPath*
   replacePrefix(AccessPath* of, AccessPath* prefix, AccessPath* with) {
     if (of == prefix) return with;

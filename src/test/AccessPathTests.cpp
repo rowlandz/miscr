@@ -67,4 +67,12 @@ namespace AccessPathTests {
     assertt(path1 == path2, "B[.f1][.f2][.f3]! should equal B!.f1.f2.f3");
   }
 
+  TEST(find_methods) {
+    AccessPathManager apm;
+    auto path1 = apm.getProject(apm.getRoot("bob"), "name", false);
+    assertt(apm.findRoot("bob") == path1->getBase());
+    assertt(apm.findProject(apm.getRoot("bob"), "name", false) == path1);
+    assertt(apm.findProject(apm.getRoot("bob"), "age", false) == nullptr);
+  }
+
 }
