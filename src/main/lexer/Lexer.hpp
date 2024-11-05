@@ -108,8 +108,7 @@ private:
       else if (c == '.') tok.stepAndCapture(Token::DOT);
       else if (c == ';') tok.stepAndCapture(Token::SEMICOLON);
       else {
-        err.append("Illegal start of token.\n");
-        err.append(tok.selectionBeginLocation());
+        err << "Illegal start of token.\n" << tok.selectionBeginLocation();
         return false;
       }
       break;
@@ -207,8 +206,7 @@ private:
       if (c == '"') tok.stepAndCapture(Token::LIT_STRING);
       else if (c == '\\') tok.step(ST::STRING_BSLASH);
       else if (c == '\n') {
-        err.append("Missing end quote of string literal.\n");
-        err.append(tok.selectionLocation());
+        err << "Missing end quote.\n" << tok.selectionLocation();
         return false;
       }
       else tok.step(ST::STRING);
@@ -247,14 +245,12 @@ private:
     case ST::MULTILINE_COMMENT_STAR:
     case ST::MULTILINE_DOC_COMMENT:
     case ST::MULTILINE_DOC_COMMENT_STAR:
-      err.append("Unclosed comment at end of file.\n");
-      err.append(tok.selectionLocation());
+      err << "Unclosed comment.\n" << tok.selectionLocation();
       return false;
     
     case ST::STRING:
     case ST::STRING_BSLASH:
-      err.append("Unclosed string literal at end of file.\n");
-      err.append(tok.selectionLocation());
+      err << "Missing end quote.\n" << tok.selectionLocation();
       return false;
     
     }

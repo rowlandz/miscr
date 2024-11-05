@@ -34,12 +34,11 @@ private:
       llvm::StringRef relName = mod->getName()->asStringRef();
       std::string fqn = (scope + "::" + relName).str();
       if (auto existingModule = ont.getModule(fqn)) {
-        LocatedError err;
-        err.append("Duplicate module definition.\n");
-        err.append(_decl->getName()->getLocation());
-        err.append("Previous definition was here:\n");
-        err.append(existingModule->getName()->getLocation());
-        errors.push_back(err);
+        errors.push_back(LocatedError()
+          << "Duplicate module definition.\n" << _decl->getName()->getLocation()
+          << "Previous definition was here:\n"
+          << existingModule->getName()->getLocation()
+        );
       } else {
         ont.record(fqn, mod);
       }
@@ -49,12 +48,12 @@ private:
       llvm::StringRef relName = data->getName()->asStringRef();
       std::string fqn = (scope + "::" + relName).str();
       if (auto prevDef = ont.getDecl(fqn, Ontology::Space::FUNCTION_OR_TYPE)) {
-        LocatedError err;
-        err.append("Data type is already defined.\n");
-        err.append(_decl->getName()->getLocation());
-        err.append("Previous definition was here:\n");
-        err.append(prevDef->getName()->getLocation());
-        errors.push_back(err);
+        errors.push_back(LocatedError()
+          << "Data type is already defined.\n"
+          << _decl->getName()->getLocation()
+          << "Previous definition was here:\n"
+          << prevDef->getName()->getLocation()
+        );
       } else {
         ont.record(fqn, data);
       }
@@ -63,19 +62,19 @@ private:
       llvm::StringRef relName = func->getName()->asStringRef();
       std::string fqn = (scope + "::" + relName).str();
       if (auto prevDef = ont.getFunctionOrConstructor(fqn)) {
-        LocatedError err;
-        err.append("Function is already defined.\n");
-        err.append(_decl->getName()->getLocation());
-        err.append("Previous definition was here:\n");
-        err.append(prevDef->getName()->getLocation());
-        errors.push_back(err);
+        errors.push_back(LocatedError()
+          << "Function is already defined.\n" << _decl->getName()->getLocation()
+          << "Previous definition was here:\n"
+          << prevDef->getName()->getLocation()
+        );
       }
       if (relName.equals("main")) {
         if (!ont.entryPoint.empty()) {
-          LocatedError err;
-          err.append("There are multiple program entry points.\n");
-          err.append(_decl->getName()->getLocation());
-          // TODO: add "previous entry point is here ..."
+          errors.push_back(LocatedError()
+            << "There are multiple program entry points.\n"
+            << _decl->getName()->getLocation()
+            // TODO: add "previous entry point is here ..."
+          );
           return;
         }
         ont.recordMapName(fqn, func, "main");
@@ -150,10 +149,9 @@ private:
       }
       scope = getQualifier(scope);
     }
-    LocatedError err;
-    err.append("Function or data type not found.\n");
-    err.append(functionName->getLocation());
-    errors.push_back(err);
+    errors.push_back(LocatedError()
+      << "Function or data type not found.\n" << functionName->getLocation()
+    );
   }
 
   /// @brief Fully-qualifies `name`, which appears in `scope`, by searching for
@@ -165,10 +163,9 @@ private:
       if (d != nullptr) { name->set(fqName); return; }
       scope = getQualifier(scope);
     }
-    LocatedError err;
-    err.append("Failed to canonicalize name.\n");
-    err.append(name->getLocation());
-    errors.push_back(err);
+    errors.push_back(LocatedError()
+      << "Failed to canonicalize name.\n" << name->getLocation()
+    );
   }
 
   /// Returns a reference to the qualifier of this name. Returns empty string

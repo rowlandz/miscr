@@ -62,12 +62,10 @@ public:
     for (auto owner : ownerCreations) {
       Location use = ownerUses.lookup(owner.first);
       if (!use.exists()) {
-        LocatedError err;
-        err.append("Owned reference ");
-        err.append(owner.first->asString());
-        err.append(" is never used.\n");
-        err.append(owner.second);
-        errors.push_back(err);
+        errors.push_back(LocatedError()
+          << "Owned reference " << owner.first->asString()
+          << " is never used.\n" << owner.second
+        );
       }
     }
   }
@@ -241,14 +239,10 @@ private:
     if (ap == nullptr) return;
     Location useLoc = ownerUses.lookup(ap);
     if (useLoc.exists()) {
-      LocatedError err;
-      err.append("Owned reference ");
-      err.append(ap->asString());
-      err.append(" is already used here:\n");
-      err.append(useLoc);
-      err.append("so it cannot be borrowed later:\n");
-      err.append(loc);
-      errors.push_back(err);
+      errors.push_back(LocatedError()
+        << "Owned reference " << ap->asString() << " is already used here:\n"
+        << useLoc << "so it cannot be borrowed later:\n" << loc
+      );
     }
   }
 
@@ -263,17 +257,19 @@ private:
     if (path == nullptr) return {};
     llvm::SmallVector<AccessPath*> ret;
     for (auto owner : ownedExtensionsOf(path, v)) {
-      assert(ownerCreations.lookup(owner).exists());
+      if (!ownerCreations.lookup(owner).exists()) {
+        errors.push_back(LocatedError()
+          << "Cannot use owned reference " << owner->asString()
+          << " locked behind a borrow.\n" << loc
+        );
+      }
       Location useLoc = ownerUses.lookup(owner);
       if (useLoc.exists()) {
-        LocatedError err;
-        err.append("Owned reference ");
-        err.append(owner->asString());
-        err.append(" is already used here:\n");
-        err.append(useLoc);
-        err.append("so it cannot be used later:\n");
-        err.append(loc);
-        errors.push_back(err);
+        errors.push_back(LocatedError()
+          << "Owned reference " << owner->asString()
+          << " is already used here:\n" << useLoc
+          << " so it cannot be used later:\n" << loc
+        );
       } else {
         ownerUses[owner] = loc;
         ret.push_back(owner);

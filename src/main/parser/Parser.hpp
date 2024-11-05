@@ -58,19 +58,13 @@ public:
   /// @brief Returns the parser error after an unsuccessful parse.
   LocatedError getError() {
     LocatedError err('^');
-    if (errTryingToParse != nullptr) {
-      err.append("I got stuck parsing ");
-      err.append(errTryingToParse);
-      err.append(".");
-    } else {
-      err.append("I got stuck while parsing.\n");
-    }
-    if (expectedTokens != nullptr) {
-      err.append(" I was expecting ");
-      err.append(expectedTokens);
-      err.append(" next.\n");
-    }
-    err.append(p->loc);
+    if (errTryingToParse != nullptr)
+      { err << "I got stuck parsing " << errTryingToParse << "."; }
+    else
+      { err << "I got stuck while parsing.\n"; }
+    if (expectedTokens != nullptr)
+      { err << " I was expecting " << expectedTokens << " next.\n"; }
+    err << p->loc;
     return err;
   }
 

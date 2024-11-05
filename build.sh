@@ -3,13 +3,18 @@
 HELPSTRING="Hello!
 
 Usage:
-  $0             display this help message
-  $0 clean       delete previously built files
-  $0 compiler    build the compiler
-  $0 playground  build the playground
-  $0 tests       build unit tests
+  $0                           display this help message
+  $0 clean                     delete previously built files
+  $0 compiler                  build the compiler
+  $0 playground                build the playground
+  $0 tests [TESTFILE.cpp...]   build unit tests
+
+Options:
+  TESTFILE   A file containing unit tests. If none are listed, then the tests
+             subcommand will use all .cpp files in src/test.
 "
 
+RED="\x1B[31m"
 BLUE="\x1B[34m"
 YELLOW="\x1B[33m"
 NOCOLOR="\x1B[0m"
@@ -33,6 +38,9 @@ if [ $# = 0 ]; then
   echo -n "$HELPSTRING"
 
 
+########################################
+### Subcommand: clean
+###
 elif [ $1 = "clean" ]; then
   if [ $# -gt 1 ]; then
     printExtraArgumentsMessage clean $2
@@ -40,9 +48,14 @@ elif [ $1 = "clean" ]; then
   if [ -f $DIR/compiler ]; then parrot rm $DIR/compiler; fi
   if [ -f $DIR/playground ]; then parrot rm $DIR/playground; fi
   if [ -f $DIR/tests ]; then parrot rm $DIR/tests; fi
-  if [ -f $DIR/src/test/testmain.cpp ]; then parrot rm $DIR/src/test/testmain.cpp; fi
+  if [ -f $DIR/src/test/testmain.cpp ]; then
+    parrot rm $DIR/src/test/testmain.cpp;
+  fi
 
 
+########################################
+### Subcommand: compiler
+###
 elif [ $1 = "compiler" ]; then
   if [ $# -gt 1 ]; then
     printExtraArgumentsMessage compile $2
@@ -51,6 +64,9 @@ elif [ $1 = "compiler" ]; then
   parrot clang++ -o $DIR/compiler $DIR/src/main/main.cpp -I$DIR/src/main $LLVM_CONFIG_ARGS
 
 
+########################################
+### Subcommand: playground
+###
 elif [ $1 = "playground" ]; then
   if [ $# -gt 1 ]; then
     printExtraArgumentsMessage "build the playground" $2
@@ -59,16 +75,39 @@ elif [ $1 = "playground" ]; then
   parrot clang++ -o $DIR/playground $DIR/src/play/main.cpp -I$DIR/src/main $LLVM_CONFIG_ARGS
 
 
+########################################
+### Subcommand: tests
+###
 elif [ $1 = "tests" ]; then
+
+  # validate test files (if given any)
   if [ $# -gt 1 ]; then
-    printExtraArgumentsMessage "build tests" $2
+    TESTFILES=${@:2}
+    for TESTFILE in ${TESTFILES[@]}; do
+      if [ ! -f $TESTFILE ]; then
+        echo -e "$RED! $TESTFILE does not exist$NOCOLOR"
+        exit 1
+      fi
+      if [[ $TESTFILE != *.cpp ]]; then
+        echo -e "$RED! $TESTFILE does not end in .cpp$NOCOLOR"
+        exit 1
+      fi
+    done
   fi
+
+  # delete existing testmain.cpp
   if [ -f $DIR/src/test/testmain.cpp ]; then
     echo -e "$YELLOW! $DIR/src/test/testmain.cpp already exists, so I'll overwrite it.$NOCOLOR"
     rm $DIR/src/test/testmain.cpp
   fi
+
+  # grab all src/test/*.cpp files if no test files given
+  if [ $# -le 1 ]; then
+    TESTFILES=($DIR/src/test/*.cpp)
+  fi
+
+  # generate testmain.cpp
   echo -e "$BLUE~ Making $DIR/src/test/testmain.cpp$NOCOLOR"
-  TESTFILES=($DIR/src/test/*.cpp)
   for TESTFILE in ${TESTFILES[@]}; do
     BASENAME=$(basename $TESTFILE)
     echo "#include <$BASENAME>" >> $DIR/src/test/testmain.cpp
@@ -80,11 +119,18 @@ elif [ $1 = "tests" ]; then
     echo -en "\n  | $GROUPNAME::testGroup.runAll()" >> $DIR/src/test/testmain.cpp
   done
   echo -e ";\n}" >> $DIR/src/test/testmain.cpp
-  LLVM_CONFIG_ARGS="-I/usr/lib/llvm-14/include -std=c++14 -L/usr/lib/llvm-14/lib -lLLVM-14"
-  parrot clang++ -o $DIR/tests $DIR/src/test/testmain.cpp -I$DIR/src/test -I$DIR/src/main $LLVM_CONFIG_ARGS
+
+  # compile testmain.cpp into tests
+  parrot clang++ -o $DIR/tests $DIR/src/test/testmain.cpp -I$DIR/src/test \
+    -I$DIR/src/main -I/usr/lib/llvm-14/include -std=c++14 \
+    -L/usr/lib/llvm-14/lib -lLLVM-14
 
 
+########################################
+### Unrecognized subcommand
+###
 else
   echo "Sorry, I don't understand those arguments."
   echo "You can run this script with no arguments to get a help message."
+
 fi

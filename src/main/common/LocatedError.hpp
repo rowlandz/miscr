@@ -15,7 +15,7 @@
 /// @brief An error message that can pretty-print source code snippets. The
 /// user is provided complete control over the message text as well as a helper
 /// method for adding source code snippets. The message is constructed lazily
-/// by efficient `append` methods and `render`ed on demand.
+/// by the efficient stream `<<` operator and `render`ed on demand.
 class LocatedError {
 public:
 
@@ -24,7 +24,7 @@ public:
   /// @param omitSignifier If true, the initial `error: ` signifier is omitted.
   LocatedError(char underlineChar = '\0', bool omitSignifier = false) {
     this->underlineChar = underlineChar;
-    if (!omitSignifier) append("\x1B[1;31merror\x1B[37m:\x1B[0m ");
+    if (!omitSignifier) *this << "\x1B[1;31merror\x1B[37m:\x1B[0m ";
   }
 
   /// @brief Appends @p text to this error message. The text is not copied into
@@ -32,12 +32,17 @@ public:
   /// freed. In practice, this should only be used when @p text is a static
   /// string literal.
   template<unsigned long N>
-  void append(const char (&text)[N])
-    { fragments.push_back(Fragment(llvm::StringRef(text, N-1), true)); }
+  LocatedError& operator<<(const char (&text)[N]) {
+    fragments.push_back(Fragment(llvm::StringRef(text, N-1), true));
+    return *this;
+  }
 
   /// @brief Appends @p text to this error message. The text is copied into an
   /// owned buffer.
-  void append(llvm::StringRef text){fragments.push_back(Fragment(text, false));}
+  LocatedError& operator<<(llvm::StringRef text) {
+    fragments.push_back(Fragment(text, false));
+    return *this;
+  }
 
   /// @brief Appends a code snippet to this error message. Code snippets should
   /// only be added directly after newlines, otherwise the text won't line up
@@ -47,7 +52,8 @@ public:
   /// 42 |   somefunctioncall(arg1, arg2, arg3);
   ///                         ^^^^
   /// ```
-  void append(Location loc) { fragments.push_back(Fragment(loc)); }
+  LocatedError& operator<<(Location loc)
+    { fragments.push_back(Fragment(loc)); return *this; }
 
   /// @brief Returns a `std::string` representation of this error message.
   std::string render(const char* srcText, const LocationTable& lt) {

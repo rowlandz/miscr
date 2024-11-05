@@ -120,14 +120,10 @@ public:
   TVar unifyWith(Exp* _exp, TVar ty) {
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, ty)) return inferredTy;
-    LocatedError err;
-    err.append("Cannot unify ");
-    err.append(tc.TVarToString(inferredTy));
-    err.append(" with type ");
-    err.append(tc.TVarToString(ty));
-    err.append(".\n");
-    err.append(_exp->getLocation());
-    errors.push_back(err);
+    errors.push_back(LocatedError()
+      << "Cannot unify " << tc.TVarToString(inferredTy) << " with type "
+      << tc.TVarToString(ty) << ".\n" << _exp->getLocation()
+    );
     return inferredTy;
   }
 
@@ -137,14 +133,11 @@ public:
   TVar expectTypeToBe(Exp* _exp, TVar expectedTy) {
     TVar inferredTy = unifyExp(_exp);
     if (unify(inferredTy, expectedTy)) return inferredTy;
-    LocatedError err;
-    err.append("Inferred type is ");
-    err.append(tc.TVarToString(inferredTy));
-    err.append(" but expected type ");
-    err.append(tc.TVarToString(expectedTy));
-    err.append(".\n");
-    err.append(_exp->getLocation());
-    errors.push_back(err);
+    errors.push_back(LocatedError()
+      << "Inferred type is " << tc.TVarToString(inferredTy)
+      << " but expected type " << tc.TVarToString(expectedTy) << ".\n"
+      << _exp->getLocation()
+    );
     return inferredTy;
   }
 
@@ -212,16 +205,12 @@ public:
           ++idx;
         }
         if (idx < argList.size() || idx < paramList.size()) {
-          LocatedError err;
-          err.append("Arity mismatch for function ");
-          err.append(callee->getName()->asStringRef());
-          err.append(". Expected ");
-          err.append(std::to_string(paramList.size()));
-          err.append(" but got ");
-          err.append(std::to_string(argList.size()));
-          err.append(".\n");
-          err.append(e->getLocation());
-          errors.push_back(err);
+          errors.push_back(LocatedError()
+            << "Arity mismatch for function "
+            << callee->getName()->asStringRef() << ". Expected "
+            << std::to_string(paramList.size()) << " but got "
+            << std::to_string(argList.size()) << ".\n" << e->getLocation()
+          );
         }
         /*** set this expression's type to the callee's return type ***/
         e->setTVar(tc.freshFromTypeExp(callee->getReturnType()));
@@ -236,16 +225,12 @@ public:
           ++idx;
         }
         if (idx < args.size() || idx < params.size()) {
-          LocatedError err;
-          err.append("Arity mismatch for constructor ");
-          err.append(callee->getName()->asStringRef());
-          err.append(". Expected ");
-          err.append(std::to_string(params.size()));
-          err.append(" but got ");
-          err.append(std::to_string(args.size()));
-          err.append(".\n");
-          err.append(e->getLocation());
-          errors.push_back(err);
+          errors.push_back(LocatedError()
+            << "Arity mismatch for constructor "
+            << callee->getName()->asStringRef() << ". Expected "
+            << std::to_string(params.size()) << " but got "
+            << std::to_string(args.size()) << ".\n" << e->getLocation()
+          );
         }
         e->setTVar(tc.fresh(Type::name(callee->getName())));
       }
@@ -271,10 +256,9 @@ public:
       if (ty.exists())
         e->setTVar(ty);
       else {
-        LocatedError err;
-        err.append("Unbound identifier.\n");
-        err.append(e->getLocation());
-        errors.push_back(err);
+        errors.push_back(LocatedError()
+          << "Unbound identifier.\n" << e->getLocation()
+        );
       }
     }
 
@@ -326,20 +310,17 @@ public:
           if (TypeExp* pt = dd->getFields()->findParamType(field)) {
             e->setTVar(tc.fresh(Type::bref(tc.freshFromTypeExp(pt))));
           } else {
-            LocatedError err;
-            err.append(field);
-            err.append(" is not a field of data type ");
-            err.append(dd->getName()->asStringRef());
-            err.append(".\n");
-            err.append(e->getLocation());
-            errors.push_back(err);
+            errors.push_back(LocatedError()
+              << field << " is not a field of data type "
+              << dd->getName()->asStringRef() << ".\n" << e->getLocation()
+            );
             e->setTVar(tc.fresh());
           }
         } else {
-          LocatedError err;
-          err.append("Could not infer what data type is being indexed.\n");
-          err.append(e->getLocation());
-          errors.push_back(err);
+          errors.push_back(LocatedError()
+            << "Could not infer what data type is being indexed.\n"
+            << e->getLocation()
+          );
           e->setTVar(tc.fresh());
         }
       } else {                                                // base.field form
@@ -353,20 +334,17 @@ public:
           if (TypeExp* pt = dd->getFields()->findParamType(field)) {
             e->setTVar(tc.freshFromTypeExp(pt));
           } else {
-            LocatedError err;
-            err.append(field);
-            err.append(" is not a field of data type ");
-            err.append(dd->getName()->asStringRef());
-            err.append(".\n");
-            err.append(e->getLocation());
-            errors.push_back(err);
+            errors.push_back(LocatedError()
+              << field << " is not a field of data type "
+              << dd->getName()->asStringRef() << ".\n" << e->getLocation()
+            );
             e->setTVar(tc.fresh());
           }
         } else {
-          LocatedError err;
-          err.append("Could not infer what data type is being accessed.\n");
-          err.append(e->getLocation());
-          errors.push_back(err);
+          errors.push_back(LocatedError()
+            << "Could not infer what data type is being accessed.\n"
+            << e->getLocation()
+          );
           e->setTVar(tc.fresh());
         }
       }
