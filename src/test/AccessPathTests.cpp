@@ -70,9 +70,23 @@ namespace AccessPathTests {
   TEST(find_methods) {
     AccessPathManager apm;
     auto path1 = apm.getProject(apm.getRoot("bob"), "name", false);
-    assertt(apm.findRoot("bob") == path1->getBase());
+    assertt(apm.findRoot("bob") != nullptr);
     assertt(apm.findProject(apm.getRoot("bob"), "name", false) == path1);
     assertt(apm.findProject(apm.getRoot("bob"), "age", false) == nullptr);
+  }
+
+  // create alias   bob.name |-> bobname
+  // create alias   bobname! |-> bobnamederef
+  // assert bobnamederef == bob.name!
+  TEST(transitive_alias) {
+    AccessPathManager apm;
+    auto bobname = apm.getRoot("bobname");
+    apm.aliasProject(apm.getRoot("bob"), "name", false, bobname);
+    auto bobnamederef = apm.getRoot("bobnamederef");
+    apm.aliasDeref(bobname, bobnamederef);
+    assertt(bobnamederef ==
+      apm.getDeref(apm.getProject(apm.getRoot("bob"), "name", false)));
+    assertt(bobnamederef->asString() == "bobnamederef");
   }
 
 }

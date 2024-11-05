@@ -13,8 +13,8 @@ class AccessPathManager;
 ///
 /// An example is something like `myval.field1!.field2!`
 ///
-/// AccessPath objects must be created, managed, and destroyed by an
-/// AccessPathManager.
+/// AccessPath objects are uniqued and therefore must be created, managed, and
+/// destroyed by an AccessPathManager.
 class AccessPath {
 public:
   enum Tag { ROOT, PROJECT, ARRAY_OFFSET, DEREF };
@@ -108,9 +108,21 @@ public:
     { return ap->tag == DEREF ? static_cast<DerefPath*>(ap) : nullptr; }
 };
 
-/// @brief Manages the memory of AccessPath objects. AccessPath objects are
-/// uniqued, so comparing the pointer values of two access paths should be
-/// equivalent to a deep comparison.
+/// @brief Enforces the uniqueness of AccessPath objects.
+///
+/// AccessPaths are _uniqued_, meaning that any two distinct AccessPath objects
+/// cannot be structurally equivalent. This enables structural equivalence to
+/// be checked using simple pointer comparison. To achieve this, all creation
+/// of access paths must be done via the `get` methods of this class.
+///
+/// All access paths are eagerly reduced to a "standard form" by applying the
+/// following two rules whenever possible:
+///   - `prefix[.field]!` is replaced with `prefix!.field`
+///   - aliases are replaced with their expansions
+///
+/// Access paths of the form `prefix[.field1].field2` or `prefix[.field].offset`
+/// must _never_ be created; immediate termination will occur if an attempt is
+/// made to do so.
 class AccessPathManager {
 public:
 
@@ -136,13 +148,13 @@ public:
   /// @brief Finds the access path @p root if it has been created before.
   /// Otherwise returns nullptr. 
   AccessPath* findRoot(llvm::StringRef root) const {
-    if (RootPath* path = rootPaths.lookup(root)) return path;
+    if (RootPath* path = rootPaths.lookup(root)) return dealias(path);
     return nullptr;
   }
 
   /// @brief Finds the access path equivalent to `base.field` or `base[.field]`
   /// if it has been created before. Otherwise returns nullptr.
-  ProjectPath*
+  AccessPath*
   findProject(AccessPath* base, llvm::StringRef field, bool isAddrCalc) const {
     if (!isAddrCalc) {
       if (auto baseProjectExp = ProjectPath::downcast(base))
@@ -152,7 +164,7 @@ public:
     for (NonRootPath* nrp : candidates) {
       if (auto sop = ProjectPath::downcast(nrp)) {
         if (sop->isAddrCalc() == isAddrCalc && sop->getField() == field)
-          return sop;
+          return dealias(sop);
       }
     }
     return nullptr;
@@ -160,13 +172,13 @@ public:
 
   /// @brief Finds the access path equivalent to `base.offset` if it has been
   /// created before. Otherwise returns nullptr.
-  ArrayOffsetPath* findArrayOffset(AccessPath* base, int offset) const {
+  AccessPath* findArrayOffset(AccessPath* base, int offset) const {
     if (auto baseProjectExp = ProjectPath::downcast(base))
       { assert(!baseProjectExp->isAddrCalc()); }
     llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
     for (NonRootPath* nrp : candidates) {
       if (auto aop = ArrayOffsetPath::downcast(nrp)) {
-        if (aop->getOffset() == offset) return aop;
+        if (aop->getOffset() == offset) return dealias(aop);
       }
     }
     return nullptr;
@@ -174,7 +186,7 @@ public:
 
   /// @brief Finds the access path equivalent to `base!` if created before.
   /// Otherwise returns nullptr.
-  NonRootPath* findDeref(AccessPath* base) const {
+  AccessPath* findDeref(AccessPath* base) const {
     
     // find `basebase!.field` instead of `basebase[.field]!` if applicable
     if (auto baseProject = ProjectPath::downcast(base)) {
@@ -189,7 +201,7 @@ public:
     // otherwise by prefix like normal
     llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
     for (NonRootPath* nrp : candidates) {
-      if (DerefPath::downcast(nrp)) return nrp;
+      if (DerefPath::downcast(nrp)) return dealias(nrp);
     }
     return nullptr;
   }
@@ -204,25 +216,25 @@ public:
 
   /// @brief Finds or creates an access path equivalent to `base.field` or
   /// `base[.field]`.
-  ProjectPath*
+  AccessPath*
   getProject(AccessPath* base, llvm::StringRef field, bool isAddrCalc) {
-    if (ProjectPath* ret = findProject(base, field, isAddrCalc)) return ret;
+    if (AccessPath* ret = findProject(base, field, isAddrCalc)) return ret;
     ProjectPath* ret = new ProjectPath(base, field, isAddrCalc);
     nonRootPaths[base].push_back(ret);
     return ret;
   }
 
   /// @brief Finds or creates an access path equivalent to `base.offset`.
-  ArrayOffsetPath* getArrayOffset(AccessPath* base, int offset) {
-    if (ArrayOffsetPath* ret = findArrayOffset(base, offset)) return ret;
+  AccessPath* getArrayOffset(AccessPath* base, int offset) {
+    if (AccessPath* ret = findArrayOffset(base, offset)) return ret;
     ArrayOffsetPath* ret = new ArrayOffsetPath(base, offset);
     nonRootPaths[base].push_back(ret);
     return ret;
   }
 
   /// @brief Finds or creates an access path equivalent to `base!`.
-  NonRootPath* getDeref(AccessPath* base) {
-    if (NonRootPath* ret = findDeref(base)) return ret;
+  AccessPath* getDeref(AccessPath* base) {
+    if (AccessPath* ret = findDeref(base)) return ret;
 
     // transform `basebase[.field]!` into `basebase!.field` if possible
     if (auto baseProject = ProjectPath::downcast(base)) {
@@ -235,6 +247,43 @@ public:
     DerefPath* ret = new DerefPath(base);
     nonRootPaths[base].push_back(ret);
     return ret;
+  }
+
+  /// @brief Sets access path `root` as an alias for @p expansion. `root` must
+  /// not be created yet.
+  void aliasRoot(llvm::StringRef root, AccessPath* expansion) {
+    assert(findRoot(root) == nullptr && "existing root path cannot be alias");
+    RootPath* alias = new RootPath(root);
+    rootPaths[root] = alias;
+    rewrites[alias] = expansion;
+  }
+
+  /// @brief Sets access path `base.field` or `base[.field]` as an alias for
+  /// @p expansion. The alias must not be created yet.
+  void aliasProject(AccessPath* base, llvm::StringRef field, bool isAddrCalc,
+                    AccessPath* expansion) {
+    assert(findProject(base, field, isAddrCalc) == nullptr);
+    ProjectPath* alias = new ProjectPath(base, field, isAddrCalc);
+    nonRootPaths[base].push_back(alias);
+    rewrites[alias] = expansion;
+  }
+
+  /// @brief Sets access path `base.offset` as an alias for @p expansion.
+  /// `base.offset` must not be created yet.
+  void aliasArrayOffset(AccessPath* base, int offset, AccessPath* expansion) {
+    assert(findArrayOffset(base, offset) == nullptr);
+    ArrayOffsetPath* alias = new ArrayOffsetPath(base, offset);
+    nonRootPaths[base].push_back(alias);
+    rewrites[alias] = expansion;
+  }
+
+  /// @brief Sets access path `base!` as an alias for @p expansion. `base!`
+  /// must not be created yet.
+  void aliasDeref(AccessPath* base, AccessPath* expansion) {
+    assert(findDeref(base) == nullptr && "existing deref path cannot be alias");
+    DerefPath* alias = new DerefPath(base);
+    nonRootPaths[base].push_back(alias);
+    rewrites[alias] = expansion;
   }
 
   /// @brief Gets the access path that is the same as @p of except with
@@ -267,6 +316,16 @@ private:
   /// @brief Stores all non-root paths. For uniquing purposes, non-root paths
   /// are indexed by their prefix.
   llvm::DenseMap<AccessPath*, llvm::SmallVector<NonRootPath*>> nonRootPaths;
+
+  /// @brief Maps alias paths to their expansions. The key-set and value-set
+  /// must be disjoint. No alias should ever escape this class.
+  llvm::DenseMap<AccessPath*, AccessPath*> rewrites;
+
+  /// @brief Resolves @p path if it is an alias, or returns @p path if not.
+  AccessPath* dealias(AccessPath* path) const {
+    if (AccessPath* ret = rewrites.lookup(path)) return ret;
+    return path;
+  }
 };
 
 std::string AccessPath::asString() {

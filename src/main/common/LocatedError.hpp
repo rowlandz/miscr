@@ -33,7 +33,7 @@ public:
   /// string literal.
   template<unsigned long N>
   void append(const char (&text)[N])
-    { fragments.push_back(Fragment(llvm::StringRef(text, N), true)); }
+    { fragments.push_back(Fragment(llvm::StringRef(text, N-1), true)); }
 
   /// @brief Appends @p text to this error message. The text is copied into an
   /// owned buffer.

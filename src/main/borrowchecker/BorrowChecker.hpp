@@ -109,11 +109,8 @@ public:
         for (int i = 0; i < args.size(); ++i) {
           llvm::StringRef fieldName = fields[i].first->asStringRef();
           AccessPath* argAP = check(args[i]);
-          auto usedAPs = use(argAP, args[i]->getTVar(), args[i]->getLocation());
-          for (AccessPath* usedAP : usedAPs) {
-            AccessPath* newPrefix = apm.getProject(ret, fieldName, false);
-            AccessPath* newAP = apm.replacePrefix(usedAP, argAP, newPrefix);
-            createOwner(newAP, e->getLocation());
+          if (argAP != nullptr) {
+            apm.aliasProject(ret, fieldName, false, argAP);
           }
         }
         return ret;
@@ -132,27 +129,34 @@ public:
     else if (DecimalLit::downcast(_e)) {
       return nullptr;
     }
+    else if (auto e = DerefExp::downcast(_e)) {
+      AccessPath* ofAP = check(e->getOf());
+      return apm.getDeref(ofAP);
+    }
     else if (IntLit::downcast(_e)) {
       return nullptr;
     }
     else if (auto e = NameExp::downcast(_e)) {
-      llvm::StringRef name = e->getName()->asStringRef();
-      return apm.getRoot(name);
+      return apm.getRoot(e->getName()->asStringRef());
     }
     else if (auto e = LetExp::downcast(_e)) {
       Exp* def = e->getDefinition();
       AccessPath* defAP = check(def);
-      auto usedAPs = use(defAP, def->getTVar(), def->getLocation());
-      for (AccessPath* usedAP : usedAPs) {
-        AccessPath* newPrefix = apm.getRoot(e->getBoundIdent()->asStringRef());
-        AccessPath* newAP = apm.replacePrefix(usedAP, defAP, newPrefix);
-        createOwner(newAP, e->getBoundIdent()->getLocation());
-      }
-      return nullptr;
+      if (defAP != nullptr)
+        { apm.aliasRoot(e->getBoundIdent()->asStringRef(), defAP); }
+      return defAP;
     }
     else if (auto e = ProjectExp::downcast(_e)) {
       AccessPath* baseAP = check(e->getBase());
-      return apm.getProject(baseAP, e->getFieldName()->asStringRef(), false);
+      llvm::StringRef field = e->getFieldName()->asStringRef();
+      return apm.getProject(baseAP, field, e->isAddrCalc());
+    }
+    else if (auto e = RefExp::downcast(_e)) {
+      Exp* initExp = e->getInitializer();
+      AccessPath* initAP = check(initExp);
+      AccessPath* ret = apm.getRoot(freshInternalVar());
+      if (initAP != nullptr) apm.aliasDeref(ret, initAP);
+      return ret;
     }
     else if (StringLit::downcast(_e)) {
       return nullptr;

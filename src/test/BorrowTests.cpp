@@ -97,5 +97,61 @@ namespace BorrowTests {
     );
   }
 
+  TEST(ref_then_deref) {
+    declsShouldPass(
+      "extern func alloc(): #i8;\n"
+      "extern func free(ptr: #i8): unit;\n"
+      "func foo(): unit = {\n"
+      "  let x = &&alloc();\n"
+      "  let y = x!;\n"
+      "  free(y!);\n"
+      "};"
+    );
+  }
+
+  TEST(double_free_with_derefs) {
+    declsShouldFail(
+      "extern func alloc(): #i8;\n"
+      "extern func free2(p1: #i8, p2: #i8): unit;\n"
+      "func foo(): unit = {\n"
+      "  let x = &&alloc();\n"
+      "  let y = x!;\n"
+      "  free2(y!, x!!);\n"
+      "};"
+    );
+  }
+
+  TEST(let_is_not_a_use) {
+    declsShouldPass(
+      "func foo(x: #i8): #i8 = {\n"
+      "  let y = x;\n"
+      "  x\n"
+      "};"
+    );
+  }
+
+  TEST(ref_is_not_a_use) {
+    declsShouldFail("func foo(x: #i8): &#i8 = &x;");
+    declsShouldPass(
+      "func foo(x: #i8): #i8 = {\n"
+      "  let y = &x;\n"
+      "  let z = &x;\n"
+      "  z!"
+      "};"
+    );
+  }
+
+  TEST(sneaky_proj_deref_double_use) {
+    declsShouldFail(
+      "data Thing(fst: #i8)\n"
+      "extern func alloc(): #i8;\n"
+      "extern func free(ptr: #i8): unit;\n"
+      "func foo(): unit = {\n"
+      "  let p = &Thing(alloc());\n"
+      "  free(p!.fst);\n"
+      "  free(p[.fst]!);\n"
+      "};"
+    );
+  }
 
 }
