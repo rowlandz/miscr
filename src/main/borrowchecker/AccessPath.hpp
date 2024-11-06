@@ -125,25 +125,10 @@ public:
 /// made to do so.
 class AccessPathManager {
 public:
-
   AccessPathManager() {}
-
-  ~AccessPathManager() {
-    for (llvm::StringRef root : rootPaths.keys()) {
-      delete rootPaths[root];
-    }
-    for (auto pair : nonRootPaths) {
-      for (NonRootPath* nrp : pair.getSecond()) {
-        if (auto path = ProjectPath::downcast(nrp)) {
-          delete path;
-        } else if (auto path = ArrayOffsetPath::downcast(nrp)) {
-          delete path;
-        } else if (auto path = DerefPath::downcast(nrp)) {
-          delete path;
-        } else llvm_unreachable("Unrecognized NonRootPath variant.");
-      }
-    }
-  }
+  ~AccessPathManager() { clear(); }
+  AccessPathManager(const AccessPathManager&) = delete;
+  AccessPathManager& operator=(const AccessPathManager&) = delete;
 
   /// @brief Finds the access path @p root if it has been created before.
   /// Otherwise returns nullptr. 
@@ -306,6 +291,24 @@ public:
       if (ret == nullptr) return nullptr;
       return getDeref(ret);
     } else llvm_unreachable("unexpected case");
+  }
+
+  /// @brief Resets this manager object back to its initially-created state.
+  void clear() {
+    for (llvm::StringRef root : rootPaths.keys()) {
+      delete rootPaths[root];
+    }
+    for (auto pair : nonRootPaths) {
+      for (NonRootPath* nrp : pair.getSecond()) {
+        if (auto path = ProjectPath::downcast(nrp)) {
+          delete path;
+        } else if (auto path = ArrayOffsetPath::downcast(nrp)) {
+          delete path;
+        } else if (auto path = DerefPath::downcast(nrp)) {
+          delete path;
+        } else llvm_unreachable("Unrecognized NonRootPath variant.");
+      }
+    }
   }
 
 private:

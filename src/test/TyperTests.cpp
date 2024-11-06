@@ -102,7 +102,7 @@ namespace TyperTests {
   }
 
   TEST(store_expression) {
-    expShouldHaveType("{ let x = &0; x := x! + 42 }", "numeric");
+    expShouldHaveType("{ let x = &0; x := x! + 42 }", "unit");
   }
 
   TEST(string_literal) {

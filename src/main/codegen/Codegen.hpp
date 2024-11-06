@@ -40,10 +40,9 @@ public:
     }
   }
 
-  ~Codegen() {
-    delete mod;
-    delete b;
-  }
+  ~Codegen() { delete mod; delete b; }
+  Codegen(const Codegen&) = delete;
+  Codegen& operator=(const Codegen&) = delete;
 
   llvm::Type* genType(TVar tvar) {
     Type ty = tyctx.resolve(tvar).second;

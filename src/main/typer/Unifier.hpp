@@ -360,7 +360,7 @@ public:
       TVar lhsTy = tc.fresh(Type::bref(retTy));
       unifyWith(e->getLHS(), lhsTy);
       unifyWith(e->getRHS(), retTy);
-      e->setTVar(retTy);
+      e->setTVar(tc.fresh(Type::unit()));
     }
 
     else if (auto e = StringLit::downcast(_e)) {
