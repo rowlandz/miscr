@@ -38,7 +38,8 @@ public:
   /// @brief Main borrow checking function for a function. The `unusedPaths`,
   /// `usedPaths`, and `apm` are cleared.
   void checkFunctionDecl(FunctionDecl* funcDecl) {
-    if (funcDecl->getBody() == nullptr) return;
+    Exp* body = funcDecl->getBody();
+    if (body == nullptr) return;
     unusedPaths.clear();
     usedPaths.clear();
     apm.clear();
@@ -50,22 +51,28 @@ public:
       }
     }
 
-    AccessPath* retAP = check(funcDecl->getBody());
+    AccessPath* retAP = check(body);
     // TODO: make helper function to narrow the location for block exps
     Location loc;
-    if (auto block = BlockExp::downcast(funcDecl->getBody()))
+    if (auto block = BlockExp::downcast(body))
       loc = block->getStatements()->asArrayRef().back()->getLocation();
     else
-      loc = funcDecl->getBody()->getLocation();
-    for (AccessPath* ext : looseExtensionsOf(retAP, funcDecl->getBody()->getTVar())) {
+      loc = body->getLocation();
+    for (AccessPath* ext : looseExtensionsOf(retAP, body->getTVar()))
       use(ext, loc);
-    }
 
     // produce errors for any remaining unused paths
     for (auto unused : unusedPaths)
       errors.push_back(LocatedError()
         << "Owned reference " << unused.first->asString()
         << " is never used.\n" << unused.second
+      );
+
+    // produce errors for any remaining moved paths
+    for (auto moved : movedPaths)
+      errors.push_back(LocatedError()
+        << "Moved value " << moved.first->asString() << " is never replaced.\n"
+        << moved.second
       );
   }
 
@@ -149,6 +156,16 @@ public:
     else if (IntLit::downcast(_e)) {
       return nullptr;
     }
+    else if (auto e = MoveExp::downcast(_e)) {
+      AccessPath* refAP = check(e->getRefExp());
+      auto loosePaths = looseExtensionsOf(apm.getDeref(refAP), e->getTVar());
+      for (AccessPath* loosePath : loosePaths) {
+        move(loosePath, e->getRefExp()->getLocation());
+      }
+      AccessPath* ret = apm.getRoot(freshInternalVar());
+      unusedPaths[ret] = e->getLocation();
+      return ret;
+    }
     else if (auto e = NameExp::downcast(_e)) {
       return apm.getRoot(e->getName()->asStringRef());
     }
@@ -170,6 +187,18 @@ public:
       AccessPath* ret = apm.getRoot(freshInternalVar());
       if (initAP != nullptr) apm.aliasDeref(ret, initAP);
       return ret;
+    }
+    else if (auto e = StoreExp::downcast(_e)) {
+      AccessPath* lhsAP = check(e->getLHS());
+      AccessPath* rhsAP = check(e->getRHS());
+      TVar rhsTVar = e->getRHS()->getTVar();
+      auto lhsLooseExts = looseExtensionsOf(apm.getDeref(lhsAP), rhsTVar);
+      auto rhsLooseExts = looseExtensionsOf(rhsAP, rhsTVar);
+      for (AccessPath* ext : rhsLooseExts)
+        use(ext, e->getRHS()->getLocation());
+      for (AccessPath* ext : lhsLooseExts)
+        replace(ext, e->getLHS()->getLocation());
+      return nullptr;
     }
     else if (StringLit::downcast(_e)) {
       return nullptr;
@@ -203,8 +232,11 @@ private:
   /// @brief All _unused_ paths with their creation locations.
   llvm::DenseMap<AccessPath*, Location> unusedPaths;
 
-  /// @brief All _used_ access paths with creation and use locations.
+  /// @brief All _used_ paths with their creation and use locations.
   llvm::DenseMap<AccessPath*, LocationPair> usedPaths;
+
+  /// @brief All _moved_ paths with their move locations.
+  llvm::DenseMap<AccessPath*, Location> movedPaths;
 
   int nextInternalVar = 0;
 
@@ -273,10 +305,55 @@ private:
     else {
       errors.push_back(LocatedError()
         << "Cannot use owned reference " << owner->asString()
-        << " locked behind a borrow.\n" << loc
+        << " created outside this scope.\n" << loc
       );
       return false;
     }
+  }
+
+  /// @brief Performs a _move_ on @p path. Specifically, moves @p path into the
+  /// `movedPaths` map.
+  /// @param moveLoc Location of `e` in `move e`.
+  /// @return true iff the move was successful.
+  bool move(AccessPath* path, Location moveLoc) {
+    if (Location creatLoc = unusedPaths.lookup(path)) {
+      errors.push_back(LocatedError()
+        << "Owned reference " << path->asString() << " created here:\n"
+        << creatLoc << "cannot be moved in the same scope:\n" << moveLoc
+      );
+      return false;
+    }
+    if (LocationPair locs = usedPaths.lookup(path)) {
+      errors.push_back(LocatedError()
+        << "Owned reference " << path->asString() << " created here:\n"
+        << locs.fst << "cannot be moved in the same scope.\n" << moveLoc
+      );
+    }
+    if (Location prevMoveLoc = movedPaths.lookup(path)) {
+      errors.push_back(LocatedError()
+        << "Owned reference " << path->asString()
+        << " was already moved here:\n" << prevMoveLoc
+        << "so it cannot be moved later:\n" << moveLoc
+      );
+      return false;
+    }
+    movedPaths[path] = moveLoc;
+    return true;
+  }
+
+  /// @brief Replaces the value of a moved @p path (via a store expression).
+  /// @param loc location of the LHS of a store expression
+  /// @return True iff the replacement was successful.
+  bool replace(AccessPath* path, Location loc) {
+    if (movedPaths.lookup(path).exists()) {
+      movedPaths.erase(path);
+      return true;
+    }
+    errors.push_back(LocatedError()
+      << "Owned reference " << path->asString()
+      << " becomes inaccessible after store.\n" << loc
+    );
+    return false;
   }
 };
 

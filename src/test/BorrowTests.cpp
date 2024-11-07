@@ -154,4 +154,26 @@ namespace BorrowTests {
     );
   }
 
+  TEST(simple_move_and_replace) {
+    declsShouldPass(
+      "extern func alloc(): #i8;\n"
+      "extern func free(ptr: #i8): unit;\n"
+      "func foo(x: &#i8): unit = {\n"
+      "  free(move x);\n"
+      "  x := alloc();\n"
+      "};"
+    );
+  }
+
+  TEST(unreplaced_move) {
+    declsShouldFail(
+      "extern func free(ptr: #i8): unit;\n"
+      "func foo(x: &#i8): unit = free(move x);"
+    );
+  }
+
+  TEST(overwriting_oref) {
+    declsShouldFail("func foo(x: &#i8, y: #i8): unit = { x := y };");
+  }
+
 }

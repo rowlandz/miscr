@@ -7,10 +7,10 @@ powered by a borrow checker.
 
 Minimalist includes minimal dependencies. All you need is
   - LLVM-14 C++ libraries
-  - Clang++ compiler
-  - Bash
-  - A few common Unix utilities (echo, rm, basename, dirname)
-  - (optional) GNU `make` -- alternative to running the build script directly.
+  - clang++ compiler
+  - bash
+  - a few common Unix utilities (echo, rm, basename, dirname)
+  - GNU make (optional) -- alternative to running the build script directly.
 
 There's three executable you can build:
   - `compiler` -- The MiSCR compiler.
@@ -91,94 +91,67 @@ Let's look at borrowed references first:
 
 Owned references point to heap-allocated memory that must eventually be freed.
 The borrow checker tracks _ownership_ of owned references similar to Rust.
+Like Rust, an owned reference cannot be used twice:
 
-    // malloc creates an owned ref, which is moved to `name`
-    let name: #i8 = C::malloc(7);
+    let buf: #i8 = C::malloc(20);
+    C::free(buf);
+    C::free(buf);            // ERROR: double use.
 
-    // `name` is moved to `name2`
-    let name2: #i8 = name;
+_Unlike_ Rust, the only things that count as a _use_ are passing the value to
+a function or returning it, so MiSCR lets you do things that Rust would complain
+about:
 
-    // It is now illegal to use `name`.
-    // let name3: #i8 = name;
+    let x: #i8 = C::malloc(20);
+    let y: #i8 = x;
+    C::free(x);
 
-    // `name2` can be _borrowed_, which does not count as a _use_.
-    let borrowedName: &i8 = borrow name2;
-    C::strcpy(borrowedName, "hello\n");
+On the second line, ownership of `x` is not transfered to `y`. Instead, `y`
+becomes an _alias_ for `x`. (Actually, `x` and `y` are _both_ aliases for an
+internal identifier that refers to the value returned by `C::malloc`.)
 
-    // `name2` must be used before the scope ends
-    C::free(name2);
+    let s = C::malloc(6);
+    let p = StrPair(s, s);       // allowed, this doesn't use s
+    myfunction(p);               // error: s is used twice
 
-    // borrowedName can still be used after name2 is freed because there is no
-    // lifetime analysis like Rust. So be careful with borrowed references!
-    // C::write(0, borrowedName, 6);
+If you need to pass a reference to a function without using it, you can `borrow`
+the reference instead. `borrow` has the type `#T -> &T` for any type `T`.
 
-Omitting the namespace or module declaration is the same as using `module global;`
+    let x: #i8 = C::malloc(10);
+    myfunction(borrow x);
+    C::free(x);
 
-MiSCR is _not_ object oriented for the following reasons. A "class" is just
-a namespace combined with a data type. Classes have some frustrating
-pain-points that other languages are often forced to work around:
-* Other code cannot add functions to the class even when it makes sense
-  to do so.
-* Multiple invocation syntaxes that are not interchangeable.
-  * e.g., `myobj.mymethod(param1)` versus `mymethod(myobj, param1)`.
-* Often unclear whether a function _mutates_ the object or returns a modified _copy_.
-  * e.g., `mylist.sort()` versus `mylist.sorted()`
+### The `move` expression
 
-MiSCR claims that there is no reason to combine namespaces and data types into this concept of a "class". They just exist as separate things.
+Normally it is illegal to use a reference that was not created in the current
+scope. The snippet below illustrates how this can lead to double frees; the
+`main` scope, which creates `x`, does not expect `helper` to free it.
 
-So here's the rule for method-call notation. If there is a namespace or module with the same name as a data type (e.g., `global::Color`), then:
-
-`mycolor.lighten(degree)` is the same as `Color::lighten(mycolor, degree)`.
-
-Here is an example of a `Person` object with full encapsulation:
-
-```
-module Person;
-
-data T = private T {
-  name: string,
-  age: i32,
-};
-
-func mk(name: string, age: i32): Option<T> = {
-  if age > 130 then None else Some(T{ name, age });
-};
-
-func getName(self: T): string = self.name;
-
-func getAge(self: T): string = self.age;
-```
-
-A namespaces are _open_ and modules are _closed_.
-
-```
-namespace Pair {
-
-  data T<A,B> = T(A,B);
-
-  func mapFst<A,B,C>(self: T<A,B>, f: A => C): T<C,B> =
-    self match {
-      case T(a, b) => T(f(a), b);
+    func main(): unit = {
+      let x = C::malloc(10);
+      helper(&x);
+      C::free(x);
     };
 
-}
-```
-
-It is perfectly natural for other code to extend this namespace with
-functions they would find useful:
-
-```
-namespace Pair {
-  func mapBoth<A,B,C,D>(self: T<A,B>, f: A => C, g: B => D): T<C,D> =
-    self match {
-      case T(a, b) => T(f(a), g(b));
+    func helper(xRef: &#i8): unit = {
+      C::free(xRef!);   // ERROR
     };
-}
-```
 
-But you cannot do that with a module.
+But sometimes using an externally created oref is necessary. In such cases,
+MiSCR allows an oref to be _moved_ into the current scope as long as the moved
+oref is _replaced_ before the scope ends:
 
-# Data Structures
+    func replaceWithHello(s: &String): unit = {
+      C::free(move s[.ptr]);    // OK, but s[.ptr]! must be replaced later
+      let newPtr = C::malloc(6);
+      C::strcpy(borrow newPtr, "hello");
+      s[.ptr] := newPtr;        // replacing s[.ptr]!
+      s[.len] := 5;
+    };
+
+The `move` expression has the type `&#T -> #T` for any type `T`, so it can be
+thought of as a special kind of dereference.
+
+### Data Structures
 
 A simple C-like structure (i.e., a block of memory divided into fields).
 
@@ -210,68 +183,26 @@ let bob: &Person("Bob", 40);
 let bobsage: &i32 = bob[age];
 ```
 
-## Reference Safety: `borrow` and `move`
-
-`borrow` and `move` are two operators with these types:
-
-    borrow : forall t . #t -> &t
-    move   : forall t . &#t -> #t
-
-`borrow` lets you make copies of an owned reference with the understanding that
-the copies will not be freed, only the original owned reference.
-
-`move` lets you move an owned pointer out of a place in memory. However, you
-must replace the pointer with another owned pointer later.
-
-move p
-// cannot dereference p
-p := anotherOwnedPointer
-
 ## Access Paths and Borrow Checking
 
-For every identifier, there is a tree of memory locations that can be reached
-via struct projections and dereferencing. For example, let's say we have a
-linked list type that contains C-style strings:
+Core to the borrow checker is the concept of an _access path_, which is like an
+expression containing a local identifier followed by a sequence of dereferences
+and struct projections.
 
-    abstract data List()
-    data Cons(super: List, head: &i8, tail: #List)
-    data Nil(super: List)
+The borrow checker is basically a symbolic executer that uses access paths in
+place of real values. At any point during execution, an access path can have
+one of four statuses:
+  - *neutral* -- The path was created outside the current scope.
+  - *unused* -- The path was created in the current scope but hasn't been used.
+  - *used* -- The path was created in the current scope and has been used.
+  - *moved* -- The path was created outside the current scope and has been
+               moved and cannot be referenced again until it is replaced.
 
-Now imagine every memory location you could access starting from a List `l`.
-Here's how you would access them all in code. Depending on what the value of `l`
-turns out to be, some of these will be invalid.
-
-    l            : List
-    l.head       : &i8
-    l.head!      : i8
-    l.tail       : #List
-    l.tail!      : List
-    l.tail!.head : &i8
-    ...
-
-The sequences of field accesses (i.e., projections) and dereferencing that is
-used to reach a particular value (really its memory location) forms a "path"
-through memory that is called the "access path".
-
-Every access path is one of three types:
-* Positive Access Path (PAP) -- owned by the current scope
-* Zero Access Path (ZAP) -- owned by a surrounding scope
-* Negative Access Path (NAP) -- a "missing" value
-
-Suppose an identifier `x: &#i8` is in scope. Then, `x!` is an access path. There are four things you can do with an access path:
-
-    myfunc(x!)            // use
-    let y = borrow x!;    // borrow
-    let z = move x;       // move
-    x := C::malloc(10);   // set
-
-The actions that are allowed depend on whether `x!` is a positive, zero, or negative access path:
-
-|     | use | borrow | move | set |
-|-----|-----|--------|------|-----|
-| PAP | yes |  yes   | no   | no  |
-| ZAP | no  |  yes   | yes  | no  |
-| NAP | no  |  no    | no   | yes |
+Paths begin in neutral or unused and must end in neutral or used by the end of
+the scope. They transition between states via three different actions:
+  - *use*: unused -> used
+  - *move*: neutral -> moved
+  - *replace*: moved -> neutral
 
 ## Safety Properties:
 
