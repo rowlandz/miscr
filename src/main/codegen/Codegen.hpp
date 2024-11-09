@@ -291,7 +291,15 @@ public:
       addParamsToScope(f, funDecl->getParameters());
       b->SetInsertPoint(llvm::BasicBlock::Create(llvmctx, "entry", f));
       llvm::Value* retVal = genExp(funDecl->getBody());
-      b->CreateRet(retVal);
+      // TODO: this is gross
+      if (auto primRT = PrimitiveTypeExp::downcast(funDecl->getReturnType())) {
+        if (primRT->kind == PrimitiveTypeExp::UNIT)
+          b->CreateRetVoid();
+        else
+          b->CreateRet(retVal);
+      } else {
+        b->CreateRet(retVal);
+      }
       varValues.pop();
     }
     return f;

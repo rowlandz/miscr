@@ -110,11 +110,6 @@ public:
             << "so it cannot be borrowed later:\n"
             << e->getRefExp()->getLocation()
           );
-        } else if (unusedPaths.lookup(owner).notExists()) {
-          errors.push_back(LocatedError()
-            << "Cannot borrow locked reference " << owner->asString() << ".\n"
-            << e->getRefExp()->getLocation()
-          );
         }
       }
       return ret;
@@ -154,6 +149,19 @@ public:
     else if (auto e = DerefExp::downcast(_e)) {
       AccessPath* ofAP = check(e->getOf());
       return apm.getDeref(ofAP);
+    }
+    else if (auto e = IndexExp::downcast(_e)) {
+      AccessPath* baseAP = check(e->getBase());
+      if (auto nameIdx = NameExp::downcast(e->getIndex())) {
+        return apm.getIndex(baseAP, nameIdx->getName()->asStringRef());
+      } else {
+        check(e->getIndex());
+        errors.push_back(LocatedError()
+          << "Borrow checker only supports identifier indices.\n"
+          << e->getIndex()->getLocation()
+        );
+        return apm.getRoot(freshInternalVar());
+      }
     }
     else if (IntLit::downcast(_e)) {
       return nullptr;

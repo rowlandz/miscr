@@ -17,7 +17,7 @@ class AccessPathManager;
 /// destroyed by an AccessPathManager.
 class AccessPath {
 public:
-  enum Tag { ROOT, PROJECT, ARRAY_OFFSET, DEREF };
+  enum Tag { ROOT, PROJECT, INDEX, DEREF };
   const Tag tag;
 protected:
   AccessPath(Tag tag) : tag(tag) {}
@@ -26,12 +26,9 @@ public:
 
   /// @brief Returns this access path as a string for error messages.
   std::string asString();
-
-  /// @brief Returns true iff this access path begins with @p prefix.
-  bool startsWith(const AccessPath* prefix);
 };
 
-/// @brief The root of an access path.
+/// @brief An access path that is a root with no suffixes.
 class RootPath : public AccessPath {
   friend class AccessPathManager;
   std::string root;
@@ -43,6 +40,7 @@ public:
   llvm::StringRef asString() const { return root; }
 };
 
+/// @brief All access paths that are not RootPath.
 class NonRootPath : public AccessPath {
 protected:
   AccessPath* base;
@@ -53,7 +51,7 @@ public:
 
   static NonRootPath* downcast(AccessPath* ap) {
     switch (ap->tag) {
-    case PROJECT: case ARRAY_OFFSET: case DEREF:
+    case PROJECT: case INDEX: case DEREF:
       return static_cast<NonRootPath*>(ap);
     default: return nullptr;
     }
@@ -83,19 +81,18 @@ public:
   bool isAddrCalc() const { return isAddrCalc_; }
 };
 
-/// @brief The equivalent of struct projection, but for arrays (whose "fields"
-/// are simply nonnegative integers).
-class ArrayOffsetPath : public NonRootPath {
+/// @brief An access path that ends with `[idx]`. Corresponds with IndexExp.
+class IndexPath : public NonRootPath {
   friend class AccessPathManager;
-  int offset;
-  ArrayOffsetPath(AccessPath* base, int offset)
-    : NonRootPath(ARRAY_OFFSET, base), offset(offset) {}
-  ~ArrayOffsetPath() {}
+  std::string idx;
+  IndexPath(AccessPath* base, llvm::StringRef idx)
+    : NonRootPath(INDEX, base), idx(idx) {}
+  ~IndexPath() {}
 public:
-  static ArrayOffsetPath* downcast(AccessPath* ap)
-    { return ap->tag == ARRAY_OFFSET ?
-      static_cast<ArrayOffsetPath*>(ap) : nullptr; }
-  int getOffset() const { return offset; }
+  static IndexPath* downcast(AccessPath* ap)
+    { return ap->tag == INDEX ?
+      static_cast<IndexPath*>(ap) : nullptr; }
+  llvm::StringRef getIdx() const { return idx; }
 };
 
 /// @brief An access path that ends with a dereference operator `!`.
@@ -157,13 +154,13 @@ public:
 
   /// @brief Finds the access path equivalent to `base.offset` if it has been
   /// created before. Otherwise returns nullptr.
-  AccessPath* findArrayOffset(AccessPath* base, int offset) const {
+  AccessPath* findIndex(AccessPath* base, llvm::StringRef idx) const {
     if (auto baseProjectExp = ProjectPath::downcast(base))
       { assert(!baseProjectExp->isAddrCalc()); }
     llvm::SmallVector<NonRootPath*> candidates = nonRootPaths.lookup(base);
     for (NonRootPath* nrp : candidates) {
-      if (auto aop = ArrayOffsetPath::downcast(nrp)) {
-        if (aop->getOffset() == offset) return dealias(aop);
+      if (auto ip = IndexPath::downcast(nrp)) {
+        if (ip->getIdx() == idx) return dealias(ip);
       }
     }
     return nullptr;
@@ -209,10 +206,10 @@ public:
     return ret;
   }
 
-  /// @brief Finds or creates an access path equivalent to `base.offset`.
-  AccessPath* getArrayOffset(AccessPath* base, int offset) {
-    if (AccessPath* ret = findArrayOffset(base, offset)) return ret;
-    ArrayOffsetPath* ret = new ArrayOffsetPath(base, offset);
+  /// @brief Finds or creates an access path equivalent to `base[idx]`.
+  AccessPath* getIndex(AccessPath* base, llvm::StringRef idx) {
+    if (AccessPath* ret = findIndex(base, idx)) return ret;
+    IndexPath* ret = new IndexPath(base, idx);
     nonRootPaths[base].push_back(ret);
     return ret;
   }
@@ -253,11 +250,11 @@ public:
     rewrites[alias] = expansion;
   }
 
-  /// @brief Sets access path `base.offset` as an alias for @p expansion.
-  /// `base.offset` must not be created yet.
-  void aliasArrayOffset(AccessPath* base, int offset, AccessPath* expansion) {
-    assert(findArrayOffset(base, offset) == nullptr);
-    ArrayOffsetPath* alias = new ArrayOffsetPath(base, offset);
+  /// @brief Sets access path `base[idx]` as an alias for @p expansion.
+  /// `base[idx]` must not be created yet.
+  void aliasIndex(AccessPath* base, llvm::StringRef idx, AccessPath* expansion){
+    assert(findIndex(base, idx) == nullptr);
+    IndexPath* alias = new IndexPath(base, idx);
     nonRootPaths[base].push_back(alias);
     rewrites[alias] = expansion;
   }
@@ -271,28 +268,6 @@ public:
     rewrites[alias] = expansion;
   }
 
-  /// @brief Gets the access path that is the same as @p of except with
-  /// @p prefix replaced with @p with.
-  /// @return If @p prefix is not a prefix of @p of, returns nullptr.
-  AccessPath*
-  replacePrefix(AccessPath* of, AccessPath* prefix, AccessPath* with) {
-    if (of == prefix) return with;
-    if (RootPath::downcast(of)) return nullptr;
-    else if (auto pp = ProjectPath::downcast(of)) {
-      AccessPath* ret = replacePrefix(pp->getBase(), prefix, with);
-      if (ret == nullptr) return nullptr;
-      return getProject(ret, pp->getField(), pp->isAddrCalc());
-    } else if (auto aop = ArrayOffsetPath::downcast(of)) {
-      AccessPath* ret = replacePrefix(aop->getBase(), prefix, with);
-      if (ret == nullptr) return nullptr;
-      return getArrayOffset(ret, aop->getOffset());
-    } else if (auto dp = DerefPath::downcast(of)) {
-      AccessPath* ret = replacePrefix(dp->getBase(), prefix, with);
-      if (ret == nullptr) return nullptr;
-      return getDeref(ret);
-    } else llvm_unreachable("unexpected case");
-  }
-
   /// @brief Resets this manager object back to its initially-created state.
   void clear() {
     for (llvm::StringRef root : rootPaths.keys()) {
@@ -302,13 +277,16 @@ public:
       for (NonRootPath* nrp : pair.getSecond()) {
         if (auto path = ProjectPath::downcast(nrp)) {
           delete path;
-        } else if (auto path = ArrayOffsetPath::downcast(nrp)) {
+        } else if (auto path = IndexPath::downcast(nrp)) {
           delete path;
         } else if (auto path = DerefPath::downcast(nrp)) {
           delete path;
         } else llvm_unreachable("Unrecognized NonRootPath variant.");
       }
     }
+    rootPaths.clear();
+    nonRootPaths.clear();
+    rewrites.clear();
   }
 
 private:
@@ -347,28 +325,17 @@ std::string AccessPath::asString() {
       ret += path->getField();
       return ret;
     }
-  } else if (auto path = ArrayOffsetPath::downcast(this)) {
+  } else if (auto path = IndexPath::downcast(this)) {
     std::string ret = path->getBase()->asString();
-    ret += ".";
-    ret += path->getOffset();
+    ret += "[";
+    ret += path->getIdx();
+    ret += "]";
     return ret;
   } else if (auto path = DerefPath::downcast(this)) {
     std::string ret = path->getBase()->asString();
     ret += "!";
     return ret;
   } else llvm_unreachable("AccessPath::asString: unexpected case");
-}
-
-bool AccessPath::startsWith(const AccessPath* prefix) {
-  AccessPath* this_ = this;
-  for (;;) {
-    if (this_ == prefix) return true;
-    if (RootPath::downcast(this_))
-      return false;
-    else if (auto nrp = NonRootPath::downcast(this_))
-      this_ = nrp->getBase();
-    else llvm_unreachable("unrecognized case");
-  }
 }
 
 #endif
