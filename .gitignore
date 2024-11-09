@@ -2,7 +2,7 @@
 .vscode/
 
 # Build artifacts
-compiler
+miscrc
 playground
 tests
 src/test/testmain.cpp

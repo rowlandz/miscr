@@ -45,8 +45,10 @@ public:
   Token(Tag tag, const char* ptr, Location loc)
     : tag(tag), ptr(ptr), loc(loc) {}
 
+  /// @brief Returns a string matching the tag's name in the Tag enum.
   const char* tagAsString() const { return tagToString(tag); }
 
+  /// @brief Returns the token as it appears in the source code.
   std::string asString() const { return std::string(ptr, loc.sz); }
 
   static const char* tagToString(Tag tag) {

@@ -7,11 +7,11 @@
 #include "common/TypeContext.hpp"
 #include "borrowchecker/AccessPath.hpp"
 
-/// @brief The borrow checker.
+/// @brief The borrow checker. Responsible for ensuring that owned refs are
+/// used once and moved refs are replaced.
 class BorrowChecker {
 public:
-  BorrowChecker(TypeContext& tc, const Ontology& ont)
-    : tc(tc), ont(ont) {}
+  BorrowChecker(TypeContext& tc, const Ontology& ont) : tc(tc), ont(ont) {}
 
   /// @brief Borrow-check a declaration.
   void checkDecl(Decl* d) {
@@ -76,9 +76,11 @@ public:
       );
   }
 
-  /// @brief Main borrow checking function for expressions.
+  /// @brief Main borrow checking function for expressions. Recursively
+  /// traverses @p _e to perform a symbolic evaluation using access paths as
+  /// the symbolic values.
   /// @return If @p _e has a reference or `data` type, the access path for
-  /// the expression is returned, otherwise `nullptr`.
+  /// the expression is returned, otherwise nullptr.
   AccessPath* check(Exp* _e) {
 
     if (auto e = AscripExp::downcast(_e)) {
@@ -242,7 +244,7 @@ private:
 
   /// @brief Returns a fresh internal variable (like `$42`).
   std::string freshInternalVar()
-    { return std::string("$") + std::to_string(++nextInternalVar); }
+    { return "$" + std::to_string(++nextInternalVar); }
 
   /// @brief Returns all _loose extensions_ of @p path. A loose extension is
   /// an AP that has @p path as a prefix and where all dereferences occurring

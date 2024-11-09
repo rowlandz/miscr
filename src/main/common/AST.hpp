@@ -19,9 +19,9 @@ class Name;
 /// AST nodes. For example, fully-qualifying decl names only requires calling
 /// the `set` method of the `Name` class.
 ///
-/// Calling the deconstructor on an AST pointer `p` or the `deleteAST` function
-/// should safely delete the entire subtree rooted at `p`. For this reason, the
-/// AST should always truly be a tree structure to avoid double frees.
+/// Syntax trees should always truely be tree structures, not just directed
+/// graphs, otherwise the deleteRecursive() function will result in double-free
+/// errors.
 class AST {
 public:
 
@@ -51,7 +51,7 @@ public:
 
   /// @brief Determines what type of AST node this is. Though this field can
   /// be inspected directly, it is usually better to use the static `downcast`
-  /// functions in the AST-derived classes.
+  /// functions in AST-derived classes.
   const ID id;
 
   static const char* IDToString(AST::ID);
@@ -235,7 +235,8 @@ public:
   void setTVar(TVar type) { this->type = type; }
 };
 
-/// @brief A linked-list of expressions.
+/// @brief A list of expressions (e.g., arguments in a function call or
+/// statements in a block).
 class ExpList : public AST {
   llvm::SmallVector<Exp*, 4> exps;
 public:
@@ -402,9 +403,8 @@ public:
   ExpList* getStatements() const { return statements; }
 };
 
-/// @brief A function call or constructor invocation. The parser will always
-/// create the call expression and the canonicalizer marks the constructor
-/// calls when it detects them.
+/// @brief A function call or constructor invocation. The canonicalizer
+/// distinguishes the two using markAsConstr().
 class CallExp : public Exp {
   bool _isConstr;
   Name* function;
@@ -495,8 +495,8 @@ public:
 };
 
 /// @brief An expression that extracts a field from a `data` value
-/// (e.g., `bob.age`) or calculates the address of the field from a `data`
-/// value reference (e.g., `bobRef[.age]`).
+/// (e.g., `bob.age`) or calculates the address of the field from a reference
+/// (e.g., `bobRef[.age]`).
 class ProjectExp : public Exp {
   Exp* base;
   Name* fieldName;
@@ -549,8 +549,8 @@ public:
   Exp* getRefExp() const { return refExp; }
 };
 
-/// @brief A borrow expression that returns a borrowed reference from an owned
-/// reference.
+/// @brief An "operator" of type `&#T -> #T` that extracts an owned reference
+/// from behind a borrow.
 class MoveExp : public Exp {
   Exp* refExp;
 public:
@@ -585,6 +585,7 @@ public:
   llvm::ArrayRef<Decl*> asArrayRef() const { return decls; }
 };
 
+/// @brief A module, the basic unit of MiSCR's namespace hierarchy.
 class ModuleDecl : public Decl {
   DeclList* decls;
 public:
@@ -607,8 +608,8 @@ public:
   llvm::ArrayRef<std::pair<Name*, TypeExp*>> asArrayRef() const
     { return params; }
 
-  /// Returns the type expression of the parameter named `paramName`, or
-  /// `nullptr` if no such parameter exists.
+  /// Returns the type expression of the parameter named @p paramName, or
+  /// nullptr if no such parameter exists.
   TypeExp* findParamType(llvm::StringRef paramName) const {
     for (auto param : params) {
       if (param.first->asStringRef() == paramName) return param.second;
@@ -617,7 +618,7 @@ public:
   }
 };
 
-/// @brief A function or extern function (FUNC/EXTERN_FUNC).
+/// @brief A function or extern function.
 class FunctionDecl : public Decl {
   ParamList* parameters;
   TypeExp* returnType;
@@ -639,7 +640,7 @@ public:
   bool hasBody() const { return body != nullptr; }
 };
 
-/// @brief The declaration of a data type.
+/// @brief A data type declaration.
 class DataDecl : public Decl {
   ParamList* fields;
 public:

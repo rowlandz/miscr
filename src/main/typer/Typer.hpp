@@ -4,13 +4,11 @@
 #include "typer/Cataloger.hpp"
 #include "typer/Unifier.hpp"
 
-/**
- * The type checker and type inference engine.
- * Typing is divided into three sequential phases:
- *   1. Cataloger -- Builds a map of decl names to their definitions
- *   2. Unifier   -- Hindley-Milner type unification procedure
- *   3. Resolver  -- Replaces type variables with their resolutions
- */
+/// @brief The MiSCR type checker and type inference engine.
+/// Typing is divided into three sequential phases:
+///   1. Cataloger -- Builds a map of decl names to their definitions
+///   2. Unifier   -- Hindley-Milner type unification procedure
+///   3. Resolver  -- Replaces type variables with their resolutions
 class Typer {
 public:
   Ontology ont;

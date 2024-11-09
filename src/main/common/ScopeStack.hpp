@@ -31,9 +31,9 @@ public:
     scopes.back()[varName] = addr;
   }
 
-  /// Finds `varName` in the scopes stack. If multiple scopes contain `varName`,
-  /// then the occurrance from the most recently pushed scope is used. Returns
-  /// `alt` if the var does not exist in any scope.
+  /// @brief Finds @p varName in the scopes stack. If multiple scopes contain
+  /// @p varName, the occurrance from the most recently pushed scope is used.
+  /// Returns @p alt if the var does not exist in any scope.
   V getOrElse(llvm::StringRef varName, V alt) {
     for (auto scope = scopes.crbegin(); scope < scopes.crend(); ++scope) {
       auto result = scope->find(varName);
@@ -42,12 +42,12 @@ public:
     return alt;
   }
 
-  /// Pushes a new empty scope onto the stack.
+  /// @brief Pushes a new empty scope onto the stack.
   void push() {
     scopes.push_back(llvm::StringMap<V>());
   }
 
-  /// Pops a scope off the stack.
+  /// @brief Pops a scope off the stack.
   void pop() {
     scopes.pop_back();
   }

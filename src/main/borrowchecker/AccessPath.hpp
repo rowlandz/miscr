@@ -273,7 +273,7 @@ public:
 
   /// @brief Gets the access path that is the same as @p of except with
   /// @p prefix replaced with @p with.
-  /// @return If @p prefix is not a prefix of @p of, returns `nullptr`.
+  /// @return If @p prefix is not a prefix of @p of, returns nullptr.
   AccessPath*
   replacePrefix(AccessPath* of, AccessPath* prefix, AccessPath* with) {
     if (of == prefix) return with;

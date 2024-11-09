@@ -1,4 +1,3 @@
-#include <vector>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
 #include "typer/Typer.hpp"

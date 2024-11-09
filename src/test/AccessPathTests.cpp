@@ -1,4 +1,3 @@
-
 #include "borrowchecker/AccessPath.hpp"
 #include "test.hpp"
 

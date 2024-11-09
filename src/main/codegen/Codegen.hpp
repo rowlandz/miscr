@@ -6,6 +6,7 @@
 #include "common/TypeContext.hpp"
 #include "common/Ontology.hpp"
 
+/// @brief LLVM IR code generation from AST.
 class Codegen {
 public:
   llvm::LLVMContext llvmctx;
@@ -62,8 +63,7 @@ public:
     // NUMERIC just defaults to i32.
     case Type::ID::NUMERIC: return b->getInt32Ty();
     default:
-      llvm::errs() << "genType(TVar) case unimplemented\n";
-      exit(1);
+      llvm_unreachable("Codegen::genType(TVar) case unimplemented");
     }
   }
 

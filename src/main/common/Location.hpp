@@ -1,7 +1,8 @@
 #ifndef COMMON_LOCATION
 #define COMMON_LOCATION
 
-/// A range of text.
+/// A range of text in MiSCR source code. Every AST element stores a location
+/// for error-reporting purposes.
 class Location {
 public:
   unsigned short row;

@@ -7,7 +7,7 @@
 #include "common/Ontology.hpp"
 
 /// @brief First of the two type checking phases. Fully qualifies all decl names
-/// and builds an `Ontology`.
+/// and builds an Ontology.
 class Cataloger {
   Ontology& ont;
   std::vector<LocatedError>& errors;

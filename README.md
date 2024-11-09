@@ -99,8 +99,8 @@ a function or returning it, so MiSCR lets you do things that Rust would complain
 about:
 
     let x: #i8 = C::malloc(20);
-    let y: #i8 = x;
-    C::free(x);
+    let y: #i8 = x;          // This doesn't use x,
+    C::free(x);              // so x is still usable here.
 
 On the second line, ownership of `x` is not transfered to `y`. Instead, `y`
 becomes an _alias_ for `x`. (Actually, `x` and `y` are _both_ aliases for an
@@ -189,7 +189,8 @@ MISCR should guarantee the following safety properties:
 
 MISCR does _not_ guarantee these:
 
-The absence of use-after-frees. There is no lifetime analysis, so borrowed references are just as unsafe as C pointers. e.g.,
+The absence of use-after-frees. There is no lifetime analysis, so borrowed
+references are just as unsafe as C pointers. e.g.,
 
     func main(): i32 = {
       let x: #i8 = C::malloc(10);
@@ -197,20 +198,3 @@ The absence of use-after-frees. There is no lifetime analysis, so borrowed refer
       C::free(x);
       C::write(0, y, 10);   // SEGFAULT
     };
-
-## Notes:
-
-Use `clang -mllvm -opaque-pointers` to compile with clang version 14.
-
-TODO: Make a better error for when you use a name that has no binding.
-e.g.,
-
-    data String(ptr: #i8, len: i64)
-    func foo(p: #i8): String = {
-      String(ptr, 10)
-    };
-
-Minimal Readline replacement:
-https://github.com/antirez/linenoise?tab=BSD-2-Clause-1-ov-file
-
-https://stackoverflow.com/questions/34147464/how-to-avoid-llvms-support-commandline-leaking-library-arguments

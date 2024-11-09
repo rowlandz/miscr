@@ -13,12 +13,12 @@ public:
     idx[1] = beginningOfText;
   }
   
-  /// Adds an entry to the location table.
+  /// @brief Adds an entry to the location table.
   void add(unsigned short row, const char* beginningOfLine) {
     idx[row] = beginningOfLine;
   }
 
-  /// Finds beginning of `row` in `text` using this location table.
+  /// @brief Finds beginning of `row` in `text` using this location table.
   const char* findRow(unsigned short row, const char* text) const {
     std::pair<unsigned short, const char*> closest = *std::prev(idx.upper_bound(row));
     unsigned short r = closest.first;
