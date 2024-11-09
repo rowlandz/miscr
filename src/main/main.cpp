@@ -63,6 +63,12 @@ int main(int argc, char** argv) {
     llvm::errs() << parser.getError().render(srcCode.data(), locTab);
     return 1;
   }
+  if (parser.hasMore()) {
+    llvm::errs() << (LocatedError()
+      << "Parser got stuck:\n" << parser.getCurrentToken().loc
+    ).render(srcCode.data(), locTab);
+    return 1;
+  }
 
   // type check
   Typer typer;

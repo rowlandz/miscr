@@ -68,6 +68,12 @@ public:
     return err;
   }
 
+  /// @brief True iff there are more (non-END) tokens to parse.
+  bool hasMore() const { return p->tag != Token::END; }
+
+  /// @brief Returns the first token that hasn't been parsed yet.
+  Token getCurrentToken() const { return *p; }
+
   //==========================================================================//
   //=== Idents and QIdents
   //==========================================================================//

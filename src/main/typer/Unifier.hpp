@@ -250,15 +250,15 @@ public:
 
     // TODO: Make sure typevar is set even in error cases.
     else if (auto e = NameExp::downcast(_e)) {
-      Name* name = e->getName();
       std::string s = e->getName()->asStringRef().str();
       TVar ty = localVarTypes.getOrElse(s, TVar::none());
-      if (ty.exists())
+      if (ty.exists()) {
         e->setTVar(ty);
-      else {
+      } else {
         errors.push_back(LocatedError()
           << "Unbound identifier.\n" << e->getLocation()
         );
+        e->setTVar(tc.fresh());
       }
     }
 
@@ -319,7 +319,7 @@ public:
         } else {
           errors.push_back(LocatedError()
             << "Could not infer what data type is being indexed.\n"
-            << e->getLocation()
+            << e->getBase()->getLocation()
           );
           e->setTVar(tc.fresh());
         }
@@ -343,7 +343,7 @@ public:
         } else {
           errors.push_back(LocatedError()
             << "Could not infer what data type is being accessed.\n"
-            << e->getLocation()
+            << e->getBase()->getLocation()
           );
           e->setTVar(tc.fresh());
         }

@@ -71,11 +71,12 @@ namespace TyperTests {
 
   //==========================================================================//
 
-  TEST(primitive_literals) {
+  TEST(types_of_literals) {
     expShouldHaveType("true", "bool");
     expShouldHaveType("false", "bool");
     expShouldHaveType("42", "numeric");
     expShouldHaveType("3.14", "decimal");
+    expShouldHaveType("\"hello\\n\"", "bref<i8>");
   }
 
   TEST(type_ascription) {
@@ -93,6 +94,10 @@ namespace TyperTests {
     expShouldHaveType("{ let x = 42; let x = true; x; }", "bool");
   }
 
+  TEST(unbound_identifier) {
+    expShouldFailTyper("foobar");
+  }
+
   TEST(references) {
     expShouldHaveType("&42", "bref<numeric>");
   }
@@ -103,10 +108,6 @@ namespace TyperTests {
 
   TEST(store_expression) {
     expShouldHaveType("{ let x = &0; x := x! + 42 }", "unit");
-  }
-
-  TEST(string_literal) {
-    expShouldHaveType("\"hello\\n\"", "bref<i8>");
   }
 
   TEST(decls_and_call_expressions) {

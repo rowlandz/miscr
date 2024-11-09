@@ -1,8 +1,9 @@
 #ifndef COMMON_LOCATION
 #define COMMON_LOCATION
 
-/// A range of text in MiSCR source code. Every AST element stores a location
-/// for error-reporting purposes.
+/// @brief A range of text in MiSCR source code.
+///
+/// Every AST element stores a location for error-reporting purposes.
 class Location {
 public:
   unsigned short row;
@@ -21,7 +22,7 @@ public:
   /// @brief Negation of exists(). True iff `row` or `col` is zero.
   bool notExists() const { return row == 0 || col == 0; }
 
-  /// @brief A location is "true" iff it exists.
+  /// @brief A location is true iff it exists.
   operator bool() const { return exists(); }
 };
 

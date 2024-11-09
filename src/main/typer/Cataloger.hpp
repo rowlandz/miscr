@@ -103,19 +103,21 @@ private:
   void canonicalize(llvm::StringRef scope, Decl* decl) {
     llvm::Twine fqn = scope + "::" + decl->getName()->asStringRef();
     decl->getName()->set(fqn);
-    if (auto moduleDecl = ModuleDecl::downcast(decl)) {
-      canonicalize(decl->getName()->asStringRef(), moduleDecl->getDecls());
+    if (auto dataDecl = DataDecl::downcast(decl)) {
+      canonicalizeNonDecl(scope, dataDecl->getFields());
     }
     else if (auto funcDecl = FunctionDecl::downcast(decl)) {
-      for (auto param : funcDecl->getParameters()->asArrayRef())
-        canonicalizeNonDecl(scope, param.second);
+      canonicalizeNonDecl(scope, funcDecl->getParameters());
       canonicalizeNonDecl(scope, funcDecl->getReturnType());
       Exp* body = funcDecl->getBody();
       if (body != nullptr) canonicalizeNonDecl(scope, body);
     }
+    else if (auto moduleDecl = ModuleDecl::downcast(decl)) {
+      canonicalize(decl->getName()->asStringRef(), moduleDecl->getDecls());
+    }
   }
 
-  /// @brief Recursively canonicalizes `ast` which must not be or contain a
+  /// @brief Recursively canonicalizes @p ast which must not be or contain a
   /// declaration.
   /// @param scope The (deepest) module in which `ast` appears.
   void canonicalizeNonDecl(llvm::StringRef scope, AST* ast) {
@@ -132,8 +134,8 @@ private:
     }
   }
 
-  /// @brief Canonicalizes the function name in a call expression. Flips CALL
-  /// to CONSTR if found to be a constructor invocation.
+  /// @brief Canonicalizes the function name in a call expression. Marks the
+  /// call as a constructor if it's a constructor.
   void canonicalizeCallExp(llvm::StringRef scope, CallExp* callExp) {
     Name* functionName = callExp->getFunction();
     while (!scope.empty()) {
