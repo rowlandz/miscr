@@ -1,18 +1,17 @@
 .PHONY: help
 help:
-	@echo "Hello!"
-	@echo ""
 	@echo "Usage:"
-	@echo "  make compiler     builds the compiler"
-	@echo "  make playground   builds the playground"
-	@echo "  make tests        builds the tests"
+	@echo "  make miscrc       build the MiSCR compiler"
+	@echo "  make playground   build the playground"
+	@echo "  make tests        build unit tests"
+	@echo "  make clean        removes previously built files"
 
 .PHONY: clean
 clean:
 	@./build.sh clean
 
-compiler: src/main/main.cpp $(shell find src/main -name *.hpp)
-	@./build.sh compiler
+miscrc: src/main/main.cpp $(shell find src/main -name *.hpp)
+	@./build.sh miscrc
 
 playground: $(shell find src/main -name *.hpp) src/play/*.cpp src/play/*.hpp
 	@./build.sh playground

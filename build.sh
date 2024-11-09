@@ -1,25 +1,25 @@
 #!/usr/bin/bash
 
-HELPSTRING="Hello!
+DIR=$(dirname $0)
 
-Usage:
-  $0                           display this help message
-  $0 clean                     delete previously built files
-  $0 compiler                  build the compiler
-  $0 playground                build the playground
-  $0 tests [TESTFILE.cpp...]   build unit tests
+HELPSTRING="Usage:
+  build.sh                           display this help message
+  build.sh miscrc [CCOPTS...]        build the MiSCR compiler
+  build.sh playground                build the playground
+  build.sh tests [TESTFILE.cpp...]   build unit tests
+  build.sh clean                     delete previously built files
 
 Options:
-  TESTFILE   A file containing unit tests. If none are listed, then the tests
-             subcommand will use all .cpp files in src/test.
+  CCOPTS    - Options passed directly to the C++ compiler. For example -g for
+              debugging or -O1 for optimization.
+  TESTFILE  - A file containing unit tests. If none are listed, then the tests
+              subcommand will use all .cpp files in src/test.
 "
 
 RED="\x1B[31m"
 BLUE="\x1B[34m"
 YELLOW="\x1B[33m"
 NOCOLOR="\x1B[0m"
-
-DIR=$(dirname $0)
 
 # Prefix a command with parrot to print out the command before running it
 parrot () {
@@ -45,7 +45,7 @@ elif [ $1 = "clean" ]; then
   if [ $# -gt 1 ]; then
     printExtraArgumentsMessage clean $2
   fi
-  if [ -f $DIR/compiler ]; then parrot rm $DIR/compiler; fi
+  if [ -f $DIR/miscrc ]; then parrot rm $DIR/miscrc; fi
   if [ -f $DIR/playground ]; then parrot rm $DIR/playground; fi
   if [ -f $DIR/tests ]; then parrot rm $DIR/tests; fi
   if [ -f $DIR/src/test/testmain.cpp ]; then
@@ -54,14 +54,12 @@ elif [ $1 = "clean" ]; then
 
 
 ########################################
-### Subcommand: compiler
+### Subcommand: miscrc
 ###
-elif [ $1 = "compiler" ]; then
-  if [ $# -gt 1 ]; then
-    printExtraArgumentsMessage compile $2
-  fi
+elif [ $1 = "miscrc" ]; then
   LLVM_CONFIG_ARGS=$(llvm-config-14 --cxxflags --ldflags --system-libs --libs core)
-  parrot clang++ -o $DIR/compiler $DIR/src/main/main.cpp -I$DIR/src/main $LLVM_CONFIG_ARGS
+  parrot clang++ -o $DIR/miscrc $DIR/src/main/main.cpp -I$DIR/src/main \
+    $LLVM_CONFIG_ARGS ${@:2}
 
 
 ########################################

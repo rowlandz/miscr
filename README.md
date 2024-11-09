@@ -3,44 +3,39 @@
 An aspiring replacement for C/C++ with a minimalist design and pointer safety
 powered by a borrow checker.
 
+![images/miscr_example.png](images/miscr_example.png)
+
 ## Build
 
-Minimalist includes minimal dependencies. All you need is
+MiSCR has minimal dependencies. All you need is
   - LLVM-14 C++ libraries
   - clang++ compiler
-  - bash
+  - bash (to run the build script)
   - a few common Unix utilities (echo, rm, basename, dirname)
-  - GNU make (optional) -- alternative to running the build script directly.
 
-There's three executable you can build:
-  - `compiler` -- The MiSCR compiler.
+Here's how to build the compiler:
+
+```shell
+./build.sh miscrc
+```
+
+There are three build targets in total:
+  - `miscrc` -- The MiSCR compiler.
   - `tests` -- Automated unit tests.
   - `playground` -- An interactive testing tool.
 
-Just run `build.sh` with the name of the executable you want to build. For
-example, to build the compiler:
-
-```shell
-./build.sh compiler
-```
-
-If you ever need help, just run the build script with no arguments to get a
-help message:
-
-```shell
-./build.sh
-```
+Running the build script with no arguments prints a help message.
 
 You can also use `make` to run the build script instead of running it
 directly:
 
 ```shell
-make compiler
+make miscrc
 ```
 
 ## Unit Testing
 
-MiSCR uses a dead-simple test infrastructure of only 50 lines of code found
+MiSCR uses a dead-simple test infrastructure (only 50 lines of code!) found
 in `src/test/test.hpp`. Building and running tests is this simple:
 
 ```shell
@@ -63,12 +58,14 @@ declaration is a module, a `data` type, or a function.
 
 A module contains a list of declarations.
 
-    module CoolMath {
-      data Fraction(num: i32, den: i32)
+```
+module CoolMath {
+  data Fraction(num: i32, den: i32)
 
-      func mul(r1: Fraction, r2: Fraction): Fraction =
-        Fraction(r1.num * r2.num, r1.den * r2.den);
-    }
+  func mul(r1: Fraction, r2: Fraction): Fraction =
+    Fraction(r1.num * r2.num, r1.den * r2.den);
+}
+```
 
 Decls can be accessed via a path relative to the "current scope" (e.g.,
 `CoolMath::mul`).
@@ -155,33 +152,10 @@ thought of as a special kind of dereference.
 
 A simple C-like structure (i.e., a block of memory divided into fields).
 
-```
-data Person(name: &str, age: i32)
+    data Person(name: &str, age: i32)
 
-let bob: Person = Person("Bob", 40);
-let bobsage: i32 = bob.age;
-```
-
-An abstract data structure expects other data structures to extend it with
-more fields. Therefore it cannot be instantiated directly. The size of an
-abstract data structure is equal to the size of its largest descendant.
-
-```
-abstract data AST(loc: Location)
-
-abstract data Exp(extends AST, ty: Type)
-
-data IntLit(extends Exp, value: i64)
-
-data Add(extends Exp, lhs: &Exp, rhs: &Exp)
-```
-
-The address of a field can be calculated from the address of a struct:
-
-```
-let bob: &Person("Bob", 40);
-let bobsage: &i32 = bob[age];
-```
+    let bob: Person = Person("Bob", 40);
+    let bobsage: i32 = bob.age;
 
 ## Access Paths and Borrow Checking
 
@@ -204,6 +178,9 @@ the scope. They transition between states via three different actions:
   - *move*: neutral -> moved
   - *replace*: moved -> neutral
 
+The analysis performed by the borrow checker is similar to things called
+"alias analysis" or "points-to analysis" in academia.
+
 ## Safety Properties:
 
 MISCR should guarantee the following safety properties:
@@ -214,26 +191,12 @@ MISCR does _not_ guarantee these:
 
 The absence of use-after-frees. There is no lifetime analysis, so borrowed references are just as unsafe as C pointers. e.g.,
 
-```
-func main(): i32 = {
-  let x: #i8 = C::malloc(10);
-  let y: &i8 = borrow x;
-  C::free(x);
-  C::write(0, y, 10);   // SEGFAULT
-};
-```
-
-## Problems with Double-Owned Pointers:
-
-A generic `free` function should look like this:
-
-    extern func free<T>(ptr: #T): unit;
-
-But what if `T` is itself an owned reference? The current move rule is that
-every owned ref _not_ hidden behind a borrowed pointer gets moved when passed
-to a function. However, `free` will _not recursively_ free the pointers.
-We need some way to cast a `##something` into a `#unit` so that `free` can
-properly handle it.
+    func main(): i32 = {
+      let x: #i8 = C::malloc(10);
+      let y: &i8 = borrow x;
+      C::free(x);
+      C::write(0, y, 10);   // SEGFAULT
+    };
 
 ## Notes:
 
@@ -247,8 +210,7 @@ e.g.,
       String(ptr, 10)
     };
 
-C++ Core Documentation
-https://llvm.org/doxygen/group__LLVMCCore.html
-
 Minimal Readline replacement:
 https://github.com/antirez/linenoise?tab=BSD-2-Clause-1-ov-file
+
+https://stackoverflow.com/questions/34147464/how-to-avoid-llvms-support-commandline-leaking-library-arguments

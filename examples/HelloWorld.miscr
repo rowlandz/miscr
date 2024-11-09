@@ -1,0 +1,6 @@
+extern func printf(cstr: &i8): unit;
+
+func main(): i32 = {
+  printf("Hello World\n");
+  0
+};
