@@ -90,6 +90,18 @@ namespace ParserTests {
     });
   }
 
+  TEST(logical_binop_precedence) {
+    expParseTreeShouldBe("1 && 2 || 3 && 4", {
+      "BINOP_EXP",
+      "    BINOP_EXP",
+      "        INT_LIT",
+      "        INT_LIT",
+      "    BINOP_EXP",
+      "        INT_LIT",
+      "        INT_LIT",
+    });
+  }
+
   TEST(block_expression) {
     expParseTreeShouldBe("{ let x = 10; x; }", {
       "BLOCK",

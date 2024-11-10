@@ -156,11 +156,18 @@ public:
     else if (auto e = BinopExp::downcast(_e)) {
       switch (e->getBinop()) {
       case BinopExp::ADD: case BinopExp::SUB: case BinopExp::MUL:
-      case BinopExp::DIV: {
+      case BinopExp::DIV: case BinopExp::MOD: {
         TVar lhsTy = unifyWith(e->getLHS(), tc.fresh(Type::numeric()));
         unifyWith(e->getRHS(), lhsTy);
         e->setTVar(lhsTy);
         break; 
+      }
+      case BinopExp::AND: case BinopExp::OR: {
+        TVar boolTy = tc.fresh(Type::bool_());
+        unifyWith(e->getLHS(), boolTy);
+        unifyWith(e->getRHS(), boolTy);
+        e->setTVar(boolTy);
+        break;
       }
       case BinopExp::EQ: case BinopExp::NE: case BinopExp::GE:
       case BinopExp::GT: case BinopExp::LE: case BinopExp::LT: {
@@ -299,55 +306,7 @@ public:
     }
 
     else if (auto e = ProjectExp::downcast(_e)) {
-      if (e->isAddrCalc()) {                                // base[.field] form
-        TVar dataTVar = tc.fresh();
-        unifyWith(e->getBase(), tc.fresh(Type::bref(dataTVar)));
-        Type t = tc.resolve(dataTVar).second;
-        if (t.getID() == Type::ID::NAME) {
-          DataDecl* dd = ont.getType(t.getName()->asStringRef());
-          e->setTypeName(dd->getName()->asStringRef());
-          llvm::StringRef field = e->getFieldName()->asStringRef();
-          if (TypeExp* pt = dd->getFields()->findParamType(field)) {
-            e->setTVar(tc.fresh(Type::bref(tc.freshFromTypeExp(pt))));
-          } else {
-            errors.push_back(LocatedError()
-              << field << " is not a field of data type "
-              << dd->getName()->asStringRef() << ".\n" << e->getLocation()
-            );
-            e->setTVar(tc.fresh());
-          }
-        } else {
-          errors.push_back(LocatedError()
-            << "Could not infer what data type is being indexed.\n"
-            << e->getBase()->getLocation()
-          );
-          e->setTVar(tc.fresh());
-        }
-      } else {                                                // base.field form
-        // TODO: combine this with above block
-        TVar dataTVar = unifyExp(e->getBase());
-        Type t = tc.resolve(dataTVar).second;
-        if (t.getID() == Type::ID::NAME) {
-          DataDecl* dd = ont.getType(t.getName()->asStringRef());
-          e->setTypeName(dd->getName()->asStringRef());
-          llvm::StringRef field = e->getFieldName()->asStringRef();
-          if (TypeExp* pt = dd->getFields()->findParamType(field)) {
-            e->setTVar(tc.freshFromTypeExp(pt));
-          } else {
-            errors.push_back(LocatedError()
-              << field << " is not a field of data type "
-              << dd->getName()->asStringRef() << ".\n" << e->getLocation()
-            );
-            e->setTVar(tc.fresh());
-          }
-        } else {
-          errors.push_back(LocatedError()
-            << "Could not infer what data type is being accessed.\n"
-            << e->getBase()->getLocation()
-          );
-          e->setTVar(tc.fresh());
-        }
-      }
+      unifyProjectExp(e);
     }
 
     else if (auto e = RefExp::downcast(_e)) {
@@ -367,11 +326,64 @@ public:
       e->setTVar(tc.fresh(Type::bref(tc.fresh(Type::i8()))));
     }
 
+    else if (auto e = UnopExp::downcast(_e)) {
+      switch (e->getUnop()) {
+      case UnopExp::NEG:
+        e->setTVar(unifyWith(e->getInner(), tc.fresh(Type::numeric())));
+        break;
+      case UnopExp::NOT:
+        e->setTVar(unifyWith(e->getInner(), tc.fresh(Type::bool_())));
+        break;
+      }
+    }
+
     else {
-      assert(false && "unimplemented");
+      llvm_unreachable("Unifier::unifyExp() unexpected case");
     }
 
     return _e->getTVar(); 
+  }
+
+  /// @brief Unifies a projection expression. 
+  void unifyProjectExp(ProjectExp* e) {
+    ProjectExp::Kind kind = e->getKind();
+    TVar dataTVar = tc.fresh();
+    
+    // unify the base expression
+    unifyWith(e->getBase(),
+      kind == ProjectExp::DOT ? dataTVar : tc.fresh(Type::bref(dataTVar)));
+    
+    // lookup the data type decl from the inferred type of base
+    Type dataType = tc.resolve(dataTVar).second;
+    if (dataType.getID() != Type::ID::NAME) {
+      errors.push_back(LocatedError()
+        << "Could not infer what data type is being indexed.\n"
+        << e->getBase()->getLocation()
+      );
+      e->setTVar(tc.fresh());
+      return;
+    }
+    DataDecl* dd = ont.getType(dataType.getName()->asStringRef());
+    
+    // set the data type name in e (for convenience)
+    e->setTypeName(dd->getName()->asStringRef());
+
+    // lookup the field type
+    llvm::StringRef field = e->getFieldName()->asStringRef();
+    TypeExp* fieldTExp = dd->getFields()->findParamType(field);
+    if (fieldTExp == nullptr) {
+      errors.push_back(LocatedError()
+        << field << " is not a field of data type "
+        << dd->getName()->asStringRef() << ".\n" << e->getLocation()
+      );
+      e->setTVar(tc.fresh());
+      return;
+    }
+    TVar fieldTy = tc.freshFromTypeExp(fieldTExp);
+
+    // set the type of e
+    e->setTVar(
+      kind == ProjectExp::BRACKETS ? tc.fresh(Type::bref(fieldTy)) : fieldTy);
   }
 
   /// Typechecks a function.

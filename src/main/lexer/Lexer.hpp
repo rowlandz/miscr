@@ -51,6 +51,7 @@ private:
     FSLASH_FSLASH,
     FSLASH_STAR,
     FSLASH_STAR_STAR,
+    HYPHEN,
     IDENT,
     LINE_COMMENT,
     LINE_COMMENT_L,
@@ -59,6 +60,7 @@ private:
     MULTILINE_COMMENT_STAR,
     MULTILINE_DOC_COMMENT,
     MULTILINE_DOC_COMMENT_STAR,
+    PIPE,
     STRING,
     STRING_BSLASH,
   };
@@ -92,12 +94,15 @@ private:
       else if (c == '>') tok.step(ST::ANGLE_R);
       else if (c == '<') tok.step(ST::ANGLE_L);
       else if (c == ':') tok.step(ST::COLON);
+      else if (c == '|') tok.step(ST::PIPE);
+      else if (c == '-') tok.step(ST::HYPHEN);
       else if (c == '&') tok.stepAndCapture(Token::AMP);
       else if (c == '#') tok.stepAndCapture(Token::HASH);
       else if (c == '!') tok.stepAndCapture(Token::EXCLAIM);
       else if (c == '+') tok.stepAndCapture(Token::OP_ADD);
-      else if (c == '-') tok.stepAndCapture(Token::OP_SUB);
       else if (c == '*') tok.stepAndCapture(Token::OP_MUL);
+      else if (c == '%') tok.stepAndCapture(Token::OP_MOD);
+      else if (c == '~') tok.stepAndCapture(Token::TILDE);
       else if (c == '(') tok.stepAndCapture(Token::LPAREN);
       else if (c == ')') tok.stepAndCapture(Token::RPAREN);
       else if (c == '{') tok.stepAndCapture(Token::LBRACE);
@@ -160,6 +165,11 @@ private:
       else tok.step(ST::MULTILINE_DOC_COMMENT);
       break;
 
+    case ST::HYPHEN:
+      if (c == '>') tok.stepAndCapture(Token::ARROW);
+      else tok.capture(Token::OP_SUB);
+      break;
+
     case ST::IDENT:
       if (isAlphaNumU(c)) tok.step(ST::IDENT);
       else tok.capture(identOrKeywordTy(tok.selection()));
@@ -202,6 +212,15 @@ private:
       else tok.step(ST::MULTILINE_DOC_COMMENT);
       break;
 
+    case ST::PIPE:
+      if (c == '|') tok.stepAndCapture(Token::OP_OR);
+      else {
+        err << "Unrecognized token (did you mean || ?)\n"
+            << tok.selectionLocation();
+        return false;
+      }
+      break;
+
     case ST::STRING:
       if (c == '"') tok.stepAndCapture(Token::LIT_STRING);
       else if (c == '\\') tok.step(ST::STRING_BSLASH);
@@ -232,6 +251,7 @@ private:
     case ST::DIGITS_DOT_DIGITS: tok.capture(Token::LIT_DEC); break;
     case ST::EQUAL: tok.capture(Token::EQUAL); break;
     case ST::FSLASH: tok.capture(Token::OP_DIV); break;
+    case ST::HYPHEN: tok.capture(Token::OP_SUB); break;
     case ST::IDENT: tok.capture(identOrKeywordTy(tok.selection())); break;
     case ST::LINE_COMMENT_L: tok.capture(Token::DOC_COMMENT_L); break;
     case ST::LINE_COMMENT_R: tok.capture(Token::DOC_COMMENT_R); break;
@@ -248,6 +268,11 @@ private:
       err << "Unclosed comment.\n" << tok.selectionLocation();
       return false;
     
+    case ST::PIPE:
+      err << "Unrecognized token (did you mean || ?)\n"
+          << tok.selectionLocation();
+      return false;
+
     case ST::STRING:
     case ST::STRING_BSLASH:
       err << "Missing end quote.\n" << tok.selectionLocation();

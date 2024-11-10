@@ -83,8 +83,11 @@ Let's look at borrowed references first:
     // dereference operator
     let bob: Person = bob!;
 
-    // pointer offset calculation
+    // address offset calculation
     let ageRef: &i32 = bobRef[.age];
+
+    // field access through reference
+    let age: i32 = bobRef->age;
 
 Owned references point to heap-allocated memory that must eventually be freed.
 The borrow checker tracks _ownership_ of owned references similar to Rust.
@@ -138,10 +141,10 @@ MiSCR allows an oref to be _moved_ into the current scope as long as the moved
 oref is _replaced_ before the scope ends:
 
     func replaceWithHello(s: &String): unit = {
-      C::free(move s[.ptr]);    // OK, but s[.ptr]! must be replaced later
+      C::free(move s[.ptr]);    // OK, but s->ptr must be replaced later
       let newPtr = C::malloc(6);
       C::strcpy(borrow newPtr, "hello");
-      s[.ptr] := newPtr;        // replacing s[.ptr]!
+      s[.ptr] := newPtr;        // replacing s->ptr
       s[.len] := 5;
     };
 

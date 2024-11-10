@@ -19,7 +19,8 @@ public:
     KW_UNIT,
 
     // operators
-    OP_ADD, OP_DIV, OP_EQ, OP_GE, OP_GT, OP_LE, OP_LT, OP_MUL, OP_NE, OP_SUB,
+    OP_ADD, OP_DIV, OP_EQ, OP_GE, OP_GT, OP_LE, OP_LT, OP_MOD, OP_MUL, OP_NE,
+    OP_OR, OP_SUB,
 
     // literal values
     LIT_DEC, LIT_INT, LIT_STRING,
@@ -31,8 +32,8 @@ public:
     LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
 
     // other
-    AMP, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM, FATARROW,
-    HASH, IDENT, SEMICOLON, UNDERSCORE,
+    AMP, ARROW, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM,
+    FATARROW, HASH, IDENT, SEMICOLON, TILDE, UNDERSCORE,
 
     // end-of-file indicator
     END
@@ -86,10 +87,12 @@ public:
     case OP_LT:           return "OP_LT";
     case OP_EQ:           return "OP_EQ";
     case OP_NE:           return "OP_NE";
+    case OP_OR:           return "OP_OR";
     case OP_ADD:          return "OP_ADD";
     case OP_SUB:          return "OP_SUB";
     case OP_MUL:          return "OP_MUL";
     case OP_DIV:          return "OP_DIV";
+    case OP_MOD:          return "OP_MOD";
     case LIT_DEC:         return "LIT_DEC";
     case LIT_INT:         return "LIT_INT";
     case LIT_STRING:      return "LIT_STRING";
@@ -100,6 +103,7 @@ public:
     case LBRACKET:        return "LBRACKET";
     case RBRACKET:        return "RBRACKET";
     case AMP:             return "AMP";
+    case ARROW:           return "ARROW";
     case COLON_COLON:     return "COLON_COLON";
     case COLON:           return "COLON";
     case COLON_EQUAL:     return "COLON_EQUAL";
@@ -110,6 +114,7 @@ public:
     case FATARROW:        return "FATARROW";
     case HASH:            return "HASH";
     case SEMICOLON:       return "SEMICOLON";
+    case TILDE:           return "TILDE";
     case UNDERSCORE:      return "UNDERSCORE";
     case COMMENT:         return "COMMENT";
     case DOC_COMMENT_L:   return "DOC_COMMENT_L";

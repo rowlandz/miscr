@@ -31,6 +31,7 @@ public:
     // expressions and statements
     ASCRIP, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, DEC_LIT, DEREF, ENAME,
     IF, INDEX, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN, STORE, STRING_LIT,
+    UNOP_EXP,
 
     // declarations
     DATA, FUNC, MODULE,
@@ -227,7 +228,7 @@ public:
     case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case CALL:
     case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX: case INT_LIT:
     case LET: case PROJECT: case REF_EXP: case RETURN: case STORE:
-    case STRING_LIT: return static_cast<Exp*>(ast);
+    case STRING_LIT: case UNOP_EXP: return static_cast<Exp*>(ast);
     default: return nullptr;
     }
   }
@@ -342,10 +343,35 @@ public:
   Name* getName() const { return name; }
 };
 
-/// @brief A binary operator expression.
+/// @brief An arithmetic or logical prefix operator expression.
+class UnopExp : public Exp {
+public:
+  enum Unop { NOT, NEG };
+private:
+  Unop unop;
+  Exp* inner;
+public:
+  UnopExp(Location loc, Unop unop, Exp* inner)
+    : Exp(UNOP_EXP, loc), unop(unop), inner(inner) {}
+  static UnopExp* downcast(AST* ast)
+    { return ast->id == UNOP_EXP ? static_cast<UnopExp*>(ast) : nullptr; }
+  Unop getUnop() const { return unop; }
+  Exp* getInner() const { return inner; }
+
+  /// @brief Returns the unary operator as a string matching its appearance
+  /// in the Unop enum.
+  const char* getUnopAsEnumString() const {
+    switch (unop) {
+    case NOT:   return "NOT";
+    case NEG:   return "NEG";
+    }
+  }
+};
+
+/// @brief An arithmetic, logical, or comparison binary operator expression.
 class BinopExp : public Exp {
 public:
-  enum Binop { ADD, DIV, EQ, GE, GT, LE, LT, MUL, NE, SUB };
+  enum Binop { ADD, AND, DIV, EQ, GE, GT, LE, LT, MOD, MUL, NE, OR, SUB };
 private:
   Binop binop;
   Exp* lhs;
@@ -355,27 +381,29 @@ public:
     : Exp(BINOP_EXP, loc), binop(binop), lhs(lhs), rhs(rhs) {}
   static BinopExp* downcast(AST* ast)
     { return ast->id == BINOP_EXP ? static_cast<BinopExp*>(ast) : nullptr; }
-  
+  Binop getBinop() const { return binop; }
+  Exp* getLHS() const { return lhs; }
+  Exp* getRHS() const { return rhs; }
+
   /// @brief Returns the binary operator as a string matching its appearance
   /// in the Binop enum.
   const char* getBinopAsEnumString() const {
     switch (binop) {
     case ADD:   return "ADD";
+    case AND:   return "AND";
     case DIV:   return "DIV";
     case EQ:    return "EQ";
     case GE:    return "GE";
     case GT:    return "GT";
     case LE:    return "LE";
     case LT:    return "LT";
+    case MOD:   return "MOD";
     case MUL:   return "MUL";
     case NE:    return "NE";
+    case OR:    return "OR";
     case SUB:   return "SUB";
     }
   }
-
-  Binop getBinop() const { return binop; }
-  Exp* getLHS() const { return lhs; }
-  Exp* getRHS() const { return rhs; }
 };
 
 /// @brief An if-then-else expression.
@@ -494,27 +522,36 @@ public:
   Exp* getOf() const { return of; }
 };
 
-/// @brief An expression that extracts a field from a `data` value
-/// (e.g., `bob.age`) or calculates the address of the field from a reference
-/// (e.g., `bobRef[.age]`).
+/// @brief An expression that accesses a field of a `data` value.
+///
+/// There are three syntaxes for projection with slightly different meanings:
+///   - `base.field`   -- converts the data value to the field value
+///   - `base[.field]` -- converts a _reference_ to a data value into a
+///                       _reference_ to the field value
+///   - `base->field`  -- converts a _reference_ to a data value into the field
+///                       value
+///
+/// The arrow kind is equivalent to `base[.field]!` and `base!.field`.
 class ProjectExp : public Exp {
+public:
+
+  /// @brief `base.field`, `base[.field]` or `base->field` syntax.
+  enum Kind : unsigned char { DOT, BRACKETS, ARROW };
+
+private:
   Exp* base;
   Name* fieldName;
-  bool isAddrCalc_;
+  Kind kind;
   std::string typeName;   // name of the datatype being indexed
+
 public:
-  ProjectExp(Location loc, Exp* base, Name* fieldName, bool isAddrCalc)
-    : Exp(PROJECT, loc), base(base), fieldName(fieldName),
-    isAddrCalc_(isAddrCalc) {}
+  ProjectExp(Location loc, Exp* base, Name* fieldName, Kind kind)
+    : Exp(PROJECT, loc), base(base), fieldName(fieldName), kind(kind) {}
   static ProjectExp* downcast(AST* ast)
     { return ast->id == PROJECT ? static_cast<ProjectExp*>(ast) : nullptr; }
   Exp* getBase() const { return base; }
   Name* getFieldName() const { return fieldName; }
-
-  /// @brief True iff the projection is of the form `base[.field]` rather than
-  /// `base.field` (i.e., this is an address calculation rather than a true
-  /// projection).
-  bool isAddrCalc() const { return isAddrCalc_; }
+  Kind getKind() const { return kind; }
 
   /// @brief Used in the unifier to set the name of the data decl.
   void setTypeName(llvm::StringRef name) { typeName = name.str(); }
@@ -522,6 +559,15 @@ public:
   /// @brief Returns the fully-qualified name of the data type being projected.
   /// This is only valid after the type checker sets this value. 
   llvm::StringRef getTypeName() const { return typeName; }
+
+  /// @brief Returns the kind as a string matching its name in the Kind enum.
+  const char* getKindAsEnumString() const {
+    switch (kind) {
+    case DOT:        return "DOT";
+    case BRACKETS:   return "BRACKETS";
+    case ARROW:      return "ARROW";
+    }
+  }
 };
 
 /// @brief An expression that calculates an address from a base reference and
@@ -722,6 +768,8 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     return { ast->getReturnee() };
   if (auto ast = StoreExp::downcast(this))
     return { ast->getLHS(), ast->getRHS() };
+  if (auto ast = UnopExp::downcast(this))
+    return { ast->getInner() };
   return {};
 }
 
@@ -746,6 +794,7 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::RETURN:             return "RETURN";
   case AST::ID::STORE:              return "STORE";
   case AST::ID::STRING_LIT:         return "STRING_LIT";
+  case AST::ID::UNOP_EXP:           return "UNOP_EXP";
 
   case AST::ID::DATA:               return "DATA";
   case AST::ID::FUNC:               return "FUNC";
@@ -782,6 +831,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "RETURN")              return AST::ID::RETURN;
   else if (str == "STORE")               return AST::ID::STORE;
   else if (str == "STRING_LIT")          return AST::ID::STRING_LIT;
+  else if (str == "UNOP_EXP")            return AST::ID::UNOP_EXP;
 
   else if (str == "DATA")                return AST::ID::DATA;
   else if (str == "FUNC")                return AST::ID::FUNC;

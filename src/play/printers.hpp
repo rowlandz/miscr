@@ -25,6 +25,8 @@ void print_parse_tree(
   // print optional extra information depending on the node type
   if (auto binopExp = BinopExp::downcast(n))
     llvm::outs() << " (" << binopExp->getBinopAsEnumString() << ")";
+  if (auto unopExp = UnopExp::downcast(n))
+    llvm::outs() << " (" << unopExp->getUnopAsEnumString() << ")";
   if (auto intLit = IntLit::downcast(n))
     llvm::outs() << " (" << intLit->asStringRef() << ")";
   if (auto name = Name::downcast(n))
@@ -32,7 +34,7 @@ void print_parse_tree(
   if (auto primTexp = PrimitiveTypeExp::downcast(n))
     llvm::outs() << " (" << primTexp->getKindAsString() << ")";
   if (auto projectExp = ProjectExp::downcast(n))
-    { if (projectExp->isAddrCalc()) llvm::outs() << " (address calc)"; }
+    llvm::outs() << " (" << projectExp->getKindAsEnumString() << ")";
   if (auto exp = Exp::downcast(n)) {
     if (tc != nullptr)
       llvm::outs() << " : " << tc->TVarToString(exp->getTVar());

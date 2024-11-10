@@ -189,7 +189,12 @@ public:
     else if (auto e = ProjectExp::downcast(_e)) {
       AccessPath* baseAP = check(e->getBase());
       llvm::StringRef field = e->getFieldName()->asStringRef();
-      return apm.getProject(baseAP, field, e->isAddrCalc());
+      switch (e->getKind()) {
+      case ProjectExp::DOT: return apm.getProject(baseAP, field, false);
+      case ProjectExp::BRACKETS: return apm.getProject(baseAP, field, true);
+      case ProjectExp::ARROW:
+        return apm.getProject(apm.getDeref(baseAP), field, false);
+      }
     }
     else if (auto e = RefExp::downcast(_e)) {
       Exp* initExp = e->getInitializer();
@@ -211,6 +216,10 @@ public:
       return nullptr;
     }
     else if (StringLit::downcast(_e)) {
+      return nullptr;
+    }
+    else if (auto e = UnopExp::downcast(_e)) {
+      check(e->getInner());
       return nullptr;
     }
     else llvm_unreachable("BorrowChecker::check(Exp*): unexpected syntax");

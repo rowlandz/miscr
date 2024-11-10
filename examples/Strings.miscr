@@ -19,20 +19,19 @@ module String {
     String(ptr, len)
   };
 
-  func del(s: String): unit =
-    C::free(s.ptr);
+  func del(s: String): unit = C::free(s.ptr);
 
   func append(s1: &String, s2: &String): unit = {
-    let s1len: i64 = s1[.len]!;
-    let newLen: i64 = s1len + s2[.len]!;
+    let s1len: i64 = s1->len;
+    let newLen: i64 = s1len + s2->len;
     let newPtr: #i8 = C::realloc(move s1[.ptr], newLen + 1);
-    C::strcpy((borrow newPtr)[s1len], borrow s2[.ptr]!);
+    C::strcpy((borrow newPtr)[s1len], borrow s2->ptr);
     s1[.ptr] := newPtr;
     s1[.len] := newLen;
   };
 
   func print(s: &String): unit = {
-    C::write(0, borrow s[.ptr]!, s[.len]!);
+    C::write(0, borrow s->ptr, s->len);
     {}
   };
 

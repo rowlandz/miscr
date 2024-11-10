@@ -109,12 +109,15 @@ public:
       llvm::Value* v2 = genExp(exp->getRHS());
       switch (exp->getBinop()) {
       case BinopExp::ADD: return b->CreateAdd(v1, v2);
+      case BinopExp::AND: return b->CreateAnd(v1, v2);
       case BinopExp::DIV: return b->CreateSDiv(v1, v2);
       case BinopExp::GE:  return b->CreateICmpSGE(v1, v2);
       case BinopExp::GT:  return b->CreateICmpSGT(v1, v2);
       case BinopExp::LE:  return b->CreateICmpSLE(v1, v2);
       case BinopExp::LT:  return b->CreateICmpSLT(v1, v2);
+      case BinopExp::MOD: return b->CreateSRem(v1, v2);
       case BinopExp::MUL: return b->CreateMul(v1, v2);
+      case BinopExp::OR:  return b->CreateOr(v1, v2);
       case BinopExp::SUB: return b->CreateSub(v1, v2);
       case BinopExp::EQ: {
         llvm::Type* operandType = v1->getType();
@@ -243,11 +246,18 @@ public:
         ++fieldIndex;
       }
       assert(fieldIndex < typeDecl->getFields()->asArrayRef().size());
-      if (e->isAddrCalc()) {
+      switch (e->getKind()) {
+      case ProjectExp::DOT:
+        return b->CreateExtractValue(baseV, fieldIndex);
+      case ProjectExp::BRACKETS:
         return b->CreateGEP(dataTypes[e->getTypeName()], baseV,
           { b->getInt64(0), b->getInt32(fieldIndex) });
-      } else {
-        return b->CreateExtractValue(baseV, fieldIndex);
+      case ProjectExp::ARROW:
+        return b->CreateLoad(
+          genType(e->getTVar()),
+          b->CreateGEP(dataTypes[e->getTypeName()], baseV,
+            { b->getInt64(0), b->getInt32(fieldIndex) })
+        );
       }
     }
     else if (auto e = RefExp::downcast(_exp)) {
@@ -265,6 +275,13 @@ public:
     }
     else if (auto e = StringLit::downcast(_exp)) {
       return b->CreateGlobalString(e->processEscapes());
+    }
+    else if (auto e = UnopExp::downcast(_exp)) {
+      llvm::Value* innerV = genExp(e->getInner());
+      switch (e->getUnop()) {
+      case UnopExp::NEG: return b->CreateNeg(innerV);
+      case UnopExp::NOT: return b->CreateNot(innerV);
+      }
     }
     else llvm_unreachable("genExp -- unsupported expression form");
   }

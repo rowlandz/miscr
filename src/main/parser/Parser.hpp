@@ -178,12 +178,15 @@ public:
         e = new DerefExp(hereFrom(begin), e);
       } else if (chomp(Token::DOT)) {
         Name* fieldName = ident(); ARREST_IF_ERROR
-        e = new ProjectExp(hereFrom(begin), e, fieldName, false);
+        e = new ProjectExp(hereFrom(begin), e, fieldName, ProjectExp::DOT);
+      } else if (chomp(Token::ARROW)) {
+        Name* fieldName = ident(); ARREST_IF_ERROR
+        e = new ProjectExp(hereFrom(begin), e, fieldName, ProjectExp::ARROW);
       } else if (chomp(Token::LBRACKET)) {
         if (chomp(Token::DOT)) {
           Name* fieldName = ident(); ARREST_IF_ERROR
           CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index field expression")
-          e = new ProjectExp(hereFrom(begin), e, fieldName, true);
+          e = new ProjectExp(hereFrom(begin),e,fieldName,ProjectExp::BRACKETS);
         } else {
           Exp* indexExp = exp(); ARREST_IF_ERROR
           CHOMP_ELSE_ARREST(Token::RBRACKET, "]", "index expression")
@@ -198,6 +201,12 @@ public:
     if (chomp(Token::AMP)) {
       Exp* e = expLv2(); ARREST_IF_ERROR
       return new RefExp(hereFrom(begin), e);
+    } else if (chomp(Token::OP_SUB)) {
+      Exp* e = expLv2(); ARREST_IF_ERROR
+      return new UnopExp(hereFrom(begin), UnopExp::NEG, e);
+    } else if (chomp(Token::TILDE)) {
+      Exp* e = expLv2(); ARREST_IF_ERROR
+      return new UnopExp(hereFrom(begin), UnopExp::NOT, e);
     } else {
       return expLv1();
     }
@@ -230,8 +239,11 @@ public:
     Token begin = *p;
     Exp* lhs = expLv4();
     RETURN_IF_ERROR
-    while (p->tag == Token::OP_MUL || p->tag == Token::OP_DIV) {
-      auto op = (p->tag == Token::OP_MUL) ? BinopExp::MUL : BinopExp::DIV;
+    while (p->tag == Token::OP_MUL || p->tag == Token::OP_DIV ||
+           p->tag == Token::OP_MOD) {
+      auto op = p->tag == Token::OP_MUL ? BinopExp::MUL :
+                p->tag == Token::OP_DIV ? BinopExp::DIV :
+                                          BinopExp::MOD ;
       ++p;
       Exp* rhs = expLv4(); ARREST_IF_ERROR
       lhs = new BinopExp(hereFrom(begin), op, lhs, rhs);
@@ -262,7 +274,7 @@ public:
                 p->tag == Token::OP_GE ? BinopExp::GE :
                 p->tag == Token::OP_GT ? BinopExp::GT :
                 p->tag == Token::OP_LE ? BinopExp::LE :
-                                         BinopExp::LT;
+                                         BinopExp::LT ;
       ++p;
       Exp* rhs = expLv6(); ARREST_IF_ERROR
       lhs = new BinopExp(hereFrom(begin), op, lhs, rhs);
@@ -273,8 +285,29 @@ public:
   Exp* expLv8() {
     Token begin = *p;
     Exp* lhs = expLv7(); RETURN_IF_ERROR
-    while (chomp(Token::COLON_EQUAL)) {
+    while (p->tag == Token::AMP && (p+1)->tag == Token::AMP) {
+      p += 2;
       Exp* rhs = expLv7(); ARREST_IF_ERROR
+      lhs = new BinopExp(hereFrom(begin), BinopExp::AND, lhs, rhs);
+    }
+    return lhs;
+  }
+
+  Exp* expLv9() {
+    Token begin = *p;
+    Exp* lhs = expLv8(); RETURN_IF_ERROR
+    while (chomp(Token::OP_OR)) {
+      Exp* rhs = expLv8(); ARREST_IF_ERROR
+      lhs = new BinopExp(hereFrom(begin), BinopExp::OR, lhs, rhs);
+    }
+    return lhs;
+  }
+
+  Exp* expLv10() {
+    Token begin = *p;
+    Exp* lhs = expLv9(); RETURN_IF_ERROR
+    while (chomp(Token::COLON_EQUAL)) {
+      Exp* rhs = expLv9(); ARREST_IF_ERROR
       lhs = new StoreExp(hereFrom(begin), lhs, rhs);
     }
     return lhs;
@@ -293,7 +326,7 @@ public:
 
   Exp* exp() {
     Exp* ret = ifExp(); CONTINUE_ON_EPSILON(ret)
-    return expLv8();
+    return expLv10();
   }
 
   /// @brief Zero or more comma-separated expressions with optional trailing

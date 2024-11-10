@@ -133,4 +133,17 @@ namespace TyperTests {
   TEST(indexing) {
     expShouldHaveType("(\"hello\")[0]", "bref<i8>");
   }
+
+  TEST(datatypes_and_field_access) {
+    declShouldPass(
+      "module Testing {"
+      "  data Person(name: &i8, age: i8)"
+      "  func blah(p: &Person): unit = {"
+      "    let n1: &&i8 = p[.name];"
+      "    let n2: &i8  = p!.name;"
+      "    let n3: &i8  = p->name;"
+      "  };"
+      "}"
+    );
+  }
 }

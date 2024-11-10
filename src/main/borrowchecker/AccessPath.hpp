@@ -59,7 +59,7 @@ public:
 };
 
 /// @brief An access path that ends with `.field` or `[.field]`. Corresponds
-/// with ProjectExp.
+/// with ProjectExp DOT and BRACKET kinds.
 ///
 /// It is important that access paths be structurally unique. ProjectPath
 /// presents a problem because `base!.field` is the same as `base[.field]!`.
