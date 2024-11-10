@@ -73,15 +73,15 @@ int main(int argc, char** argv) {
   // type check
   Typer typer;
   typer.typeDeclList(decls);
-  if (!typer.errors.empty()) {
-    for (LocatedError err : typer.errors)
+  if (typer.hasErrors()) {
+    for (LocatedError err : typer.getErrors())
       llvm::errs() << err.render(srcCode.data(), locTab);
     return 1;
   }
 
   // borrow check
   if (!skipBorrowCheckingOpt) {
-    BorrowChecker bc(typer.getTypeContext(), typer.ont);
+    BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
     bc.checkDecls(decls);
     if (!bc.errors.empty()) {
       for (LocatedError err : bc.errors)
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
   }
 
   // LLVM IR code generation
-  Codegen codegen(typer.getTypeContext(), typer.ont);
+  Codegen codegen(typer.getTypeContext(), typer.getOntology());
   codegen.genDeclList(decls);
   codegen.mod->setModuleIdentifier(inFileOpt);
   codegen.mod->setSourceFileName(inFileOpt);

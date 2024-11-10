@@ -53,10 +53,10 @@ check_input:
 
       Typer typer;
       type_function(typer, parsed, grammarElement);
-      for (auto err : typer.errors) {
+      for (auto err : typer.getErrors()) {
         std::cout << err.render(usrInput.c_str(), lexer.getLocationTable());
       }
-      if (typer.errors.size() == 0) {
+      if (typer.getErrors().size() == 0) {
         std::vector<bool> indents;
         print_parse_tree(parsed, indents, &typer.getTypeContext());
       }

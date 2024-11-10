@@ -3,35 +3,28 @@
 
 #include <cassert>
 #include "llvm/ADT/DenseMap.h"
-#include "common/TypeContext.hpp"
+#include "common/LocatedError.hpp"
 #include "common/Ontology.hpp"
 #include "common/ScopeStack.hpp"
-#include "common/LocatedError.hpp"
+#include "common/TypeContext.hpp"
 
-/// @brief Second of the two type checking phases. Performs Hindley-Milner
-/// type inference and unification. More specifically,
+/// @brief Third of three type checking phases. Performs Hindley-Milner type
+/// inference and unification.
 ///
-/// - Sets the type variables of expressions in the AST. The type
-///   variables can be resolved using the `TypeContext` built by the unifier.
-class Unifier {
- 
-  /// Maps decls to their definitions or declarations.
+/// Every expression is labeled with a TVar. These type variables can be
+/// resolved into Type objects using a TypeContext.
+class Unifier { 
   const Ontology& ont;
+  TypeContext& tc;
+  std::vector<LocatedError>& errors;
 
   /// Maps local variable names to type vars.
   ScopeStack<TVar> localVarTypes;
 
-  /// Accumulates type checking errors.
-  std::vector<LocatedError>& errors;
-  
-  TypeContext tc;
-
 public:
-
-  Unifier(Ontology& ont, std::vector<LocatedError>& errors)
-    : ont(ont), errors(errors) {}
-
-  TypeContext& getTypeContext() { return tc; }
+  Unifier(Ontology& ont, TypeContext& tc, std::vector<LocatedError>& errors)
+    : ont(ont), tc(tc), errors(errors) {}
+  Unifier(const Unifier&) = delete;
 
   /// @brief Enforces an equality relation in `bindings` between the two type
   /// variables. Returns `true` if this is possible and `false` otherwise.
@@ -200,7 +193,7 @@ public:
     else if (auto e = CallExp::downcast(_e)) {
       llvm::StringRef calleeName = e->getFunction()->asStringRef();
       Decl* _callee = ont.getDecl(calleeName, Ontology::Space::FUNCTION_OR_TYPE);
-      assert (_callee != nullptr && "Bug in cataloger or canonicalizer.");
+      assert(_callee != nullptr && "Bug in cataloger or canonicalizer.");
       if (auto callee = FunctionDecl::downcast(_callee)) {
         /*** unify each argument with corresponding parameter ***/
         auto argList = e->getArguments()->asArrayRef();

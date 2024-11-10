@@ -17,13 +17,13 @@ namespace BorrowTests {
     if (parsed == nullptr) throw std::runtime_error("Parser error");
     Typer typer;
     typer.typeDeclList(parsed);
-    if (!typer.errors.empty()) {
+    if (typer.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.errors)
+      for (auto err : typer.getErrors())
         errStr.append(err.render(declsText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
-    BorrowChecker bc(typer.getTypeContext(), typer.ont);
+    BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
     bc.checkDecls(parsed);
     if (!bc.errors.empty()) {
       std::string errStr;
@@ -41,13 +41,13 @@ namespace BorrowTests {
     if (parsed == nullptr) throw std::runtime_error("Parser error");
     Typer typer;
     typer.typeDeclList(parsed);
-    if (!typer.errors.empty()) {
+    if (typer.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.errors)
+      for (auto err : typer.getErrors())
         errStr.append(err.render(declsText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
-    BorrowChecker bc(typer.getTypeContext(), typer.ont);
+    BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
     bc.checkDecls(parsed);
     if (bc.errors.empty()) {
       throw std::runtime_error("Expected borrow checking to fail.");

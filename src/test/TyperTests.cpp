@@ -17,9 +17,9 @@ namespace TyperTests {
     if (parsed == nullptr) throw std::runtime_error("Parser error");
     Typer typer;
     typer.typeExp(parsed);
-    if (!typer.errors.empty()) {
+    if (typer.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.errors)
+      for (auto err : typer.getErrors())
         errStr.append(err.render(expText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
@@ -37,7 +37,7 @@ namespace TyperTests {
     if (parsed == nullptr) throw std::runtime_error("Parser error");
     Typer typer;
     typer.typeExp(parsed);
-    if (typer.errors.empty())
+    if (typer.hasNoErrors())
       throw std::runtime_error("Expected failure, but it succeeded.");
   }
 
@@ -49,9 +49,9 @@ namespace TyperTests {
     if (parsed == nullptr) throw std::runtime_error("Parser error");
     Typer typer;
     typer.typeDecl(parsed);
-    if (!typer.errors.empty()) {
+    if (typer.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.errors)
+      for (auto err : typer.getErrors())
         errStr.append(err.render(declText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
@@ -65,7 +65,7 @@ namespace TyperTests {
     if (parsed == nullptr) throw std::runtime_error("Parser error");
     Typer typer;
     typer.typeDecl(parsed);
-    if (typer.errors.empty())
+    if (typer.hasNoErrors())
       throw std::runtime_error("Expected failure, but it succeeded.");
   }
 
