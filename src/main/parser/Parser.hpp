@@ -488,6 +488,7 @@ public:
   FunctionDecl* functionDecl() {
     Token begin = *p;
     bool hasBody = true;
+    bool variadic = false;
     if (chomp(Token::KW_EXTERN)) {
       hasBody = false;
       CHOMP_ELSE_ARREST(Token::KW_FUNC, "func", "function")
@@ -495,6 +496,9 @@ public:
     Name* name = ident(); ARREST_IF_ERROR
     CHOMP_ELSE_ARREST(Token::LPAREN, "(", "function")
     ParamList* params = paramListWotc0(); ARREST_IF_ERROR
+    if (!hasBody) {
+      if (chomp(Token::ELLIPSIS)) variadic = true;
+    }
     CHOMP_ELSE_ARREST(Token::RPAREN, ")", "function")
     CHOMP_ELSE_ARREST(Token::COLON, ":", "function")
     TypeExp* retType = typeExp(); ARREST_IF_ERROR
@@ -505,7 +509,8 @@ public:
       return new FunctionDecl(hereFrom(begin), name, params, retType, body);
     } else {
       CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
-      return new FunctionDecl(hereFrom(begin), name, params, retType);
+      return new FunctionDecl(hereFrom(begin), name, params, retType, nullptr,
+        variadic);
     }
   }
 

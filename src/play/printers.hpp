@@ -27,6 +27,8 @@ void print_parse_tree(
     llvm::outs() << " (" << binopExp->getBinopAsEnumString() << ")";
   if (auto unopExp = UnopExp::downcast(n))
     llvm::outs() << " (" << unopExp->getUnopAsEnumString() << ")";
+  if (auto funcDecl = FunctionDecl::downcast(n))
+    { if (funcDecl->isVariadic()) llvm::outs() << " (variadic)"; }
   if (auto intLit = IntLit::downcast(n))
     llvm::outs() << " (" << intLit->asStringRef() << ")";
   if (auto name = Name::downcast(n))

@@ -146,4 +146,14 @@ namespace TyperTests {
       "}"
     );
   }
+
+  TEST(variadic_function) {
+    declShouldPass(
+      "module Testing {"
+      "  extern func foo(x: i32, y: &i8, ...): i32;"
+      "  func bar(): i32 = foo(0, \"hi\", true, 42);"
+      "}"
+    );
+  }
+
 }

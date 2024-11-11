@@ -1,4 +1,4 @@
-extern func printf(cstr: &i8): unit;
+extern func printf(format: &i8, ...): unit;
 
 func main(): i32 = {
   printf("Hello World\n");

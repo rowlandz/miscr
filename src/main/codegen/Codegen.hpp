@@ -153,10 +153,8 @@ public:
     }
     else if (auto e = CallExp::downcast(_exp)) {
       std::vector<llvm::Value*> args;
-      llvm::ArrayRef<Exp*> expList = e->getArguments()->asArrayRef();
-      for (unsigned int paramIdx = 0; paramIdx < expList.size(); ++paramIdx) {
-        llvm::Value* arg = genExp(expList[paramIdx]);
-        args.push_back(arg);
+      for (Exp* arg : e->getArguments()->asArrayRef()) {
+        args.push_back(genExp(arg));
       }
 
       if (e->isConstr()) {
@@ -295,7 +293,8 @@ public:
       paramTys.push_back(genType(param.second));
     }
     llvm::Type* retType = genType(funDecl->getReturnType());
-    auto funcType = llvm::FunctionType::get(retType, paramTys, false);
+    llvm::FunctionType* funcType =
+      llvm::FunctionType::get(retType, paramTys, funDecl->isVariadic());
 
     llvm::Function* f = llvm::Function::Create(
       funcType,

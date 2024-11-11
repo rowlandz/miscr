@@ -32,8 +32,8 @@ public:
     LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
 
     // other
-    AMP, ARROW, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, EQUAL, EXCLAIM,
-    FATARROW, HASH, IDENT, SEMICOLON, TILDE, UNDERSCORE,
+    AMP, ARROW, COLON_COLON, COLON, COLON_EQUAL, COMMA, DOT, ELLIPSIS, EQUAL,
+    EXCLAIM, FATARROW, HASH, IDENT, SEMICOLON, TILDE, UNDERSCORE,
 
     // end-of-file indicator
     END
@@ -109,6 +109,7 @@ public:
     case COLON_EQUAL:     return "COLON_EQUAL";
     case COMMA:           return "COMMA";
     case DOT:             return "DOT";
+    case ELLIPSIS:        return "ELLIPSIS";
     case EQUAL:           return "EQUAL";
     case EXCLAIM:         return "EXCLAIM";
     case FATARROW:        return "FATARROW";

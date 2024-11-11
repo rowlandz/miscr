@@ -46,6 +46,8 @@ private:
     COLON,
     DIGITS,
     DIGITS_DOT_DIGITS,
+    DOT,
+    DOT_DOT,
     EQUAL,
     FSLASH,
     FSLASH_FSLASH,
@@ -96,6 +98,7 @@ private:
       else if (c == ':') tok.step(ST::COLON);
       else if (c == '|') tok.step(ST::PIPE);
       else if (c == '-') tok.step(ST::HYPHEN);
+      else if (c == '.') tok.step(ST::DOT);
       else if (c == '&') tok.stepAndCapture(Token::AMP);
       else if (c == '#') tok.stepAndCapture(Token::HASH);
       else if (c == '!') tok.stepAndCapture(Token::EXCLAIM);
@@ -110,7 +113,6 @@ private:
       else if (c == '[') tok.stepAndCapture(Token::LBRACKET);
       else if (c == ']') tok.stepAndCapture(Token::RBRACKET);
       else if (c == ',') tok.stepAndCapture(Token::COMMA);
-      else if (c == '.') tok.stepAndCapture(Token::DOT);
       else if (c == ';') tok.stepAndCapture(Token::SEMICOLON);
       else {
         err << "Illegal start of token.\n" << tok.selectionBeginLocation();
@@ -133,6 +135,20 @@ private:
     case ST::DIGITS_DOT_DIGITS:
       if (isDigit(c)) tok.step(ST::DIGITS_DOT_DIGITS);
       else tok.capture(Token::LIT_DEC);
+      break;
+
+    case ST::DOT:
+      if (c == '.') tok.step(ST::DOT_DOT);
+      else tok.capture(Token::DOT);
+      break;
+
+    case ST::DOT_DOT:
+      if (c == '.') tok.stepAndCapture(Token::ELLIPSIS);
+      else {
+        err << "Unrecognized token (did you mean ... ?)\n"
+            << tok.selectionLocation();
+        return false;
+      }
       break;
 
     case ST::EQUAL:
@@ -249,12 +265,18 @@ private:
     case ST::COLON: tok.capture(Token::COLON); break;
     case ST::DIGITS: tok.capture(Token::LIT_INT); break;
     case ST::DIGITS_DOT_DIGITS: tok.capture(Token::LIT_DEC); break;
+    case ST::DOT: tok.capture(Token::DOT); break;
     case ST::EQUAL: tok.capture(Token::EQUAL); break;
     case ST::FSLASH: tok.capture(Token::OP_DIV); break;
     case ST::HYPHEN: tok.capture(Token::OP_SUB); break;
     case ST::IDENT: tok.capture(identOrKeywordTy(tok.selection())); break;
     case ST::LINE_COMMENT_L: tok.capture(Token::DOC_COMMENT_L); break;
     case ST::LINE_COMMENT_R: tok.capture(Token::DOC_COMMENT_R); break;
+
+    case ST::DOT_DOT:
+      err << "Unrecognized token (did you mean ... ?)\n"
+          << tok.selectionLocation();
+      return false;
 
     case ST::FSLASH_FSLASH:
     case ST::LINE_COMMENT: /* discard non-doc comments */ break;

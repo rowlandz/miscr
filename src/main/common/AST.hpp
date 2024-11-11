@@ -665,24 +665,29 @@ public:
 };
 
 /// @brief A function or extern function.
+///
+/// If the function is variadic, then calls to the function can accept zero or
+/// more additional arguments of any type after its specified parameters.
 class FunctionDecl : public Decl {
   ParamList* parameters;
+  bool variadic;
   TypeExp* returnType;
   Exp* body;
 public:
   FunctionDecl(Location loc, Name* name, ParamList* params, TypeExp* returnType,
-    Exp* body = nullptr) : Decl(FUNC, loc, name), parameters(params),
-    returnType(returnType), body(body) {}
+    Exp* body = nullptr, bool variadic = false) : Decl(FUNC, loc, name),
+    parameters(params), returnType(returnType), body(body), variadic(variadic){}
   static FunctionDecl* downcast(AST* ast)
     { return ast->id == FUNC ? static_cast<FunctionDecl*>(ast) : nullptr; }
   ParamList* getParameters() const { return parameters; }
   TypeExp* getReturnType() const { return returnType; }
   Exp* getBody() const { return body; }
+  bool isVariadic() const { return variadic; }
 
   /// @brief Returns true iff this function has no body.
   bool isExtern() const { return body == nullptr; }
 
-  /// True iff not an `extern` function and getBody() is not nullptr. 
+  /// @brief True iff not an `extern` function and getBody() is not nullptr.
   bool hasBody() const { return body != nullptr; }
 };
 

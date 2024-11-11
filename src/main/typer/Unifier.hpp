@@ -191,50 +191,7 @@ public:
     }
 
     else if (auto e = CallExp::downcast(_e)) {
-      llvm::StringRef calleeName = e->getFunction()->asStringRef();
-      Decl* _callee = ont.getDecl(calleeName, Ontology::Space::FUNCTION_OR_TYPE);
-      assert(_callee != nullptr && "Bug in cataloger or canonicalizer.");
-      if (auto callee = FunctionDecl::downcast(_callee)) {
-        /*** unify each argument with corresponding parameter ***/
-        auto argList = e->getArguments()->asArrayRef();
-        auto paramList = callee->getParameters()->asArrayRef();
-        int idx = 0;
-        while (idx < argList.size() && idx < paramList.size()) {
-          TVar paramType = tc.freshFromTypeExp(paramList[idx].second);
-          expectTypeToBe(argList[idx], paramType);
-          ++idx;
-        }
-        if (idx < argList.size() || idx < paramList.size()) {
-          errors.push_back(LocatedError()
-            << "Arity mismatch for function "
-            << callee->getName()->asStringRef() << ". Expected "
-            << std::to_string(paramList.size()) << " but got "
-            << std::to_string(argList.size()) << ".\n" << e->getLocation()
-          );
-        }
-        /*** set this expression's type to the callee's return type ***/
-        e->setTVar(tc.freshFromTypeExp(callee->getReturnType()));
-      }
-      else if (auto callee = DataDecl::downcast(_callee)) {
-        auto args = e->getArguments()->asArrayRef();
-        auto params = callee->getFields()->asArrayRef();
-        int idx = 0;
-        while (idx < args.size() && idx < params.size()) {
-          TVar paramType = tc.freshFromTypeExp(params[idx].second);
-          expectTypeToBe(args[idx], paramType);
-          ++idx;
-        }
-        if (idx < args.size() || idx < params.size()) {
-          errors.push_back(LocatedError()
-            << "Arity mismatch for constructor "
-            << callee->getName()->asStringRef() << ". Expected "
-            << std::to_string(params.size()) << " but got "
-            << std::to_string(args.size()) << ".\n" << e->getLocation()
-          );
-        }
-        e->setTVar(tc.fresh(Type::name(callee->getName())));
-      }
-      else llvm_unreachable("Unexpected callee");
+      unifyCallExp(e);
     }
 
     else if (auto e = DecimalLit::downcast(_e)) {
@@ -335,6 +292,46 @@ public:
     }
 
     return _e->getTVar(); 
+  }
+
+  /// @brief Unifies a function call or constructor call expression.
+  void unifyCallExp(CallExp* e) {
+    llvm::StringRef calleeName = e->getFunction()->asStringRef();
+    llvm::ArrayRef<Exp*> args = e->getArguments()->asArrayRef();
+    llvm::ArrayRef<std::pair<Name*, TypeExp*>> params;
+    bool variadic;
+
+    // get params, variadic, and set return type
+    Decl* calleeDecl = ont.getFunctionOrConstructor(calleeName);
+    if (auto callee = FunctionDecl::downcast(calleeDecl)) {
+      params = callee->getParameters()->asArrayRef();
+      variadic = callee->isVariadic();
+      e->setTVar(tc.freshFromTypeExp(callee->getReturnType()));
+    } else if (auto callee = DataDecl::downcast(calleeDecl)) {
+      params = callee->getFields()->asArrayRef();
+      variadic = false;
+      e->setTVar(tc.fresh(Type::name(callee->getName())));
+    }
+
+    // check for arity mismatch
+    if (!variadic && args.size() != params.size())
+      errors.push_back(LocatedError()
+        << "Arity mismatch for function " << calleeName << ". Expected "
+        << std::to_string(params.size()) << " arguments but got "
+        << std::to_string(args.size()) << ".\n" << e->getLocation()
+      );
+    else if (variadic && args.size() < params.size())
+      errors.push_back(LocatedError()
+        << "Arity mismatch for function " << calleeName << ". Expected at "
+        << "least " << std::to_string(params.size()) << " arguments but got "
+        << std::to_string(args.size()) << ".\n" << e->getLocation()
+      );
+
+    // unify arguments
+    for (int i = 0; i < args.size(); ++i) {
+      if (i >= params.size()) unifyExp(args[i]);
+      else unifyWith(args[i], tc.freshFromTypeExp(params[i].second));
+    }
   }
 
   /// @brief Unifies a projection expression. 
