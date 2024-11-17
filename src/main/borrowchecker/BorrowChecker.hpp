@@ -6,6 +6,7 @@
 #include "common/LocatedError.hpp"
 #include "common/TypeContext.hpp"
 #include "borrowchecker/AccessPath.hpp"
+#include "borrowchecker/BorrowState.hpp"
 
 /// @brief The borrow checker. Responsible for ensuring that owned refs are
 /// used once and moved refs are replaced.
@@ -40,18 +41,20 @@ public:
   void checkFunctionDecl(FunctionDecl* funcDecl) {
     Exp* body = funcDecl->getBody();
     if (body == nullptr) return;
-    unusedPaths.clear();
-    usedPaths.clear();
     apm.clear();
+    BorrowState block(errors);
     for (auto param : funcDecl->getParameters()->asArrayRef()) {
       AccessPath* paramAPRoot = apm.getRoot(param.first->asStringRef());
       TVar paramTy = tc.freshFromTypeExp(param.second);
       for (auto looseExt : looseExtensionsOf(paramAPRoot, paramTy)) {
-        unusedPaths[looseExt] = param.first->getLocation();
+        block.intro(looseExt, param.first->getLocation());
       }
     }
 
+    bs = &block;
     AccessPath* retAP = check(body);
+    bs = nullptr;
+
     // TODO: make helper function to narrow the location for block exps
     Location loc;
     if (auto block = BlockExp::downcast(body))
@@ -59,17 +62,17 @@ public:
     else
       loc = body->getLocation();
     for (AccessPath* ext : looseExtensionsOf(retAP, body->getTVar()))
-      use(ext, loc);
+      block.use(ext, loc);
 
     // produce errors for any remaining unused paths
-    for (auto unused : unusedPaths)
+    for (auto unused : block.getUnusedPaths())
       errors.push_back(LocatedError()
         << "Owned reference " << unused.first->asString()
         << " is never used.\n" << unused.second
       );
 
     // produce errors for any remaining moved paths
-    for (auto moved : movedPaths)
+    for (auto moved : block.getMovedPaths())
       errors.push_back(LocatedError()
         << "Moved value " << moved.first->asString() << " is never replaced.\n"
         << moved.second
@@ -103,7 +106,7 @@ public:
     else if (auto e = BorrowExp::downcast(_e)) {
       AccessPath* ret = check(e->getRefExp());
       for (auto owner : looseExtensionsOf(ret, e->getRefExp()->getTVar())) {
-        if (LocationPair locs = usedPaths.lookup(owner)) {
+        if (LocationPair locs = bs->getUsedPaths().lookup(owner)) {
           errors.push_back(LocatedError()
             << "Owned reference " << owner->asString() << " created here:\n"
             << locs.fst << "is already used here:\n" << locs.snd
@@ -133,12 +136,12 @@ public:
         for (auto arg : e->getArguments()->asArrayRef()) {
           AccessPath* argAP = check(arg);
           for (AccessPath* ext : looseExtensionsOf(argAP, arg->getTVar())) {
-            use(ext, arg->getLocation());
+            bs->use(ext, arg->getLocation());
           }
         }
         AccessPath* ret = apm.getRoot(freshInternalVar());
         for (auto looseExt : looseExtensionsOf(ret, e->getTVar())) {
-          unusedPaths[looseExt] = e->getLocation();
+          bs->intro(looseExt, e->getLocation());
         }
         return ret;
       }
@@ -149,6 +152,31 @@ public:
     else if (auto e = DerefExp::downcast(_e)) {
       AccessPath* ofAP = check(e->getOf());
       return apm.getDeref(ofAP);
+    }
+    else if (auto e = IfExp::downcast(_e)) {
+      check(e->getCondExp());
+      BorrowState* afterCond = bs;
+
+      BorrowState afterThen = *afterCond;
+      bs = &afterThen;
+      AccessPath* thenAP = check(e->getThenExp());
+      for (AccessPath* ap : looseExtensionsOf(thenAP, e->getTVar()))
+        bs->use(ap, e->getThenExp()->getLocation());
+
+      BorrowState afterElse = *afterCond;
+      bs = &afterElse;
+      AccessPath* elseAP = check(e->getElseExp());
+      for (AccessPath* ap : looseExtensionsOf(elseAP, e->getTVar()))
+        bs->use(ap, e->getElseExp()->getLocation());
+
+      afterThen.merge(afterElse, e->getLocation(), *afterCond);
+      *afterCond = afterThen;
+      bs = afterCond;
+
+      AccessPath* ret = apm.getRoot(freshInternalVar());
+      for (AccessPath* ap : looseExtensionsOf(ret, e->getTVar()))
+        bs->intro(ap, e->getLocation());
+      return ret;
     }
     else if (auto e = IndexExp::downcast(_e)) {
       AccessPath* baseAP = check(e->getBase());
@@ -170,10 +198,10 @@ public:
       AccessPath* refAP = check(e->getRefExp());
       auto loosePaths = looseExtensionsOf(apm.getDeref(refAP), e->getTVar());
       for (AccessPath* loosePath : loosePaths) {
-        move(loosePath, e->getRefExp()->getLocation());
+        bs->move(loosePath, e->getRefExp()->getLocation());
       }
       AccessPath* ret = apm.getRoot(freshInternalVar());
-      unusedPaths[ret] = e->getLocation();
+      bs->intro(ret, e->getLocation());
       return ret;
     }
     else if (auto e = NameExp::downcast(_e)) {
@@ -210,9 +238,9 @@ public:
       auto lhsLooseExts = looseExtensionsOf(apm.getDeref(lhsAP), rhsTVar);
       auto rhsLooseExts = looseExtensionsOf(rhsAP, rhsTVar);
       for (AccessPath* ext : rhsLooseExts)
-        use(ext, e->getRHS()->getLocation());
+        bs->use(ext, e->getRHS()->getLocation());
       for (AccessPath* ext : lhsLooseExts)
-        replace(ext, e->getLHS()->getLocation());
+        bs->unmove(ext, e->getLHS()->getLocation());
       return nullptr;
     }
     else if (StringLit::downcast(_e)) {
@@ -230,17 +258,6 @@ public:
   llvm::SmallVector<LocatedError> errors;
 
 private:
-  
-  /// @brief A pair of locations that is default-constructable so it can easily
-  /// work with llvm::DenseMap.
-  class LocationPair {
-  public:
-    Location fst;
-    Location snd;
-    LocationPair() {}
-    LocationPair(Location fst, Location snd) : fst(fst), snd(snd) {}
-    operator bool() const { return fst && snd; }
-  };
 
   AccessPathManager apm;
 
@@ -248,14 +265,7 @@ private:
 
   const Ontology& ont;
 
-  /// @brief All _unused_ paths with their creation locations.
-  llvm::DenseMap<AccessPath*, Location> unusedPaths;
-
-  /// @brief All _used_ paths with their creation and use locations.
-  llvm::DenseMap<AccessPath*, LocationPair> usedPaths;
-
-  /// @brief All _moved_ paths with their move locations.
-  llvm::DenseMap<AccessPath*, Location> movedPaths;
+  BorrowState* bs;
 
   int nextInternalVar = 0;
 
@@ -301,78 +311,6 @@ private:
     case Type::ID::NOTYPE:
       llvm_unreachable("Didn't expect NOTYPE here.");
     }
-  }
-
-  /// @brief Moves unused path @p owner to the `usedPaths` map.
-  /// @param loc The source code location where @p owner is used.
-  /// @return True iff the use was successful. Otherwise an error is pushed.
-  bool use(AccessPath* owner, Location loc) {
-    assert(owner != nullptr && "Tried to use nullptr");
-    if (Location creationLoc = unusedPaths.lookup(owner)) {
-      usedPaths[owner] = LocationPair(creationLoc, loc);
-      unusedPaths.erase(owner);
-      return true;
-    }
-    else if (LocationPair locs = usedPaths.lookup(owner)) {
-      errors.push_back(LocatedError()
-        << "Owned reference " << owner->asString()
-        << " is already used here:\n" << locs.snd
-        << "so it cannot be used later:\n" << loc
-      );
-      return false;
-    }
-    else {
-      errors.push_back(LocatedError()
-        << "Cannot use owned reference " << owner->asString()
-        << " created outside this scope.\n" << loc
-      );
-      return false;
-    }
-  }
-
-  /// @brief Performs a _move_ on @p path. Specifically, moves @p path into the
-  /// `movedPaths` map.
-  /// @param moveLoc Location of `e` in `move e`.
-  /// @return true iff the move was successful.
-  bool move(AccessPath* path, Location moveLoc) {
-    if (Location creatLoc = unusedPaths.lookup(path)) {
-      errors.push_back(LocatedError()
-        << "Owned reference " << path->asString() << " created here:\n"
-        << creatLoc << "cannot be moved in the same scope:\n" << moveLoc
-      );
-      return false;
-    }
-    if (LocationPair locs = usedPaths.lookup(path)) {
-      errors.push_back(LocatedError()
-        << "Owned reference " << path->asString() << " created here:\n"
-        << locs.fst << "cannot be moved in the same scope.\n" << moveLoc
-      );
-    }
-    if (Location prevMoveLoc = movedPaths.lookup(path)) {
-      errors.push_back(LocatedError()
-        << "Owned reference " << path->asString()
-        << " was already moved here:\n" << prevMoveLoc
-        << "so it cannot be moved later:\n" << moveLoc
-      );
-      return false;
-    }
-    movedPaths[path] = moveLoc;
-    return true;
-  }
-
-  /// @brief Replaces the value of a moved @p path (via a store expression).
-  /// @param loc location of the LHS of a store expression
-  /// @return True iff the replacement was successful.
-  bool replace(AccessPath* path, Location loc) {
-    if (movedPaths.lookup(path).exists()) {
-      movedPaths.erase(path);
-      return true;
-    }
-    errors.push_back(LocatedError()
-      << "Owned reference " << path->asString()
-      << " becomes inaccessible after store.\n" << loc
-    );
-    return false;
   }
 };
 

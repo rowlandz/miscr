@@ -175,4 +175,11 @@ namespace BorrowTests {
     declsShouldFail("func foo(x: &#i8, y: #i8): unit = { x := y };");
   }
 
+  TEST(if_expr_inconsistent_frees) {
+    declsShouldFail(
+      "extern func free(ptr: #i8): unit;\n"
+      "func foo(x: #i8, c: bool): unit = if c then free(x) else {};\n"
+    );
+  }
+
 }
