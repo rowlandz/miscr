@@ -202,10 +202,8 @@ public:
     }
     else if (auto e = MoveExp::downcast(_e)) {
       AccessPath* refAP = check(e->getRefExp());
-      auto loosePaths = looseExtensionsOf(apm.getDeref(refAP), e->getTVar());
-      for (AccessPath* loosePath : loosePaths) {
-        bs->move(loosePath, e->getRefExp()->getLocation());
-      }
+      for (AccessPath* loosePath : looseExtensionsOf(refAP, e->getTVar()))
+        { bs->move(loosePath, e->getRefExp()->getLocation()); }
       AccessPath* ret = apm.getRoot(freshInternalVar());
       bs->intro(ret, e->getLocation());
       return ret;

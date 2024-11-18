@@ -26,8 +26,7 @@ There are three build targets in total:
 
 Running the build script with no arguments prints a help message.
 
-You can also use `make` to run the build script instead of running it
-directly:
+You can also use `make` to run the build script instead of running it directly:
 
 ```shell
 make miscrc
@@ -141,15 +140,14 @@ MiSCR allows an oref to be _moved_ into the current scope as long as the moved
 oref is _replaced_ before the scope ends:
 
     func replaceWithHello(s: &String): unit = {
-      C::free(move s[.ptr]);    // OK, but s->ptr must be replaced later
+      C::free(move s->ptr);     // OK, but s->ptr must be replaced later
       let newPtr = C::malloc(6);
       C::strcpy(borrow newPtr, "hello");
       s[.ptr] := newPtr;        // replacing s->ptr
       s[.len] := 5;
     };
 
-The `move` expression has the type `&#T -> #T` for any type `T`, so it can be
-thought of as a special kind of dereference.
+The `move` expression has the type `#T -> #T` for any type `T`.
 
 ### Data Structures
 

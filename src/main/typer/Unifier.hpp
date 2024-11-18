@@ -257,7 +257,7 @@ public:
 
     else if (auto e = MoveExp::downcast(_e)) {
       TVar retTy = tc.fresh(Type::oref(tc.fresh()));
-      expectTypeToBe(e->getRefExp(), tc.fresh(Type::bref(retTy)));
+      expectTypeToBe(e->getRefExp(), retTy);
       e->setTVar(retTy);
     }
 

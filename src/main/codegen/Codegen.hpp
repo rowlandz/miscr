@@ -241,9 +241,7 @@ public:
       return nullptr;
     }
     else if (auto e = MoveExp::downcast(_exp)) {
-      llvm::Value* refExp = genExp(e->getRefExp());
-      llvm::Type* tyToLoad = genType(e->getTVar());
-      return b->CreateLoad(tyToLoad, refExp);
+      return genExp(e->getRefExp());
     }
     else if (auto e = ProjectExp::downcast(_exp)) {
       llvm::Value* baseV = genExp(e->getBase());

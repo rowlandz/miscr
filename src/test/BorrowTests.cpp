@@ -158,7 +158,7 @@ namespace BorrowTests {
       "extern func alloc(): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
       "func foo(x: &#i8): unit = {\n"
-      "  free(move x);\n"
+      "  free(move x!);\n"
       "  x := alloc();\n"
       "};"
     );
@@ -167,7 +167,7 @@ namespace BorrowTests {
   TEST(unreplaced_move) {
     declsShouldFail(
       "extern func free(ptr: #i8): unit;\n"
-      "func foo(x: &#i8): unit = free(move x);"
+      "func foo(x: &#i8): unit = free(move x!);"
     );
   }
 
