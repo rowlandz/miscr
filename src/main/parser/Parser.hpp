@@ -316,14 +316,16 @@ public:
   IfExp* ifExp() {
     Token begin = *p;
     if (!chomp(Token::KW_IF)) EPSILON
+    CHOMP_ELSE_ARREST(Token::LPAREN, "(", "if statement")
     Exp* condExp = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::KW_THEN, "then", "if expression")
+    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "if statement")
     Exp* thenExp = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::KW_ELSE, "else", "if expression")
-    Exp* elseExp = exp(); ARREST_IF_ERROR
+    Exp* elseExp = nullptr;
+    if (chomp(Token::KW_ELSE)) { elseExp = exp(); ARREST_IF_ERROR }
     return new IfExp(hereFrom(begin), condExp, thenExp, elseExp);
   }
 
+  /// @brief Parses a non-statement expression.
   Exp* exp() {
     Exp* ret = ifExp(); CONTINUE_ON_EPSILON(ret)
     return expLv10();
@@ -348,6 +350,64 @@ public:
       }
       ++p;
     }
+  }
+
+  //==========================================================================//
+  //=== Statements
+  //==========================================================================//
+
+  /// @brief Parses a statement.
+  Exp* stmt() {
+    Exp* ret;
+    ret = letStmt(); CONTINUE_ON_EPSILON(ret)
+    ret = whileStmt(); CONTINUE_ON_EPSILON(ret)
+    ret = exp(); CONTINUE_ON_EPSILON(ret)
+    EPSILON
+  }
+
+  /// @brief Zero or more statements separated by semicolons.
+  /// Never epsilon fails.
+  ExpList* stmts0() {
+    Token begin = *p;
+    llvm::SmallVector<Exp*, 4> ss;
+    Exp* s;
+    for (;;) {
+      s = stmt();
+      if (error == ARRESTING_ERR) return nullptr;
+      if (error == EPSILON_ERR) {
+        error = NOERROR;
+        return new ExpList(hereFrom(begin), ss);
+      }
+      ss.push_back(s);
+      if (!chomp(Token::SEMICOLON)) {
+        return new ExpList(hereFrom(begin), ss);
+      }
+    }
+  }
+
+  LetExp* letStmt() {
+    Token begin = *p;
+    if (!chomp(Token::KW_LET)) EPSILON
+    Name* boundIdent = ident(); ARREST_IF_ERROR
+    TypeExp* ascrip = nullptr;
+    if (chomp(Token::COLON)) {
+      ascrip = typeExp(); ARREST_IF_ERROR
+      CHOMP_ELSE_ARREST(Token::EQUAL, "=", "let statement")
+    } else {
+      CHOMP_ELSE_ARREST(Token::EQUAL, ": =", "let statement")
+    }
+    Exp* definition = exp(); ARREST_IF_ERROR
+    return new LetExp(hereFrom(begin), boundIdent, ascrip, definition);
+  }
+
+  WhileExp* whileStmt() {
+    Token begin = *p;
+    if (!chomp(Token::KW_WHILE)) EPSILON
+    CHOMP_ELSE_ARREST(Token::LPAREN, "(", "while loop")
+    Exp* cond = exp(); ARREST_IF_ERROR
+    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "while loop")
+    Exp* body = exp(); ARREST_IF_ERROR
+    return new WhileExp(hereFrom(begin), cond, body);
   }
 
   //==========================================================================//
@@ -391,60 +451,6 @@ public:
   NameTypeExp* nameTypeExp() {
     Name* n = name(); RETURN_IF_ERROR
     return new NameTypeExp(n);
-  }
-
-  //==========================================================================//
-  //=== Statements
-  //==========================================================================//
-
-  LetExp* letStmt() {
-    Token begin = *p;
-    if (!chomp(Token::KW_LET)) EPSILON
-    Name* boundIdent = ident(); ARREST_IF_ERROR
-    TypeExp* ascrip = nullptr;
-    if (chomp(Token::COLON)) {
-      ascrip = typeExp(); ARREST_IF_ERROR
-      CHOMP_ELSE_ARREST(Token::EQUAL, "=", "let statement")
-    } else {
-      CHOMP_ELSE_ARREST(Token::EQUAL, ": =", "let statement")
-    }
-    Exp* definition = exp(); ARREST_IF_ERROR
-    return new LetExp(hereFrom(begin), boundIdent, ascrip, definition);
-  }
-
-  ReturnExp* returnStmt() {
-    Token begin = *p;
-    if (!chomp(Token::KW_RETURN)) EPSILON
-    Exp* returnee = exp(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "return statement")
-    return new ReturnExp(hereFrom(begin), returnee);
-  }
-
-  Exp* stmt() {
-    Exp* ret;
-    ret = letStmt(); CONTINUE_ON_EPSILON(ret)
-    ret = returnStmt(); CONTINUE_ON_EPSILON(ret)
-    ret = exp(); CONTINUE_ON_EPSILON(ret)
-    EPSILON
-  }
-
-  /// Zero or more statements separated by semicolons Never epsilon fails.
-  ExpList* stmts0() {
-    Token begin = *p;
-    llvm::SmallVector<Exp*, 4> ss;
-    Exp* s;
-    for (;;) {
-      s = stmt();
-      if (error == ARRESTING_ERR) return nullptr;
-      if (error == EPSILON_ERR) {
-        error = NOERROR;
-        return new ExpList(hereFrom(begin), ss);
-      }
-      ss.push_back(s);
-      if (!chomp(Token::SEMICOLON)) {
-        return new ExpList(hereFrom(begin), ss);
-      }
-    }
   }
 
   //==========================================================================//

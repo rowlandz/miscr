@@ -16,7 +16,7 @@ public:
     KW_BOOL, KW_BORROW, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_f32, KW_f64,
     KW_FALSE, KW_FUNC, KW_i8, KW_i16, KW_i32, KW_i64, KW_IF, KW_LET, KW_MATCH,
     KW_MODULE, KW_MOVE, KW_OF, KW_PROC, KW_RETURN, KW_STR, KW_THEN, KW_TRUE,
-    KW_UNIT,
+    KW_UNIT, KW_WHILE,
 
     // operators
     OP_ADD, OP_DIV, OP_EQ, OP_GE, OP_GT, OP_LE, OP_LT, OP_MOD, OP_MUL, OP_NE,
@@ -81,6 +81,7 @@ public:
     case KW_i32:          return "KW_i32";
     case KW_i64:          return "KW_i64";
     case KW_STR:          return "KW_STR";
+    case KW_WHILE:        return "KW_WHILE";
     case OP_GE:           return "OP_GE";
     case OP_GT:           return "OP_GT";
     case OP_LE:           return "OP_LE";

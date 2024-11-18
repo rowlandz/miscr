@@ -339,6 +339,7 @@ private:
     case 5:
       if (s == "false") return Token::KW_FALSE;
       if (s == "match") return Token::KW_MATCH;
+      if (s == "while") return Token::KW_WHILE;
       return Token::IDENT;
     case 6:
       if (s == "borrow") return Token::KW_BORROW;

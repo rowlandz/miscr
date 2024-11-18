@@ -116,7 +116,7 @@ namespace TyperTests {
       "  extern func f(x: i32): i32;"
       "  extern func p(y: i8): bool;"
       "  func g(x: i32): i32 = f(2*x) + 1;"
-      "  func h(z: i8): i32 = if p(z) then 0 else 1;"
+      "  func h(z: i8): i32 = if (p(z)) 0 else 1;"
       "}"
     );
   }

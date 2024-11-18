@@ -221,9 +221,15 @@ public:
 
     else if (auto e = IfExp::downcast(_e)) {
       unifyWith(e->getCondExp(), tc.fresh(Type::bool_()));
-      TVar thenTy = unifyExp(e->getThenExp());
-      unifyWith(e->getElseExp(), thenTy);
-      e->setTVar(thenTy);
+      if (e->getElseExp() != nullptr) {
+        TVar thenTy = unifyExp(e->getThenExp());
+        unifyWith(e->getElseExp(), thenTy);
+        e->setTVar(thenTy);
+      } else {
+        TVar unitTy = tc.fresh(Type::unit());
+        unifyWith(e->getThenExp(), unitTy);
+        e->setTVar(unitTy);
+      }
     }
 
     else if (auto e = IndexExp::downcast(_e)) {
@@ -285,6 +291,13 @@ public:
         e->setTVar(unifyWith(e->getInner(), tc.fresh(Type::bool_())));
         break;
       }
+    }
+
+    else if (auto e = WhileExp::downcast(_e)) {
+      unifyWith(e->getCond(), tc.fresh(Type::bool_()));
+      TVar unitTy = tc.fresh(Type::unit());
+      unifyWith(e->getBody(), unitTy);
+      e->setTVar(unitTy);
     }
 
     else {

@@ -31,7 +31,7 @@ public:
     // expressions and statements
     ASCRIP, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, DEC_LIT, DEREF, ENAME,
     IF, INDEX, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN, STORE, STRING_LIT,
-    UNOP_EXP,
+    UNOP_EXP, WHILE,
 
     // declarations
     DATA, FUNC, MODULE,
@@ -228,7 +228,7 @@ public:
     case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case CALL:
     case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX: case INT_LIT:
     case LET: case PROJECT: case REF_EXP: case RETURN: case STORE:
-    case STRING_LIT: case UNOP_EXP: return static_cast<Exp*>(ast);
+    case STRING_LIT: case UNOP_EXP: case WHILE: return static_cast<Exp*>(ast);
     default: return nullptr;
     }
   }
@@ -406,7 +406,8 @@ public:
   }
 };
 
-/// @brief An if-then-else expression.
+/// @brief An `if` or `if-else` expression/statement. The `elseExp` could be
+/// nullptr.
 class IfExp : public Exp {
   Exp* condExp;
   Exp* thenExp;
@@ -419,6 +420,19 @@ public:
   Exp* getCondExp() const { return condExp; }
   Exp* getThenExp() const { return thenExp; }
   Exp* getElseExp() const { return elseExp; }
+};
+
+/// @brief A while-loop
+class WhileExp : public Exp {
+  Exp* cond;
+  Exp* body;
+public:
+  WhileExp(Location loc, Exp* cond, Exp* body)
+    : Exp(WHILE, loc), cond(cond), body(body) {}
+  static WhileExp* downcast(AST* ast)
+    { return ast->id == WHILE ? static_cast<WhileExp*>(ast) : nullptr; }
+  Exp* getCond() const { return cond; }
+  Exp* getBody() const { return body; }
 };
 
 /// @brief A block expression.
@@ -739,8 +753,12 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     else
       return { ast->getName(), ast->getParameters(), ast->getReturnType() };
   }
-  if (auto ast = IfExp::downcast(this))
-    return { ast->getCondExp(), ast->getThenExp(), ast->getElseExp() };
+  if (auto ast = IfExp::downcast(this)) {
+    if (ast->getElseExp() != nullptr)
+      return { ast->getCondExp(), ast->getThenExp(), ast->getElseExp() };
+    else
+      return { ast->getCondExp(), ast->getThenExp() };
+  }
   if (auto ast = IndexExp::downcast(this))
     return { ast->getBase(), ast->getIndex() };
   if (auto ast = LetExp::downcast(this)) {
@@ -775,6 +793,8 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     return { ast->getLHS(), ast->getRHS() };
   if (auto ast = UnopExp::downcast(this))
     return { ast->getInner() };
+  if (auto ast = WhileExp::downcast(this))
+    return { ast->getCond(), ast->getBody() };
   return {};
 }
 
@@ -800,6 +820,7 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::STORE:              return "STORE";
   case AST::ID::STRING_LIT:         return "STRING_LIT";
   case AST::ID::UNOP_EXP:           return "UNOP_EXP";
+  case AST::ID::WHILE:              return "WHILE";
 
   case AST::ID::DATA:               return "DATA";
   case AST::ID::FUNC:               return "FUNC";
@@ -837,6 +858,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "STORE")               return AST::ID::STORE;
   else if (str == "STRING_LIT")          return AST::ID::STRING_LIT;
   else if (str == "UNOP_EXP")            return AST::ID::UNOP_EXP;
+  else if (str == "WHILE")               return AST::ID::WHILE;
 
   else if (str == "DATA")                return AST::ID::DATA;
   else if (str == "FUNC")                return AST::ID::FUNC;

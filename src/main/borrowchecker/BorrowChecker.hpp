@@ -163,15 +163,21 @@ public:
       for (AccessPath* ap : looseExtensionsOf(thenAP, e->getTVar()))
         bs->use(ap, e->getThenExp()->getLocation());
 
-      BorrowState afterElse = *afterCond;
-      bs = &afterElse;
-      AccessPath* elseAP = check(e->getElseExp());
-      for (AccessPath* ap : looseExtensionsOf(elseAP, e->getTVar()))
-        bs->use(ap, e->getElseExp()->getLocation());
+      if (e->getElseExp() != nullptr) {
+        BorrowState afterElse = *afterCond;
+        bs = &afterElse;
+        AccessPath* elseAP = check(e->getElseExp());
+        for (AccessPath* ap : looseExtensionsOf(elseAP, e->getTVar()))
+          bs->use(ap, e->getElseExp()->getLocation());
 
-      afterThen.merge(afterElse, e->getLocation(), *afterCond);
-      *afterCond = afterThen;
-      bs = afterCond;
+        afterThen.merge(afterElse, e->getLocation(), *afterCond);
+        *afterCond = afterThen;
+        bs = afterCond;
+      } else {
+        afterThen.merge(*afterCond, e->getLocation(), *afterCond);
+        *afterCond = afterThen;
+        bs = afterCond;
+      }
 
       AccessPath* ret = apm.getRoot(freshInternalVar());
       for (AccessPath* ap : looseExtensionsOf(ret, e->getTVar()))
@@ -248,6 +254,19 @@ public:
     }
     else if (auto e = UnopExp::downcast(_e)) {
       check(e->getInner());
+      return nullptr;
+    }
+    else if (auto e = WhileExp::downcast(_e)) {
+      check(e->getCond());
+      BorrowState* const afterNoIters = bs;
+
+      BorrowState afterOneIter = *afterNoIters;
+      bs = &afterOneIter;
+      check(e->getBody());
+      check(e->getCond());
+
+      afterOneIter.merge(*afterNoIters, e->getLocation(), *afterNoIters);
+      bs = afterNoIters;
       return nullptr;
     }
     else llvm_unreachable("BorrowChecker::check(Exp*): unexpected syntax");

@@ -190,7 +190,10 @@ public:
       auto thenBlock = llvm::BasicBlock::Create(llvmctx, "then");
       auto elseBlock = llvm::BasicBlock::Create(llvmctx, "else");
       auto contBlock = llvm::BasicBlock::Create(llvmctx, "ifcont");
-      b->CreateCondBr(condition, thenBlock, elseBlock);
+      if (e->getElseExp() != nullptr)
+        b->CreateCondBr(condition, thenBlock, elseBlock);
+      else
+        b->CreateCondBr(condition, thenBlock, contBlock);
 
       f->getBasicBlockList().push_back(thenBlock);
       b->SetInsertPoint(thenBlock);
@@ -198,18 +201,26 @@ public:
       b->CreateBr(contBlock);
       thenBlock = b->GetInsertBlock();
 
-      f->getBasicBlockList().push_back(elseBlock);
-      b->SetInsertPoint(elseBlock);
-      llvm::Value* elseResult = genExp(e->getElseExp());
-      b->CreateBr(contBlock);
-      elseBlock = b->GetInsertBlock();
+      llvm::Value* elseResult;
+      if (e->getElseExp() != nullptr) {
+        f->getBasicBlockList().push_back(elseBlock);
+        b->SetInsertPoint(elseBlock);
+        elseResult = genExp(e->getElseExp());
+        b->CreateBr(contBlock);
+        elseBlock = b->GetInsertBlock();
+      }
 
       f->getBasicBlockList().push_back(contBlock);
       b->SetInsertPoint(contBlock);
-      llvm::PHINode* phiNode = b->CreatePHI(genType(e->getTVar()), 2);
-      phiNode->addIncoming(thenResult, thenBlock);
-      phiNode->addIncoming(elseResult, elseBlock);
-      return phiNode;
+      llvm::Type* retTy = genType(e->getTVar());
+      if (!retTy->isVoidTy()) {
+        llvm::PHINode* phiNode = b->CreatePHI(retTy, 2);
+        phiNode->addIncoming(thenResult, thenBlock);
+        phiNode->addIncoming(elseResult, elseBlock);
+        return phiNode;
+      } else {
+        return nullptr;
+      }
     }
     else if (auto e = IndexExp::downcast(_exp)) {
       llvm::Value* baseV = genExp(e->getBase());
@@ -280,6 +291,27 @@ public:
       case UnopExp::NEG: return b->CreateNeg(innerV);
       case UnopExp::NOT: return b->CreateNot(innerV);
       }
+    }
+    else if (auto e = WhileExp::downcast(_exp)) {
+      llvm::Function* f = b->GetInsertBlock()->getParent();
+      auto condBlock = llvm::BasicBlock::Create(llvmctx, "whileCondition");
+      auto bodyBlock = llvm::BasicBlock::Create(llvmctx, "whileBody");
+      auto contBlock = llvm::BasicBlock::Create(llvmctx, "whileCont");
+      b->CreateBr(condBlock);
+
+      f->getBasicBlockList().push_back(condBlock);
+      b->SetInsertPoint(condBlock);
+      llvm::Value* condResult = genExp(e->getCond());
+      b->CreateCondBr(condResult, bodyBlock, contBlock);
+
+      f->getBasicBlockList().push_back(bodyBlock);
+      b->SetInsertPoint(bodyBlock);
+      genExp(e->getBody());
+      b->CreateBr(condBlock);
+
+      f->getBasicBlockList().push_back(contBlock);
+      b->SetInsertPoint(contBlock);
+      return nullptr;
     }
     else llvm_unreachable("genExp -- unsupported expression form");
   }
