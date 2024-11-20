@@ -1,133 +1,131 @@
 #ifndef COMMON_TYPECONTEXT
 #define COMMON_TYPECONTEXT
 
-#include "llvm/ADT/DenseMap.h"
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/StringMap.h>
 #include "common/AST.hpp"
 
-/// @brief Manages type variables and their bindings, including generating fresh
-/// type vars, binding them to other type vars, resolving them to types, and
-/// printing types.
+/// @brief Manages creation, deletion, and uniquing of Type objects.
+///
+/// Types are created using `get` methods and are destroyed by the TypeContext
+/// destructor or the clear() method.
 class TypeContext {
-  
-  struct MyDenseMapInfo {
-    static inline TVar getEmptyKey() { return TVar(-1); }
-    static inline TVar getTombstoneKey() { return TVar(-2); }
-    static unsigned getHashValue(const TVar &Val) { return Val.get(); }
-    static bool isEqual(const TVar &LHS, const TVar &RHS) {
-      return LHS.get() == RHS.get();
-    }
-  };
 
-  class TypeOrTVar {
-    bool isType_;
-    union { TVar tvar; Type type; } data;
-  public:
-    TypeOrTVar() : data({.type = Type::notype()}) { isType_ = true; }
-    TypeOrTVar(TVar tvar) : data({.tvar = tvar}) { isType_ = false; }
-    TypeOrTVar(Type type) : data({.type = type}) { isType_ = true; }
-    bool isType() { return isType_; }
-    bool isTVar() { return !isType_; }
-    Type getType() { return data.type; }
-    TVar getTVar() { return data.tvar; }
-    bool exists() {
-      return (isType_ && !data.type.isNoType())
-          || (!isType_ && data.tvar.exists());
-    }
-  };
+  // primitive types
+  PrimitiveType bool_ = PrimitiveType::BOOL;
+  PrimitiveType f32   = PrimitiveType::f32;
+  PrimitiveType f64   = PrimitiveType::f64;
+  PrimitiveType i8    = PrimitiveType::i8;
+  PrimitiveType i16   = PrimitiveType::i16;
+  PrimitiveType i32   = PrimitiveType::i32;
+  PrimitiveType i64   = PrimitiveType::i64;
+  PrimitiveType unit  = PrimitiveType::UNIT;
 
-  /// Type variable bindings.
-  llvm::DenseMap<TVar, TypeOrTVar, MyDenseMapInfo> bindings;
+  // type constraints
+  Constraint decimal  = Constraint::DECIMAL;
+  Constraint numeric  = Constraint::NUMERIC;
 
+  /// @brief Counter for generating fresh type variables.
   int firstUnusedTypeVar = 1;
 
+  /// @brief Stores all borrowed reference types, indexed by their inner type.
+  llvm::DenseMap<Type*, RefType*> brefTypes;
+
+  /// @brief Stores all owned reference types, indexed by their inner type.
+  llvm::DenseMap<Type*, RefType*> orefTypes;
+
+  /// @brief Stores all NameType objects indexed by their names.
+  llvm::StringMap<NameType*> nameTypes;
+
+  /// @brief Stores all TypeVar objects.
+  llvm::SmallVector<TypeVar*> typeVars;
+
 public:
+  TypeContext() {}
+  ~TypeContext() { clear(); }
+  TypeContext(const TypeContext&) = delete;
+  TypeContext& operator=(const TypeContext&) = delete;
 
-  /// @brief Returns a fresh type variable bound to `ty`.
-  TVar fresh(Type ty) {
-    bindings[TVar(firstUnusedTypeVar)] = TypeOrTVar(ty);
-    return firstUnusedTypeVar++;
+  PrimitiveType* getBool() { return &bool_; }
+  PrimitiveType* getF32() { return &f32; }
+  PrimitiveType* getF64() { return &f64; }
+  PrimitiveType* getI8() { return &i8; }
+  PrimitiveType* getI16() { return &i16; }
+  PrimitiveType* getI32() { return &i32; }
+  PrimitiveType* getI64() { return &i64; }
+  PrimitiveType* getUnit() { return &unit; }
+
+  Constraint* getDecimal() { return &decimal; }
+  Constraint* getNumeric() { return &numeric; }
+
+  RefType* getBrefType(Type* inner) {
+    if (RefType* ret = brefTypes.lookup(inner)) return ret;
+    RefType* ret = new RefType(inner, false);
+    brefTypes[inner] = ret;
+    return ret;
   }
 
-  /// @brief Returns a fresh unbound type variable. 
-  TVar fresh() {
-    return TVar(firstUnusedTypeVar++);
+  RefType* getOrefType(Type* inner) {
+    if (RefType* ret = orefTypes.lookup(inner)) return ret;
+    RefType* ret = new RefType(inner, true);
+    orefTypes[inner] = ret;
+    return ret;
   }
 
-  /// @brief Binds type variable `w` to `bindTo`. If `w` is already bound to
-  /// something, the binding is overwritten.
-  void bind(TVar w, TVar bindTo) {
-    bindings[w] = TypeOrTVar(bindTo);
+  RefType* getRefType(Type* inner, bool isOwned)
+    { return isOwned ? getOrefType(inner) : getBrefType(inner); }
+
+  NameType* getNameType(llvm::StringRef name) {
+    if (NameType* ret = nameTypes.lookup(name)) return ret;
+    NameType* ret = new NameType(name);
+    nameTypes[name] = ret;
+    return ret;
   }
 
-  /// @brief Follows `bindings` until a type var is found that is either bound
-  /// to a type or bound do nothing. In the latter case, `Type::notype()` is
-  /// returned. Side-effect free. 
-  std::pair<TVar, Type> resolve(TVar v) const {
-    assert(v.exists() && "Tried to resolve a nonexistant typevar");
-    TypeOrTVar found = bindings.lookup(v);
-    while (found.exists()) {
-      if (found.isType()) {
-        return std::pair<TVar, Type>(v, found.getType());
-      }
-      v = found.getTVar();
-      found = bindings.lookup(v);
+  /// @brief Returns a fresh type variable that has never been built before.
+  TypeVar* getFreshTypeVar() {
+    TypeVar* ret = new TypeVar(firstUnusedTypeVar++);
+    typeVars.push_back(ret);
+    return ret;
+  }
+
+  /// @brief Gets the type corresponding to the given type expression.
+  Type* getTypeFromTypeExp(TypeExp* texp) {
+    if (auto nte = NameTypeExp::downcast(texp)) {
+      return getNameType(nte->getName()->asStringRef());
     }
-    return std::pair<TVar, Type>(v, Type::notype());
-  }
-
-  /// @brief Converts a type expression into a `Type` with fresh type variables.
-  TVar freshFromTypeExp(TypeExp* _texp) {
-    AST::ID id = _texp->id;
-
-    if (auto texp = NameTypeExp::downcast(_texp)) {
-      return fresh(Type::name(texp->getName()));
-    }
-    if (auto texp = RefTypeExp::downcast(_texp)) {
-      if (texp->isOwned())
-        return fresh(Type::oref(freshFromTypeExp(texp->getPointeeType())));
+    if (auto rte = RefTypeExp::downcast(texp)) {
+      if (rte->isOwned())
+        return getOrefType(getTypeFromTypeExp(rte->getPointeeType()));
       else
-        return fresh(Type::bref(freshFromTypeExp(texp->getPointeeType())));
+        return getBrefType(getTypeFromTypeExp(rte->getPointeeType()));
     }
-    if (auto texp = PrimitiveTypeExp::downcast(_texp)) {
-      switch (texp->kind) {
-      case PrimitiveTypeExp::BOOL:   return fresh(Type::bool_());
-      case PrimitiveTypeExp::f32:    return fresh(Type::f32());
-      case PrimitiveTypeExp::f64:    return fresh(Type::f64());
-      case PrimitiveTypeExp::i8:     return fresh(Type::i8());
-      case PrimitiveTypeExp::i16:    return fresh(Type::i16());
-      case PrimitiveTypeExp::i32:    return fresh(Type::i32());
-      case PrimitiveTypeExp::i64:    return fresh(Type::i64());
-      case PrimitiveTypeExp::UNIT:   return fresh(Type::unit());
+    if (auto pte = PrimitiveTypeExp::downcast(texp)) {
+      switch (pte->kind) {
+      case PrimitiveTypeExp::BOOL:   return &bool_;
+      case PrimitiveTypeExp::f32:    return &f32;
+      case PrimitiveTypeExp::f64:    return &f64;
+      case PrimitiveTypeExp::i8:     return &i8;
+      case PrimitiveTypeExp::i16:    return &i16;
+      case PrimitiveTypeExp::i32:    return &i32;
+      case PrimitiveTypeExp::i64:    return &i64;
+      case PrimitiveTypeExp::UNIT:   return &unit;
       }
     }
-    llvm_unreachable("Ahhh!!!");
+    llvm_unreachable("TypeContext::getTypeFromTypeExp() unexpected case");
   }
 
-  std::string TVarToString(TVar v) const {
-    if (!v.exists()) return std::string("__nonexistant_tvar__");
-    auto res = resolve(v);
-    if (res.second.isNoType()) {
-      return std::string("?") + std::to_string(v.get());
-    } else {
-      switch (res.second.getID()) {
-      case Type::ID::BREF:
-        return std::string("bref<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::OREF:
-        return std::string("oref<") + TVarToString(res.second.getInner()) + ">";
-      case Type::ID::BOOL: return std::string("bool");
-      case Type::ID::DECIMAL: return std::string("decimal");
-      case Type::ID::f32: return std::string("f32");
-      case Type::ID::f64: return std::string("f64");
-      case Type::ID::i8: return std::string("i8");
-      case Type::ID::i16: return std::string("i16");
-      case Type::ID::i32: return std::string("i32");
-      case Type::ID::i64: return std::string("i64");
-      case Type::ID::NAME: return res.second.getName()->asStringRef().str();
-      case Type::ID::NUMERIC: return std::string("numeric");
-      case Type::ID::UNIT: return std::string("unit");
-      default: return std::string("???");
-      }
-    }
+  /// @brief Factory-resets this TypeContext. All Type objects created by this
+  /// TypeContext are deleted.
+  void clear() {
+    for (auto ty : brefTypes) { delete ty.second; }
+    for (auto ty : orefTypes) { delete ty.second; }
+    for (auto name : nameTypes.keys()) { delete nameTypes[name]; }
+    for (auto ty : typeVars) { delete ty; }
+    brefTypes.clear();
+    orefTypes.clear();
+    nameTypes.clear();
+    typeVars.clear();
   }
 };
 

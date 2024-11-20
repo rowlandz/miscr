@@ -5,7 +5,7 @@
 #include "common/LocatedError.hpp"
 #include "common/Ontology.hpp"
 
-/// @brief First of three type checking phases. Populates an Ontology with the
+/// @brief First of four type checking phases. Populates an Ontology with the
 /// names of decls and pointers to their definitions in the AST.
 class Cataloger {
   Ontology& ont;

@@ -45,7 +45,7 @@ public:
     BorrowState block(errors);
     for (auto param : funcDecl->getParameters()->asArrayRef()) {
       AccessPath* paramAPRoot = apm.getRoot(param.first->asStringRef());
-      TVar paramTy = tc.freshFromTypeExp(param.second);
+      Type* paramTy = tc.getTypeFromTypeExp(param.second);
       for (auto looseExt : looseExtensionsOf(paramAPRoot, paramTy)) {
         block.intro(looseExt, param.first->getLocation());
       }
@@ -61,7 +61,7 @@ public:
       loc = block->getStatements()->asArrayRef().back()->getLocation();
     else
       loc = body->getLocation();
-    for (AccessPath* ext : looseExtensionsOf(retAP, body->getTVar()))
+    for (AccessPath* ext : looseExtensionsOf(retAP, body->getType()))
       block.use(ext, loc);
 
     // produce errors for any remaining unused paths
@@ -105,7 +105,7 @@ public:
     }
     else if (auto e = BorrowExp::downcast(_e)) {
       AccessPath* ret = check(e->getRefExp());
-      for (auto owner : looseExtensionsOf(ret, e->getRefExp()->getTVar())) {
+      for (auto owner : looseExtensionsOf(ret, e->getRefExp()->getType())) {
         if (LocationPair locs = bs->getUsedPaths().lookup(owner)) {
           errors.push_back(LocatedError()
             << "Owned reference " << owner->asString() << " created here:\n"
@@ -135,12 +135,12 @@ public:
       } else {
         for (auto arg : e->getArguments()->asArrayRef()) {
           AccessPath* argAP = check(arg);
-          for (AccessPath* ext : looseExtensionsOf(argAP, arg->getTVar())) {
+          for (AccessPath* ext : looseExtensionsOf(argAP, arg->getType())) {
             bs->use(ext, arg->getLocation());
           }
         }
         AccessPath* ret = apm.getRoot(freshInternalVar());
-        for (auto looseExt : looseExtensionsOf(ret, e->getTVar())) {
+        for (auto looseExt : looseExtensionsOf(ret, e->getType())) {
           bs->intro(looseExt, e->getLocation());
         }
         return ret;
@@ -160,14 +160,14 @@ public:
       BorrowState afterThen = *afterCond;
       bs = &afterThen;
       AccessPath* thenAP = check(e->getThenExp());
-      for (AccessPath* ap : looseExtensionsOf(thenAP, e->getTVar()))
+      for (AccessPath* ap : looseExtensionsOf(thenAP, e->getType()))
         bs->use(ap, e->getThenExp()->getLocation());
 
       if (e->getElseExp() != nullptr) {
         BorrowState afterElse = *afterCond;
         bs = &afterElse;
         AccessPath* elseAP = check(e->getElseExp());
-        for (AccessPath* ap : looseExtensionsOf(elseAP, e->getTVar()))
+        for (AccessPath* ap : looseExtensionsOf(elseAP, e->getType()))
           bs->use(ap, e->getElseExp()->getLocation());
 
         afterThen.merge(afterElse, e->getLocation(), *afterCond);
@@ -180,7 +180,7 @@ public:
       }
 
       AccessPath* ret = apm.getRoot(freshInternalVar());
-      for (AccessPath* ap : looseExtensionsOf(ret, e->getTVar()))
+      for (AccessPath* ap : looseExtensionsOf(ret, e->getType()))
         bs->intro(ap, e->getLocation());
       return ret;
     }
@@ -202,7 +202,7 @@ public:
     }
     else if (auto e = MoveExp::downcast(_e)) {
       AccessPath* refAP = check(e->getRefExp());
-      for (AccessPath* loosePath : looseExtensionsOf(refAP, e->getTVar()))
+      for (AccessPath* loosePath : looseExtensionsOf(refAP, e->getType()))
         { bs->move(loosePath, e->getRefExp()->getLocation()); }
       AccessPath* ret = apm.getRoot(freshInternalVar());
       bs->intro(ret, e->getLocation());
@@ -238,9 +238,9 @@ public:
     else if (auto e = StoreExp::downcast(_e)) {
       AccessPath* lhsAP = check(e->getLHS());
       AccessPath* rhsAP = check(e->getRHS());
-      TVar rhsTVar = e->getRHS()->getTVar();
-      auto lhsLooseExts = looseExtensionsOf(apm.getDeref(lhsAP), rhsTVar);
-      auto rhsLooseExts = looseExtensionsOf(rhsAP, rhsTVar);
+      Type* rhsType = e->getRHS()->getType();
+      auto lhsLooseExts = looseExtensionsOf(apm.getDeref(lhsAP), rhsType);
+      auto rhsLooseExts = looseExtensionsOf(rhsAP, rhsType);
       for (AccessPath* ext : rhsLooseExts)
         bs->use(ext, e->getRHS()->getLocation());
       for (AccessPath* ext : lhsLooseExts)
@@ -300,34 +300,36 @@ private:
   /// examples of such value introductions.
   /// @param path If nullptr, an empty vector is returned.
   /// @param v The type of @p path
-  llvm::SmallVector<AccessPath*> looseExtensionsOf(AccessPath* path, TVar v) {
+  llvm::SmallVector<AccessPath*> looseExtensionsOf(AccessPath* path, Type* t) {
     if (path == nullptr) return llvm::SmallVector<AccessPath*>();
-    Type ty = tc.resolve(v).second;
-    switch (ty.getID()) {
-    case Type::ID::BOOL: case Type::ID::BREF: case Type::ID::DECIMAL:
-    case Type::ID::f32: case Type::ID::f64: case Type::ID::i8:
-    case Type::ID::i16: case Type::ID::i32: case Type::ID::i64:
-    case Type::ID::NUMERIC: case Type::ID::UNIT:
+    if (auto ty = Constraint::downcast(t)) {
       return {};
-    case Type::ID::NAME: {
+    }
+    if (auto ty = NameType::downcast(t)) {
       llvm::SmallVector<AccessPath*> ret;
-      DataDecl* dataDecl = ont.getType(ty.getName()->asStringRef());
+      DataDecl* dataDecl = ont.getType(ty->asString);
       for (auto field : dataDecl->getFields()->asArrayRef()) {
         llvm::StringRef fName = field.first->asStringRef();
-        TVar fTy = tc.freshFromTypeExp(field.second);
+        Type* fTy = tc.getTypeFromTypeExp(field.second);
         // TODO: a recursive type would cause a stack overflow.
         ret.append(looseExtensionsOf(apm.getProject(path, fName, false), fTy));
       }
       return ret;
     }
-    case Type::ID::OREF: {
-      llvm::SmallVector<AccessPath*> ret = { path };
-      ret.append(looseExtensionsOf(apm.getDeref(path), ty.getInner()));
-      return ret;
+    if (auto ty = PrimitiveType::downcast(t)) {
+      return {};
     }
-    case Type::ID::NOTYPE:
-      llvm_unreachable("Didn't expect NOTYPE here.");
+    if (auto ty = RefType::downcast(t)) {
+      if (ty->isOwned) {
+        llvm::SmallVector<AccessPath*> ret = { path };
+        ret.append(looseExtensionsOf(apm.getDeref(path), ty->inner));
+        return ret;
+      } else return {};
     }
+    if (auto ty = TypeVar::downcast(t)) {
+      llvm_unreachable("TypeVars are unsupported here.");
+    }
+    llvm_unreachable("BorrowChecker::looseExtensionsOf() unexpected case");
   }
 };
 

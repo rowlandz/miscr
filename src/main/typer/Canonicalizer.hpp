@@ -6,7 +6,7 @@
 #include "common/LocatedError.hpp"
 #include "common/Ontology.hpp"
 
-/// @brief Second of three type checking phases. Replaces all names in an AST
+/// @brief Second of four type checking phases. Replaces all names in an AST
 /// with their fully qualified names.
 class Canonicalizer {
   const Ontology& ont;

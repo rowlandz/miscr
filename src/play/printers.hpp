@@ -8,8 +8,7 @@
 
 void print_parse_tree(
       AST* n,
-      std::vector<bool>& indents,
-      const TypeContext* tc = nullptr) {
+      std::vector<bool>& indents) {
   assert(n != nullptr && "Tried to print nullptr AST node!");
   Location loc = n->getLocation();
   llvm::outs() <<
@@ -38,8 +37,8 @@ void print_parse_tree(
   if (auto projectExp = ProjectExp::downcast(n))
     llvm::outs() << " (" << projectExp->getKindAsEnumString() << ")";
   if (auto exp = Exp::downcast(n)) {
-    if (tc != nullptr)
-      llvm::outs() << " : " << tc->TVarToString(exp->getTVar());
+    if (Type* ty = exp->getType())
+      llvm::outs() << " : " << ty->asString();
   }
 
   llvm::outs() << "\n";
@@ -47,16 +46,16 @@ void print_parse_tree(
   auto subnodes = n->getASTChildren();
   if (subnodes.size() == 1) {
     indents.push_back(false);
-    print_parse_tree(subnodes[0], indents, tc);
+    print_parse_tree(subnodes[0], indents);
     indents.pop_back();
   } else if (subnodes.size() >= 2) {
     indents.push_back(true);
     for (auto subnode = subnodes.begin(); subnode < subnodes.end()-1; subnode++) {
-      print_parse_tree(*subnode, indents, tc);
+      print_parse_tree(*subnode, indents);
     }
     indents.pop_back();
     indents.push_back(false);
-    print_parse_tree(subnodes.back(), indents, tc);
+    print_parse_tree(subnodes.back(), indents);
     indents.pop_back();
   }
 }

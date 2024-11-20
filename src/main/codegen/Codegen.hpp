@@ -12,7 +12,6 @@ public:
   llvm::LLVMContext llvmctx;
   llvm::IRBuilder<>* b;
   llvm::Module* mod;
-  const TypeContext& tyctx;
   const Ontology& ont;
 
   /// @brief Maps fully qualified names of `data` decls to their LLVM struct
@@ -22,8 +21,7 @@ public:
   /// Maps variable names to their LLVM values
   ScopeStack<llvm::Value*> varValues;
 
-  Codegen(const TypeContext& tyctx, const Ontology& ont)
-      : tyctx(tyctx), ont(ont) {
+  Codegen(const Ontology& ont) : ont(ont) {
     b = new llvm::IRBuilder<>(llvmctx);
     mod = new llvm::Module("MyModule", llvmctx);
     mod->setTargetTriple("x86_64-pc-linux-gnu");
@@ -45,26 +43,35 @@ public:
   Codegen(const Codegen&) = delete;
   Codegen& operator=(const Codegen&) = delete;
 
-  llvm::Type* genType(TVar tvar) {
-    Type ty = tyctx.resolve(tvar).second;
-    if (ty.isNoType()) return b->getVoidTy();
-    switch (ty.getID()) {
-    case Type::ID::BOOL: return b->getInt1Ty();
-    case Type::ID::i8: return b->getInt8Ty();
-    case Type::ID::i16: return b->getInt16Ty();
-    case Type::ID::i32: return b->getInt32Ty();
-    case Type::ID::i64: return b->getInt64Ty();
-    case Type::ID::f32: return b->getFloatTy();
-    case Type::ID::f64: return b->getDoubleTy();
-    case Type::ID::NAME: return dataTypes[ty.getName()->asStringRef()];
-    case Type::ID::BREF:
-    case Type::ID::OREF: return llvm::PointerType::get(llvmctx, 0);
-    case Type::ID::UNIT: return b->getVoidTy();
-    // NUMERIC just defaults to i32.
-    case Type::ID::NUMERIC: return b->getInt32Ty();
-    default:
-      llvm_unreachable("Codegen::genType(TVar) case unimplemented");
+  llvm::Type* genType(Type* ty) {
+    if (auto constraint = Constraint::downcast(ty)) {
+      switch (constraint->kind) {
+      case Constraint::DECIMAL:   return b->getDoubleTy();
+      case Constraint::NUMERIC:   return b->getInt32Ty();
+      }
     }
+    if (auto nameTy = NameType::downcast(ty)) {
+      return dataTypes[nameTy->asString];
+    }
+    if (auto primTy = PrimitiveType::downcast(ty)) {
+      switch (primTy->kind) {
+      case PrimitiveType::BOOL:   return b->getInt1Ty();
+      case PrimitiveType::f32:    return b->getFloatTy();
+      case PrimitiveType::f64:    return b->getDoubleTy();
+      case PrimitiveType::i8:     return b->getInt8Ty();
+      case PrimitiveType::i16:    return b->getInt16Ty();
+      case PrimitiveType::i32:    return b->getInt32Ty();
+      case PrimitiveType::i64:    return b->getInt64Ty();
+      case PrimitiveType::UNIT:   return b->getVoidTy();
+      }
+    }
+    if (auto refTy = RefType::downcast(ty)) {
+      return llvm::PointerType::get(llvmctx, 0);
+    }
+    if (auto tyVar = TypeVar::downcast(ty)) {
+      llvm_unreachable("TypeVars should not appear after Resolver");
+    }
+    llvm_unreachable("Codegen::genType(TVar) case unimplemented");
   }
 
   llvm::Type* genType(TypeExp* _texp) {
@@ -177,7 +184,7 @@ public:
     }
     else if (auto e = DerefExp::downcast(_exp)) {
       llvm::Value* ofExp = genExp(e->getOf());
-      llvm::Type* tyToLoad = genType(e->getTVar());
+      llvm::Type* tyToLoad = genType(e->getType());
       return b->CreateLoad(tyToLoad, ofExp);
     }
     else if (auto e = NameExp::downcast(_exp)) {
@@ -212,7 +219,7 @@ public:
 
       f->getBasicBlockList().push_back(contBlock);
       b->SetInsertPoint(contBlock);
-      llvm::Type* retTy = genType(e->getTVar());
+      llvm::Type* retTy = genType(e->getType());
       if (!retTy->isVoidTy()) {
         llvm::PHINode* phiNode = b->CreatePHI(retTy, 2);
         phiNode->addIncoming(thenResult, thenBlock);
@@ -225,13 +232,11 @@ public:
     else if (auto e = IndexExp::downcast(_exp)) {
       llvm::Value* baseV = genExp(e->getBase());
       llvm::Value* indexV = genExp(e->getIndex());
-      TVar baseTVar = e->getBase()->getTVar();
-      TVar ofTVar = tyctx.resolve(baseTVar).second.getInner();
-      llvm::Type* ofTy = genType(ofTVar);
-      return b->CreateGEP(ofTy, baseV, indexV);
+      RefType* baseType = RefType::downcast(e->getBase()->getType());
+      return b->CreateGEP(genType(baseType->inner), baseV, indexV);
     }
     else if (auto e = IntLit::downcast(_exp)) {
-      return llvm::ConstantInt::get(genType(e->getTVar()), e->asLong());
+      return llvm::ConstantInt::get(genType(e->getType()), e->asLong());
     }
     else if (auto e = LetExp::downcast(_exp)) {
       llvm::Value* v = genExp(e->getDefinition());
@@ -261,7 +266,7 @@ public:
           { b->getInt64(0), b->getInt32(fieldIndex) });
       case ProjectExp::ARROW:
         return b->CreateLoad(
-          genType(e->getTVar()),
+          genType(e->getType()),
           b->CreateGEP(dataTypes[e->getTypeName()], baseV,
             { b->getInt64(0), b->getInt32(fieldIndex) })
         );
@@ -269,7 +274,6 @@ public:
     }
     else if (auto e = RefExp::downcast(_exp)) {
       llvm::Value* v = genExp(e->getInitializer());
-      TVar initTy = e->getInitializer()->getTVar();
       llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
       b->CreateStore(v, memCell);
       return memCell;

@@ -7,6 +7,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Twine.h>
 #include "common/Location.hpp"
+#include "common/Type.hpp"
 
 class Name;
 
@@ -71,61 +72,6 @@ public:
     for (AST* child : getASTChildren()) child->deleteRecursive();
     delete this;
   }
-};
-
-/// @brief A type variable that annotates an expression. Type variables are
-/// managed by a `TypeContext` which resolves them to `Type` instances.
-class TVar {
-  int value;
-public:
-  static TVar none() { return TVar(-1); }
-  TVar() { this->value = -1; }
-  TVar(int value) { this->value = value; }
-  int get() const { return value; }
-  bool exists() { return value >= 0; }
-};
-
-/// @brief A concrete type (e.g., `i32`, `bool`) or a type constraint (e.g.,
-/// `numeric`).
-class Type {
-public:
-  enum struct ID : unsigned char {
-    // concrete types
-    BOOL, BREF, f32, f64, i8, i16, i32, i64, NAME, OREF, UNIT,
-
-    // type constraints
-    DECIMAL, NUMERIC,
-
-    // other
-    NOTYPE,
-  };
-private:
-  Type::ID id;
-  TVar inner;
-  const Name* _name;
-  Type(Type::ID id) : id(id) {}
-  Type(Type::ID id, TVar inner) : id(id),
-    inner(inner) {}
-  Type(const Name* name) : id(ID::NAME), _name(name) {}
-public:
-  static Type bool_() { return Type(ID::BOOL); }
-  static Type bref(TVar of) { return Type(ID::BREF, of); }
-  static Type f32() { return Type(ID::f32); }
-  static Type f64() { return Type(ID::f64); }
-  static Type i8() { return Type(ID::i8); }
-  static Type i16() { return Type(ID::i16); }
-  static Type i32() { return Type(ID::i32); }
-  static Type i64() { return Type(ID::i64); }
-  static Type name(const Name* n) { return Type(n); }
-  static Type oref(TVar of) { return Type(ID::OREF, of); }
-  static Type unit() { return Type(ID::UNIT); }
-  static Type decimal() { return Type(ID::DECIMAL); }
-  static Type numeric() { return Type(ID::NUMERIC); }
-  static Type notype() { return Type(ID::NOTYPE); }
-  bool isNoType() const { return id == ID::NOTYPE; }
-  ID getID() const { return id; }
-  TVar getInner() const { return inner; }
-  const Name* getName() const { return _name; }
 };
 
 /// @brief A qualified or unqualified name. Unqualified names are also called
@@ -219,21 +165,22 @@ public:
 /// @brief An expression or statement (currently there is no distinction).
 class Exp : public AST {
 protected:
-  TVar type;
-  Exp(ID id, Location loc) : AST(id, loc), type(TVar::none()) {}
+  Type* type;
+  Exp(ID id, Location loc) : AST(id, loc), type(nullptr) {}
   ~Exp() {}
 public:
   static Exp* downcast(AST* ast) {
     switch (ast->id) {
-    case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case CALL:
-    case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX: case INT_LIT:
-    case LET: case PROJECT: case REF_EXP: case RETURN: case STORE:
-    case STRING_LIT: case UNOP_EXP: case WHILE: return static_cast<Exp*>(ast);
+    case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case BORROW:
+    case CALL: case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX:
+    case INT_LIT: case LET: case MOVE: case PROJECT: case REF_EXP: case RETURN:
+    case STORE: case STRING_LIT: case UNOP_EXP: case WHILE:
+      return static_cast<Exp*>(ast);
     default: return nullptr;
     }
   }
-  TVar getTVar() const { return type; };
-  void setTVar(TVar type) { this->type = type; }
+  Type* getType() const { return type; }
+  void setType(Type* type) { this->type = type; }
 };
 
 /// @brief A list of expressions (e.g., arguments in a function call or

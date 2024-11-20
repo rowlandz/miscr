@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
   }
 
   // LLVM IR code generation
-  Codegen codegen(typer.getTypeContext(), typer.getOntology());
+  Codegen codegen(typer.getOntology());
   codegen.genDeclList(decls);
   codegen.mod->setModuleIdentifier(inFileOpt);
   codegen.mod->setSourceFileName(inFileOpt);

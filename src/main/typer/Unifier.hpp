@@ -8,186 +8,125 @@
 #include "common/ScopeStack.hpp"
 #include "common/TypeContext.hpp"
 
-/// @brief Third of three type checking phases. Performs Hindley-Milner type
-/// inference and unification.
+/// @brief Third of four type checking phases. Performs Hindley-Milner type
+/// inference and unification. Sets the `type` field of all Exp.
 ///
-/// Every expression is labeled with a TVar. These type variables can be
-/// resolved into Type objects using a TypeContext.
+/// The heart of unification is a variation of the union-find algorithm over
+/// type variables (TypeVar). An expression like `x + y` requires the types
+/// of `x` and `y` to be equal (i.e., their types must be _unified_). This
+/// technique allows type information to seemingly "propagate backwards" (e.g.,
+/// the type checker infers that `1` in `1 + (2: i32)` must be an `i32`.
+///
+/// The `union` operation of union-find has two complications resulting from
+/// the binding of type variables to actual types:
+///   - Two typevars can only be unioned if they're bound to compatible types
+///     or constraints (e.g., i32 and numeric, but not &i32 and numeric).
+///   - Unioning two typevars may recursively require unioning other typevars
+///     (e.g., unioning reference types requires unioning the inner types).
 class Unifier { 
   const Ontology& ont;
   TypeContext& tc;
   std::vector<LocatedError>& errors;
 
-  /// Maps local variable names to type vars.
-  ScopeStack<TVar> localVarTypes;
+  /// @brief Defines the equivalence classes for type variables in the
+  /// union-find algorithm. A type variable that is _not_ a key in this map is
+  /// the _representative_ for its equivalence class.
+  llvm::DenseMap<TypeVar*, TypeVar*>& tvarEquiv;
+
+  /// @brief Maps type variables (that are representatives of their equivalence
+  /// classes) to a type or type constraint. A representative that is _not_
+  /// present here is considered _unconstrained_ (like the `nothing` type).
+  /// A type variable may _not_ be bound to another type variable.
+  llvm::DenseMap<TypeVar*, Type*>& tvarBindings;
+
+  /// @brief Maps names of local identifiers to their types.
+  ScopeStack<Type*> localVarTypes;
 
 public:
-  Unifier(Ontology& ont, TypeContext& tc, std::vector<LocatedError>& errors)
-    : ont(ont), tc(tc), errors(errors) {}
+  Unifier(Ontology& ont, TypeContext& tc,
+          llvm::DenseMap<TypeVar*, TypeVar*>& tvarEquiv,
+          llvm::DenseMap<TypeVar*, Type*>& tvarBindings,
+          std::vector<LocatedError>& errors)
+    : ont(ont), tc(tc), tvarEquiv(tvarEquiv), tvarBindings(tvarBindings),
+      errors(errors) {}
+
   Unifier(const Unifier&) = delete;
 
-  /// @brief Enforces an equality relation in `bindings` between the two type
-  /// variables. Returns `true` if this is possible and `false` otherwise.
-  bool unify(TVar v1, TVar v2) {
-    std::pair<TVar, Type> res1 = tc.resolve(v1);
-    std::pair<TVar, Type> res2 = tc.resolve(v2);
-    TVar w1 = res1.first;
-    TVar w2 = res2.first;
-    Type t1 = res1.second;
-    Type t2 = res2.second;
+  void unifyDeclList(DeclList* declList)
+    { for (Decl* decl : declList->asArrayRef()) unifyDecl(decl); }
 
-    if (w1.get() == w2.get()) return true;
-    if (t1.isNoType()) { tc.bind(w1, w2); return true; }
-    if (t2.isNoType()) { tc.bind(w2, w1); return true; }
-
-    if (t1.getID() == t2.getID()) {
-      Type::ID ty = t1.getID();
-      if (ty == Type::ID::BREF) {
-        if (!unify(t1.getInner(), t2.getInner())) return false;
-        tc.bind(w1, w2);
-        return true;
-      } else if (ty == Type::ID::OREF) {
-        if (!unify(t1.getInner(), t2.getInner())) return false;
-        tc.bind(w1, w2);
-        return true;
-      } else if (ty == Type::ID::NAME) {
-        if (t1.getName()->asStringRef() != t2.getName()->asStringRef())
-          return false;
-        tc.bind(w1, w2);
-        return true;
-      } else if (ty == Type::ID::BOOL || ty == Type::ID::DECIMAL
-      || ty == Type::ID::f32 || ty == Type::ID::f64 || ty == Type::ID::i8
-      || ty == Type::ID::i16 || ty == Type::ID::i32 || ty == Type::ID::i64
-      || ty == Type::ID::NUMERIC || ty == Type::ID::UNIT) {
-        tc.bind(w1, w2);
-        return true;
-      }
-      else return false;
-    }
-    else if (t1.getID() == Type::ID::NUMERIC) {
-      switch (t2.getID()) {
-      case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
-      case Type::ID::i8: case Type::ID::i16: case Type::ID::i32:
-      case Type::ID::i64:
-        tc.bind(w1, w2);
-        return true;
-      default:
-        return false;
-      }
-    }
-    else if (t2.getID() == Type::ID::NUMERIC) {
-      switch (t1.getID()) {
-      case Type::ID::DECIMAL: case Type::ID::f32: case Type::ID::f64:
-      case Type::ID::i8: case Type::ID::i16: case Type::ID::i32:
-      case Type::ID::i64:
-        tc.bind(w2, w1);
-        return true;
-      default:
-        return false;
-      }
-    }
-    else if (t1.getID() == Type::ID::DECIMAL) {
-      switch (t2.getID()) {
-      case Type::ID::f32: case Type::ID::f64:
-        tc.bind(w1, w2);
-        return true;
-      default:
-        return false;
-      }
-    }
-    else if (t2.getID() == Type::ID::DECIMAL) {
-      switch (t1.getID()) {
-      case Type::ID::f32: case Type::ID::f64:
-        tc.bind(w2, w1);
-        return true;
-      default:
-        return false;
-      }
-    }
-    return false;
+  void unifyDecl(Decl* _decl) {
+    if (auto func = FunctionDecl::downcast(_decl)) unifyFunc(func);
+    else if (auto mod = ModuleDecl::downcast(_decl)) unifyModule(mod);
+    else if (_decl->id == AST::ID::DATA) {}
+    else llvm_unreachable("Didn't recognize decl");
   }
 
-  /// @brief Unifies `_exp`, then unifies the inferred type with `ty`. An error
-  /// message is pushed if the second unification fails. 
-  /// @return The inferred type of `_exp` (for convenience). 
-  TVar unifyWith(Exp* _exp, TVar ty) {
-    TVar inferredTy = unifyExp(_exp);
-    if (unify(inferredTy, ty)) return inferredTy;
-    errors.push_back(LocatedError()
-      << "Cannot unify " << tc.TVarToString(inferredTy) << " with type "
-      << tc.TVarToString(ty) << ".\n" << _exp->getLocation()
-    );
-    return inferredTy;
+  void unifyModule(ModuleDecl* mod) { unifyDeclList(mod->getDecls()); }
+
+  void unifyFunc(FunctionDecl* func) {
+    if (func->isExtern()) return;
+    localVarTypes.push();
+    addParamsToLocalVarTypes(func->getParameters());
+    Type* retTy = tc.getTypeFromTypeExp(func->getReturnType());
+    expectTypeToBe(func->getBody(), retTy);
+    localVarTypes.pop();
   }
 
-  /// @brief Unifies `_exp`, then unifies the inferred type with `ty`. An error
-  /// message is pushed if the second unification fails.
-  /// @return The inferred type of `_exp` (for convenience).
-  TVar expectTypeToBe(Exp* _exp, TVar expectedTy) {
-    TVar inferredTy = unifyExp(_exp);
-    if (unify(inferredTy, expectedTy)) return inferredTy;
-    errors.push_back(LocatedError()
-      << "Inferred type is " << tc.TVarToString(inferredTy)
-      << " but expected type " << tc.TVarToString(expectedTy) << ".\n"
-      << _exp->getLocation()
-    );
-    return inferredTy;
-  }
-
-  /// @brief Unifies an expression or statement. Returns the type of `_e`. 
+  /// @brief Unifies an expression or statement. Returns the type of @p _e. 
   /// Expressions or statements that bind local identifiers will cause
   /// `localVarTypes` to be updated.
-  TVar unifyExp(Exp* _e) {
+  Type* unifyExp(Exp* _e) {
     AST::ID id = _e->id;
 
     if (auto e = AscripExp::downcast(_e)) {
-      TVar ty = tc.freshFromTypeExp(e->getAscripter());
+      Type* ty = tc.getTypeFromTypeExp(e->getAscripter());
       expectTypeToBe(e->getAscriptee(), ty);
-      e->setTVar(ty);
+      e->setType(ty);
     }
 
     else if (auto e = BinopExp::downcast(_e)) {
       switch (e->getBinop()) {
       case BinopExp::ADD: case BinopExp::SUB: case BinopExp::MUL:
       case BinopExp::DIV: case BinopExp::MOD: {
-        TVar lhsTy = unifyWith(e->getLHS(), tc.fresh(Type::numeric()));
-        unifyWith(e->getRHS(), lhsTy);
-        e->setTVar(lhsTy);
+        Type* lhsTy = expectTypeToBe(e->getLHS(), tc.getNumeric());
+        expectTypeToBe(e->getRHS(), lhsTy);
+        e->setType(lhsTy);
         break; 
       }
       case BinopExp::AND: case BinopExp::OR: {
-        TVar boolTy = tc.fresh(Type::bool_());
-        unifyWith(e->getLHS(), boolTy);
-        unifyWith(e->getRHS(), boolTy);
-        e->setTVar(boolTy);
+        Type* boolType = tc.getBool();
+        expectTypeToBe(e->getLHS(), boolType);
+        expectTypeToBe(e->getRHS(), boolType);
+        e->setType(boolType);
         break;
       }
       case BinopExp::EQ: case BinopExp::NE: case BinopExp::GE:
       case BinopExp::GT: case BinopExp::LE: case BinopExp::LT: {
-        TVar lhsTy = unifyExp(e->getLHS());
-        unifyWith(e->getRHS(), lhsTy);
-        e->setTVar(tc.fresh(Type::bool_()));
+        Type* lhsTy = unifyExp(e->getLHS());
+        expectTypeToBe(e->getRHS(), lhsTy);
+        e->setType(tc.getBool());
       }
       }
     }
 
     else if (auto e = BlockExp::downcast(_e)) {
       llvm::ArrayRef<Exp*> stmtList = e->getStatements()->asArrayRef();
-      TVar lastStmtTy = tc.fresh(Type::unit());  // TODO: no need to freshen unit
+      Type* lastStmtTy = tc.getUnit();
       localVarTypes.push();
       for (Exp* stmt : stmtList) lastStmtTy = unifyExp(stmt);
       localVarTypes.pop();
-      e->setTVar(lastStmtTy);
+      e->setType(lastStmtTy);
     }
 
     else if (auto e = BoolLit::downcast(_e)) {
-      e->setTVar(tc.fresh(Type::bool_()));
+      e->setType(tc.getBool());
     }
 
     else if (auto e = BorrowExp::downcast(_e)) {
-      TVar innerTy = tc.fresh();
-      expectTypeToBe(e->getRefExp(), tc.fresh(Type::oref(innerTy)));
-      e->setTVar(tc.fresh(Type::bref(innerTy)));
+      TypeVar* innerTy = tc.getFreshTypeVar();
+      expectTypeToBe(e->getRefExp(), tc.getOrefType(innerTy));
+      e->setType(tc.getBrefType(innerTy));
     }
 
     else if (auto e = CallExp::downcast(_e)) {
@@ -195,70 +134,70 @@ public:
     }
 
     else if (auto e = DecimalLit::downcast(_e)) {
-      e->setTVar(tc.fresh(Type::decimal()));
+      TypeVar* v = tc.getFreshTypeVar();
+      bind(v, tc.getDecimal());
+      e->setType(v);
     }
 
     else if (auto e = DerefExp::downcast(_e)) {
-      TVar retTy = tc.fresh();
-      TVar refTy = tc.fresh(Type::bref(retTy));
-      unifyWith(e->getOf(), refTy);
-      e->setTVar(retTy);
+      TypeVar* retTy = tc.getFreshTypeVar();
+      expectTypeToBe(e->getOf(), tc.getBrefType(retTy));
+      e->setType(retTy);
     }
 
-    // TODO: Make sure typevar is set even in error cases.
     else if (auto e = NameExp::downcast(_e)) {
       std::string s = e->getName()->asStringRef().str();
-      TVar ty = localVarTypes.getOrElse(s, TVar::none());
-      if (ty.exists()) {
-        e->setTVar(ty);
+      if (Type* ty = localVarTypes.getOrElse(s, nullptr)) {
+        e->setType(ty);
       } else {
         errors.push_back(LocatedError()
           << "Unbound identifier.\n" << e->getLocation()
         );
-        e->setTVar(tc.fresh());
+        e->setType(tc.getFreshTypeVar());
       }
     }
 
     else if (auto e = IfExp::downcast(_e)) {
-      unifyWith(e->getCondExp(), tc.fresh(Type::bool_()));
-      if (e->getElseExp() != nullptr) {
-        TVar thenTy = unifyExp(e->getThenExp());
-        unifyWith(e->getElseExp(), thenTy);
-        e->setTVar(thenTy);
+      expectTypeToBe(e->getCondExp(), tc.getBool());
+      if (Exp* elseExp = e->getElseExp()) {
+        Type* thenTy = unifyExp(e->getThenExp());
+        expectTypeToBe(elseExp, thenTy);
+        e->setType(thenTy);
       } else {
-        TVar unitTy = tc.fresh(Type::unit());
-        unifyWith(e->getThenExp(), unitTy);
-        e->setTVar(unitTy);
+        expectTypeToBe(e->getThenExp(), tc.getUnit());
+        e->setType(tc.getUnit());
       }
     }
 
     else if (auto e = IndexExp::downcast(_e)) {
-      TVar baseTy = unifyWith(e->getBase(), tc.fresh(Type::bref(tc.fresh())));
-      unifyWith(e->getIndex(), tc.fresh(Type::numeric()));
-      e->setTVar(baseTy);
+      Type* refTy = tc.getBrefType(tc.getFreshTypeVar());
+      Type* baseTy = expectTypeToBe(e->getBase(), refTy);
+      expectTypeToBe(e->getIndex(), tc.getNumeric());
+      e->setType(baseTy);
     }
 
     else if (auto e = IntLit::downcast(_e)) {
-      e->setTVar(tc.fresh(Type::numeric()));
+      TypeVar* ty = tc.getFreshTypeVar();
+      bind(ty, tc.getNumeric());
+      e->setType(ty);
     }
 
     else if (auto e = LetExp::downcast(_e)) {
-      TVar rhsTy;
-      if (e->getAscrip() != nullptr) {
-        rhsTy = tc.freshFromTypeExp(e->getAscrip());
-        expectTypeToBe(e->getDefinition(), rhsTy);
+      Type* rhsTy;
+      if (TypeExp* ascr = e->getAscrip()) {
+        rhsTy = expectTypeToBe(e->getDefinition(), tc.getTypeFromTypeExp(ascr));
       } else {
         rhsTy = unifyExp(e->getDefinition());
       }
       std::string boundIdent = e->getBoundIdent()->asStringRef().str();
       localVarTypes.add(boundIdent, rhsTy);
-      e->setTVar(tc.fresh(Type::unit()));
+      e->setType(tc.getUnit());
     }
 
     else if (auto e = MoveExp::downcast(_e)) {
-      TVar retTy = tc.fresh(Type::oref(tc.fresh()));
+      Type* retTy = tc.getOrefType(tc.getFreshTypeVar());
       expectTypeToBe(e->getRefExp(), retTy);
-      e->setTVar(retTy);
+      e->setType(retTy);
     }
 
     else if (auto e = ProjectExp::downcast(_e)) {
@@ -266,45 +205,47 @@ public:
     }
 
     else if (auto e = RefExp::downcast(_e)) {
-      TVar initializerTy = unifyExp(e->getInitializer());
-      e->setTVar(tc.fresh(Type::bref(initializerTy)));
+      Type* initializerTy = unifyExp(e->getInitializer());
+      e->setType(tc.getBrefType(initializerTy));
     }
 
     else if (auto e = StoreExp::downcast(_e)) {
-      TVar retTy = tc.fresh();
-      TVar lhsTy = tc.fresh(Type::bref(retTy));
-      unifyWith(e->getLHS(), lhsTy);
-      unifyWith(e->getRHS(), retTy);
-      e->setTVar(tc.fresh(Type::unit()));
+      TypeVar* innTy = tc.getFreshTypeVar();
+      RefType* lhsTy = tc.getBrefType(innTy);
+      expectTypeToBe(e->getLHS(), lhsTy);
+      expectTypeToBe(e->getRHS(), innTy);
+      e->setType(tc.getUnit());
     }
 
     else if (auto e = StringLit::downcast(_e)) {
-      e->setTVar(tc.fresh(Type::bref(tc.fresh(Type::i8()))));
+      e->setType(tc.getBrefType(tc.getI8()));
     }
 
     else if (auto e = UnopExp::downcast(_e)) {
       switch (e->getUnop()) {
-      case UnopExp::NEG:
-        e->setTVar(unifyWith(e->getInner(), tc.fresh(Type::numeric())));
+      case UnopExp::NEG: {
+        TypeVar* ty = tc.getFreshTypeVar();
+        bind(ty, tc.getNumeric());
+        e->setType(expectTypeToBe(e->getInner(), ty));
         break;
+      }
       case UnopExp::NOT:
-        e->setTVar(unifyWith(e->getInner(), tc.fresh(Type::bool_())));
+        e->setType(expectTypeToBe(e->getInner(), tc.getBool()));
         break;
       }
     }
 
     else if (auto e = WhileExp::downcast(_e)) {
-      unifyWith(e->getCond(), tc.fresh(Type::bool_()));
-      TVar unitTy = tc.fresh(Type::unit());
-      unifyWith(e->getBody(), unitTy);
-      e->setTVar(unitTy);
+      expectTypeToBe(e->getCond(), tc.getBool());
+      expectTypeToBe(e->getBody(), tc.getUnit());
+      e->setType(tc.getUnit());
     }
 
     else {
       llvm_unreachable("Unifier::unifyExp() unexpected case");
     }
 
-    return _e->getTVar(); 
+    return _e->getType();
   }
 
   /// @brief Unifies a function call or constructor call expression.
@@ -319,11 +260,11 @@ public:
     if (auto callee = FunctionDecl::downcast(calleeDecl)) {
       params = callee->getParameters()->asArrayRef();
       variadic = callee->isVariadic();
-      e->setTVar(tc.freshFromTypeExp(callee->getReturnType()));
+      e->setType(tc.getTypeFromTypeExp(callee->getReturnType()));
     } else if (auto callee = DataDecl::downcast(calleeDecl)) {
       params = callee->getFields()->asArrayRef();
       variadic = false;
-      e->setTVar(tc.fresh(Type::name(callee->getName())));
+      e->setType(tc.getNameType(callee->getName()->asStringRef()));
     }
 
     // check for arity mismatch
@@ -343,30 +284,31 @@ public:
     // unify arguments
     for (int i = 0; i < args.size(); ++i) {
       if (i >= params.size()) unifyExp(args[i]);
-      else unifyWith(args[i], tc.freshFromTypeExp(params[i].second));
+      else expectTypeToBe(args[i], tc.getTypeFromTypeExp(params[i].second));
     }
   }
 
   /// @brief Unifies a projection expression. 
   void unifyProjectExp(ProjectExp* e) {
     ProjectExp::Kind kind = e->getKind();
-    TVar dataTVar = tc.fresh();
+    TypeVar* dataTVar = tc.getFreshTypeVar();
     
     // unify the base expression
-    unifyWith(e->getBase(),
-      kind == ProjectExp::DOT ? dataTVar : tc.fresh(Type::bref(dataTVar)));
+    expectTypeToBe(e->getBase(), kind == ProjectExp::DOT ?
+      static_cast<Type*>(dataTVar) : tc.getBrefType(dataTVar));
     
     // lookup the data type decl from the inferred type of base
-    Type dataType = tc.resolve(dataTVar).second;
-    if (dataType.getID() != Type::ID::NAME) {
+    Type* dataType = tvarBindings.lookup(find(dataTVar));
+    NameType* nameType = dataType ? NameType::downcast(dataType) : nullptr;
+    if (nameType == nullptr) {
       errors.push_back(LocatedError()
         << "Could not infer what data type is being indexed.\n"
         << e->getBase()->getLocation()
       );
-      e->setTVar(tc.fresh());
+      e->setType(tc.getFreshTypeVar());
       return;
     }
-    DataDecl* dd = ont.getType(dataType.getName()->asStringRef());
+    DataDecl* dd = ont.getType(nameType->asString);
     
     // set the data type name in e (for convenience)
     e->setTypeName(dd->getName()->asStringRef());
@@ -379,49 +321,192 @@ public:
         << field << " is not a field of data type "
         << dd->getName()->asStringRef() << ".\n" << e->getLocation()
       );
-      e->setTVar(tc.fresh());
+      e->setType(tc.getFreshTypeVar());
       return;
     }
-    TVar fieldTy = tc.freshFromTypeExp(fieldTExp);
+    Type* fieldTy = tc.getTypeFromTypeExp(fieldTExp);
 
     // set the type of e
-    e->setTVar(
-      kind == ProjectExp::BRACKETS ? tc.fresh(Type::bref(fieldTy)) : fieldTy);
+    e->setType(kind==ProjectExp::BRACKETS ? tc.getBrefType(fieldTy) : fieldTy);
   }
 
-  /// Typechecks a function.
-  void unifyFunc(FunctionDecl* func) {
-    if (func->isExtern()) return;
-    localVarTypes.push();
-    addParamsToLocalVarTypes(func->getParameters());
-    TVar retTy = tc.freshFromTypeExp(func->getReturnType());
-    unifyWith(func->getBody(), retTy);
-    localVarTypes.pop();
+private:
+
+  /// @brief Binds type variables and narrows type constraints to make @p ty1
+  /// and @p ty2 resolve to the exact same type. This is basically the "union"
+  /// part of union-find.
+  ///
+  /// This is an annoying function from a code-maintenance perspective because
+  /// the _pair_ of types must be case-matched. To make the exhaustiveness of
+  /// the match visually obvious, each branch is a one-line `return nullptr` or
+  /// `return unifyH(...)`. This also nicely subdivides the work into maneagable
+  /// unifyH() functions with disjoint parameter signatures.
+  ///
+  /// @return the type that both types resolve to after unification, or nullptr
+  /// if unification is not possible.
+  /// @note Currently state could possibly be modified even if unification
+  /// fails, which is not desirable.
+  Type* unify(Type* ty1, Type* ty2) {
+    if (auto t1 = Constraint::downcast(ty1)) {
+      if (auto t2 = Constraint::downcast(ty2))      return unifyH(t1, t2);
+      if (auto t2 = NameType::downcast(ty2))        return nullptr;
+      if (auto t2 = PrimitiveType::downcast(ty2))   return unifyH(t1, t2);
+      if (auto t2 = RefType::downcast(ty2))         return nullptr;
+      if (auto t2 = TypeVar::downcast(ty2))         return unifyH(t2, t1);
+    }
+    if (auto t1 = NameType::downcast(ty1)) {
+      if (auto t2 = Constraint::downcast(ty2))      return nullptr;
+      if (auto t2 = NameType::downcast(ty2))        return unifyH(t1, t2);
+      if (auto t2 = PrimitiveType::downcast(ty2))   return nullptr;
+      if (auto t2 = RefType::downcast(ty2))         return nullptr;
+      if (auto t2 = TypeVar::downcast(ty2))         return unifyH(t2, t1);
+    }
+    if (auto t1 = PrimitiveType::downcast(ty1)) {
+      if (auto t2 = Constraint::downcast(ty2))      return unifyH(t2, t1);
+      if (auto t2 = NameType::downcast(ty2))        return nullptr;
+      if (auto t2 = PrimitiveType::downcast(ty2))   return unifyH(t1, t2);
+      if (auto t2 = RefType::downcast(ty2))         return nullptr;
+      if (auto t2 = TypeVar::downcast(ty2))         return unifyH(t2, t1);
+    }
+    if (auto t1 = RefType::downcast(ty1)) {
+      if (auto t2 = Constraint::downcast(ty2))      return nullptr;
+      if (auto t2 = NameType::downcast(ty2))        return nullptr;
+      if (auto t2 = PrimitiveType::downcast(ty2))   return nullptr;
+      if (auto t2 = RefType::downcast(ty2))         return unifyH(t1, t2);
+      if (auto t2 = TypeVar::downcast(ty2))         return unifyH(t2, t1);
+    }
+    if (auto t1 = TypeVar::downcast(ty1)) {
+      if (auto t2 = TypeVar::downcast(ty2))         return unifyH(t1, t2);
+      else                                          return unifyH(t1, ty2);
+    }
+    llvm_unreachable("Unifier::unify(Type*, Type*) unrecognized case");
   }
 
-  void unifyModule(ModuleDecl* mod) {
-    unifyDeclList(mod->getDecls());
+  Type* unifyH(Constraint* c1, Constraint* c2) {
+    return c1->kind == Constraint::DECIMAL || c2->kind == Constraint::DECIMAL ?
+           tc.getDecimal() :
+           tc.getNumeric();
   }
 
-  void unifyDecl(Decl* _decl) {
-    if (auto func = FunctionDecl::downcast(_decl))
-      unifyFunc(func);
-    else if (auto mod = ModuleDecl::downcast(_decl))
-      unifyModule(mod);
-    else if (_decl->id == AST::ID::DATA)
-      {}
-    else
-      llvm_unreachable("Didn't recognize decl");
+  Type* unifyH(Constraint* c, PrimitiveType* p) {
+    if (c->kind == Constraint::DECIMAL) {
+      switch (p->kind) {
+      case PrimitiveType::f32:
+      case PrimitiveType::f64: return p;
+      default: return nullptr;
+      }
+    }
+    if (c->kind == Constraint::NUMERIC) {
+      switch (p->kind) {
+      case PrimitiveType::f32:
+      case PrimitiveType::f64:
+      case PrimitiveType::i8:
+      case PrimitiveType::i16:
+      case PrimitiveType::i32:
+      case PrimitiveType::i64: return p;
+      default: return nullptr;
+      }
+    }
+    llvm_unreachable("Unexpected case");
   }
 
-  void unifyDeclList(DeclList* declList) {
-    for (Decl* decl : declList->asArrayRef()) unifyDecl(decl);
+  Type* unifyH(PrimitiveType* p1, PrimitiveType* p2)
+    { return p1 == p2 ? p1 : nullptr; }
+
+  Type* unifyH(NameType* n1, NameType* n2)
+    { return n1 == n2 ? n1 : nullptr; }
+
+  Type* unifyH(RefType* r1, RefType* r2) {
+    if (r1->isOwned != r2->isOwned) return nullptr;
+    Type* unifiedInner = unify(r1->inner, r2->inner);
+    if (unifiedInner == nullptr) return nullptr;
+    return tc.getRefType(unifiedInner, r1->isOwned);
   }
 
+  Type* unifyH(TypeVar* v1, TypeVar* v2) {
+    TypeVar* w1 = find(v1);
+    TypeVar* w2 = find(v2);
+    if (w1 == w2) return w1;
+    Type* t1 = tvarBindings.lookup(w1);
+    Type* t2 = tvarBindings.lookup(w2);
+    if (t2 == nullptr) {
+      tvarEquiv[w2] = w1;
+      return w1;
+    } else if (t1 == nullptr) {
+      tvarEquiv[w1] = w2;
+      return w2;
+    } else {
+      Type* unifiedType = unify(t1, t2);
+      tvarEquiv[w2] = w1;
+      tvarBindings.erase(w2);
+      tvarBindings[w1] = unifiedType;
+      return unifiedType;
+    }
+  }
+
+  /// @note @p t cannot be a TypeVar.
+  Type* unifyH(TypeVar* v, Type* t) {
+    assert(TypeVar::downcast(t) == nullptr && "Wrong function!");
+    TypeVar* vr = find(v);
+    if (Type* vt = tvarBindings.lookup(vr)) {
+      Type* unifiedType = unify(vt, t);
+      if (unifiedType) { tvarBindings[vr] = unifiedType; }
+      return unifiedType;
+    } else {
+      bind(vr, t);
+      return t;
+    }
+  }
+
+  /// @brief Unifies @p exp, then unifies the inferred type with @p expectedTy.
+  /// An error message is pushed if the second unification fails.
+  /// @return The inferred type of @p exp (for convenience).
+  Type* expectTypeToBe(Exp* exp, Type* expectedTy) {
+    Type* inferredTy = unifyExp(exp);
+    if (unify(inferredTy, expectedTy)) return inferredTy;
+    errors.push_back(LocatedError()
+      << "Inferred type is " << softResolveType(inferredTy)->asString()
+      << " but expected type " << softResolveType(expectedTy)->asString()
+      << ".\n" << exp->getLocation()
+    );
+    return inferredTy;
+  }
+
+  /// @brief Removes as many type variables as possible from @p ty.
+  Type* softResolveType(Type* ty) {
+    if (auto v = TypeVar::downcast(ty)) {
+      TypeVar* w = find(v);
+      Type* t = tvarBindings.lookup(w);
+      return t ? t : w;
+    }
+    if (auto refTy = RefType::downcast(ty)) {
+      return tc.getRefType(softResolveType(refTy->inner), refTy->isOwned);
+    }
+    if (Constraint::downcast(ty)) return ty;
+    if (NameType::downcast(ty)) return ty;
+    if (PrimitiveType::downcast(ty)) return ty;
+    llvm_unreachable("Unifier::softResolveType() unexpected case");
+  }
+
+  /// @brief Returns the representative value of the equivalence class
+  /// containing @p v (i.e., the `find` operation of union-find).
+  TypeVar* find(TypeVar* v) {
+    while (auto v1 = tvarEquiv.lookup(v)) v = v1;
+    return v;
+  }
+
+  /// @brief Binds type variable @p v to type @p t.
+  /// @param t must _not_ be a type variable.
+  void bind(TypeVar* v, Type* t) {
+    assert(TypeVar::downcast(t) == nullptr && "Tried to bind to a tvar");
+    tvarBindings[v] = t;
+  }
+
+  /// @brief Adds each parameter and its type to `localVarTypes`. 
   void addParamsToLocalVarTypes(ParamList* paramList) {
     for (auto param : paramList->asArrayRef()) {
       std::string paramName = param.first->asStringRef().str();
-      TVar paramTy = tc.freshFromTypeExp(param.second);
+      Type* paramTy = tc.getTypeFromTypeExp(param.second);
       localVarTypes.add(paramName, paramTy);
     }
   }

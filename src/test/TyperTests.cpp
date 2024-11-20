@@ -23,8 +23,7 @@ namespace TyperTests {
         errStr.append(err.render(expText, lexer.getLocationTable()));
       throw std::runtime_error(errStr);
     }
-    TVar infTy = parsed->getTVar();
-    std::string infTyStr = typer.getTypeContext().TVarToString(infTy);
+    std::string infTyStr = parsed->getType()->asString();
     if (infTyStr != expectedTy) throw std::runtime_error(
       "Inferred " + infTyStr + " but expected " + expectedTy);
   }
@@ -76,7 +75,7 @@ namespace TyperTests {
     expShouldHaveType("false", "bool");
     expShouldHaveType("42", "numeric");
     expShouldHaveType("3.14", "decimal");
-    expShouldHaveType("\"hello\\n\"", "bref<i8>");
+    expShouldHaveType("\"hello\\n\"", "&i8");
   }
 
   TEST(type_ascription) {
@@ -99,7 +98,7 @@ namespace TyperTests {
   }
 
   TEST(references) {
-    expShouldHaveType("&42", "bref<numeric>");
+    expShouldHaveType("&42", "&numeric");
   }
 
   TEST(deref_expression) {
@@ -131,7 +130,7 @@ namespace TyperTests {
   }
 
   TEST(indexing) {
-    expShouldHaveType("(\"hello\")[0]", "bref<i8>");
+    expShouldHaveType("(\"hello\")[0]", "&i8");
   }
 
   TEST(datatypes_and_field_access) {
