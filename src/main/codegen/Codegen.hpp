@@ -315,7 +315,8 @@ public:
       b->SetInsertPoint(contBlock);
       return nullptr;
     }
-    else llvm_unreachable("genExp -- unsupported expression form");
+    llvm_unreachable("Codegen::genExp() fallthrough");
+    return nullptr;
   }
 
   /// Codegens a `func` or external function

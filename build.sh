@@ -1,7 +1,5 @@
 #!/usr/bin/bash
 
-DIR=$(dirname $0)
-
 HELPSTRING="Usage:
   build.sh                           display this help message
   build.sh miscrc [CCOPTS...]        build the MiSCR compiler
@@ -16,10 +14,15 @@ Options:
               subcommand will use all .cpp files in src/test.
 "
 
-RED="\x1B[31m"
-BLUE="\x1B[34m"
-YELLOW="\x1B[33m"
+CC="clang++"
+
 NOCOLOR="\x1B[0m"
+RED="\x1B[31m"
+GREEN="\x1B[32m"
+YELLOW="\x1B[33m"
+BLUE="\x1B[34m"
+
+DIR=$(dirname $0)
 
 # Prefix a command with parrot to print out the command before running it
 parrot () {
@@ -58,7 +61,7 @@ elif [ $1 = "clean" ]; then
 ###
 elif [ $1 = "miscrc" ]; then
   LLVM_CONFIG_ARGS=$(llvm-config-14 --cxxflags --ldflags --system-libs --libs core)
-  parrot clang++ -o $DIR/miscrc $DIR/src/main/main.cpp -I$DIR/src/main \
+  parrot $CC -o $DIR/miscrc $DIR/src/main/main.cpp -I$DIR/src/main \
     $LLVM_CONFIG_ARGS ${@:2}
 
 
@@ -70,7 +73,7 @@ elif [ $1 = "playground" ]; then
     printExtraArgumentsMessage "build the playground" $2
   fi
   LLVM_CONFIG_ARGS=$(llvm-config-14 --cxxflags --ldflags --system-libs --libs core)
-  parrot clang++ -o $DIR/playground $DIR/src/play/main.cpp -I$DIR/src/main $LLVM_CONFIG_ARGS
+  parrot $CC -o $DIR/playground $DIR/src/play/main.cpp -I$DIR/src/main $LLVM_CONFIG_ARGS
 
 
 ########################################
@@ -119,7 +122,7 @@ elif [ $1 = "tests" ]; then
   echo -e ";\n}" >> $DIR/src/test/testmain.cpp
 
   # compile testmain.cpp into tests
-  parrot clang++ -o $DIR/tests $DIR/src/test/testmain.cpp -I$DIR/src/test \
+  parrot $CC -o $DIR/tests $DIR/src/test/testmain.cpp -I$DIR/src/test \
     -I$DIR/src/main -I/usr/lib/llvm-14/include -std=c++14 \
     -L/usr/lib/llvm-14/lib -lLLVM-14
 

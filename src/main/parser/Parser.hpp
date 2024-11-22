@@ -80,7 +80,11 @@ public:
 
   /// @brief Parses an identifier (i.e., an unqualified name).
   Name* ident() {
-    if (p->tag == Token::IDENT) return new Name(p->loc, (p++)->asString());
+    if (p->tag == Token::IDENT) {
+      Name* ret = new Name(p->loc, p->asString());
+      ++p;
+      return ret;
+    }
     EPSILON
   }
 
@@ -109,23 +113,38 @@ public:
   //==========================================================================//
 
   BoolLit* boolLit() {
-    if (p->tag == Token::KW_FALSE) return new BoolLit((p++)->loc, false);
-    if (p->tag == Token::KW_TRUE) return new BoolLit((p++)->loc, true);
+    if (p->tag == Token::KW_FALSE || p->tag == Token::KW_TRUE) {
+      BoolLit* ret = new BoolLit(p->loc, p->tag == Token::KW_TRUE);
+      ++p;
+      return ret;
+    }
     EPSILON
   }
 
   IntLit* intLit() {
-    if (p->tag == Token::LIT_INT) return new IntLit(p->loc, (p++)->ptr);
+    if (p->tag == Token::LIT_INT) {
+      IntLit* ret = new IntLit(p->loc, p->ptr);
+      ++p;
+      return ret;
+    }
     EPSILON
   }
 
   DecimalLit* decimalLit() {
-    if (p->tag == Token::LIT_DEC) return new DecimalLit(p->loc, (p++)->ptr);
+    if (p->tag == Token::LIT_DEC) {
+      DecimalLit* ret = new DecimalLit(p->loc, p->ptr);
+      ++p;
+      return ret;
+    }
     EPSILON
   }
 
   StringLit* stringLit() {
-    if (p->tag == Token::LIT_STRING) return new StringLit(p->loc, (p++)->ptr);
+    if (p->tag == Token::LIT_STRING) {
+      StringLit* ret = new StringLit(p->loc, p->ptr);
+      ++p;
+      return ret;
+    }
     EPSILON
   }
 

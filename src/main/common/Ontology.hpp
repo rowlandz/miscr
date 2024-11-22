@@ -51,6 +51,8 @@ public:
       if (auto ret = functionSpace.lookup(name)) return ret;
       return typeSpace.lookup(name);
     }
+    llvm_unreachable("Ontology::getDecl() unhandled switch case");
+    return nullptr;
   }
 
   /// @brief Finds a data type in the type space. Returns nullptr if not found. 

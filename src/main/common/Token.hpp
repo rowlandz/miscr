@@ -123,6 +123,8 @@ public:
     case DOC_COMMENT_R:   return "DOC_COMMENT_R";
     case END:             return "END";
     }
+    llvm_unreachable("Token::tagToString() unhandled switch case");
+    return nullptr;
   }
 };
 

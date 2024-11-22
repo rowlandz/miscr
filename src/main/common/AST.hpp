@@ -129,6 +129,8 @@ public:
     case i64:    return "i64";
     case UNIT:   return "unit";
     }
+    llvm_unreachable("PrimitiveTypeExp::getKindAsString unhandled switch case");
+    return nullptr;
   }
 };
 
@@ -312,6 +314,8 @@ public:
     case NOT:   return "NOT";
     case NEG:   return "NEG";
     }
+    llvm_unreachable("UnopExp::getUnopAsEnumString() unhandled switch case");
+    return nullptr;
   }
 };
 
@@ -350,6 +354,8 @@ public:
     case OR:    return "OR";
     case SUB:   return "SUB";
     }
+    llvm_unreachable("BinopExp::getBinopAsEnumString() unhandled switch case");
+    return nullptr;
   }
 };
 
@@ -528,6 +534,8 @@ public:
     case BRACKETS:   return "BRACKETS";
     case ARROW:      return "ARROW";
     }
+    llvm_unreachable("ProjectExp::getKindAsEnumString() unhandled switch case");
+    return nullptr;
   }
 };
 
@@ -782,6 +790,8 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::NAME:               return "NAME";
   case AST::ID::PARAMLIST:          return "PARAMLIST";
   }
+  llvm_unreachable("AST::IDToString() unhandled switch case");
+  return nullptr;
 }
 
 AST::ID stringToASTID(const std::string& str) {

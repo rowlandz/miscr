@@ -15,9 +15,10 @@ void print_tokens(const std::vector<Token>& tokens) {
 
 void print_tokens_verbose(const std::vector<Token>& tokens) {
   for (Token token: tokens) {
-    llvm::outs() << llvm::formatv("r{0,-3} c{1,-3}   {2,-15}   {3}\n",
+    llvm::outs() << llvm::formatv("r{0,-3} c{1,-3} s{2,-3}   {3,-15}   {4}\n",
       token.loc.row,
       token.loc.col,
+      token.loc.sz,
       token.tagAsString(),
       token.asString().data());
   }

@@ -267,8 +267,8 @@ public:
       bs = afterNoIters;
       return nullptr;
     }
-    else llvm_unreachable("BorrowChecker::check(Exp*): unexpected syntax");
-
+    llvm_unreachable("BorrowChecker::check(Exp*) fallthrough");
+    return nullptr;
   }
 
   /// @brief Append-only stack of borrow checker errors.
