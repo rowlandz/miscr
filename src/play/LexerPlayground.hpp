@@ -31,8 +31,8 @@ void play_with_lexer(bool verbose) {
     llvm::outs() << "\x1B[34m";
     auto maybeLine = lineEditor.readLine();
     llvm::outs() << "\x1B[0m";
-    assert(maybeLine.hasValue() && "Could not read line from stdin");
-    llvm::StringRef line = maybeLine.getValue();
+    assert(maybeLine.has_value() && "Could not read line from stdin");
+    llvm::StringRef line = maybeLine.value();
 
     Lexer lexer(line.data());
     if (!lexer.run()) {

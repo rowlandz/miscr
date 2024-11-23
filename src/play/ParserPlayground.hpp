@@ -18,7 +18,7 @@ int play_with_parser(llvm::StringRef grammarElement) {
   llvm::LineEditor lineEditor("");
 
   std::string usrInput;
-  llvm::Optional<std::string> maybeLine;
+  std::optional<std::string> maybeLine;
   llvm::StringRef line;
 
 next_input:
@@ -28,8 +28,8 @@ next_line:
   llvm::outs() << "\x1B[34m";
   maybeLine = lineEditor.readLine();
   llvm::outs() << "\x1B[0m";
-  assert(maybeLine.hasValue() && "Could not read line from stdin");
-  line = maybeLine.getValue();
+  assert(maybeLine.has_value() && "Could not read line from stdin");
+  line = maybeLine.value();
   usrInput += line; usrInput += "\n";
 
 check_input:

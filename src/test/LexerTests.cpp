@@ -6,56 +6,56 @@ namespace LexerTests {
   TESTGROUP("Lexer Tests")
 
   /// @brief Succeeds if @p text is lexed into @p expected.
-  void tokensShouldBe(const char* text, std::vector<Token::Tag> expected) {
+  std::optional<std::string>
+  tokensShouldBe(const char* text, std::vector<Token::Tag> expected) {
     Lexer lexer(text);
     if (!lexer.run()) {
-      throw std::runtime_error(lexer.getError().render(text,
-        lexer.getLocationTable()));
+      return lexer.getError().render(text, lexer.getLocationTable());
     }
     std::vector<Token> observed = lexer.getTokens();
     if (observed.size() != expected.size()) {
-      throw std::runtime_error(llvm::formatv("Got {0} tokens but expected {1}",
-        observed.size(), expected.size()));
+      return llvm::formatv("Got {0} tokens but expected {1}",
+        observed.size(), expected.size());
     }
     std::size_t end = observed.size();
     for (int i = 0; i < end; i++) {
       if (observed[i].tag != expected[i]) {
-        throw std::runtime_error(
-          llvm::formatv("First mismatched token is at index {0}", i));
+        return llvm::formatv("First mismatched token is at index {0}", i);
       }
     }
+    SUCCESS
   }
 
   //==========================================================================//
 
   TEST(simple_example_1) {
-    tokensShouldBe("(1 + 2) * 3", {
+    return tokensShouldBe("(1 + 2) * 3", {
       Token::LPAREN, Token::LIT_INT, Token::OP_ADD, Token::LIT_INT,
       Token::RPAREN, Token::OP_MUL, Token::LIT_INT, Token::END
     });
   }
 
   TEST(keywords_and_identifiers) {
-    tokensShouldBe("func funcy let", {
+    return tokensShouldBe("func funcy let", {
       Token::KW_FUNC, Token::IDENT, Token::KW_LET, Token::END
     });
   }
 
   TEST(operators) {
-    tokensShouldBe("=  =>  ==  /=", {
+    return tokensShouldBe("=  =>  ==  /=", {
       Token::EQUAL, Token::FATARROW, Token::OP_EQ, Token::OP_NE, Token::END
     });
   }
 
   TEST(ampersands_should_all_be_separate) {
-    tokensShouldBe("&   &&   &&&", {
+    return tokensShouldBe("&   &&   &&&", {
       Token::AMP, Token::AMP, Token::AMP, Token::AMP, Token::AMP, Token::AMP,
       Token::END
     });
   }
 
   TEST(comments) {
-    tokensShouldBe(
+    return tokensShouldBe(
       "// single line\n"
       "//< left doc comment\n"
       "//> right doc comment\n"
@@ -69,7 +69,7 @@ namespace LexerTests {
   }
 
   TEST(strings) {
-    tokensShouldBe(
+    return tokensShouldBe(
       "\"a string\"\n"
       "\"string with \\\" escaped quote\"\n"
     , { Token::LIT_STRING, Token::LIT_STRING, Token::END }

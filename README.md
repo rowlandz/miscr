@@ -5,50 +5,38 @@ powered by a borrow checker.
 
 ![images/miscr_example.png](images/miscr_example.png)
 
-## Build
+## Build the Compiler
 
-MiSCR has minimal dependencies. All you need is
-  - LLVM-14 C++ libraries
-  - clang++ compiler
-  - bash (to run the build script)
-  - a few common Unix utilities (echo, rm, basename, dirname)
+The MiSCR tools are written in C++ and use the LLVM libraries. Aside from that,
+the only other dependencies are bash and a few common Unix utilities (e.g.,
+echo, rm, basename, dirname).
 
-Here's how to build the compiler:
+The `build.sh` script should automate the build process in most instances. It
+is meant to be readable in case you need to build MiSCR manually. You can also
+use `make`.
 
 ```shell
+# build the MiSCR compiler
 ./build.sh miscrc
 ```
 
-There are three build targets in total:
-  - `miscrc` -- The MiSCR compiler.
-  - `tests` -- Automated unit tests.
-  - `playground` -- An interactive testing tool.
+Building was tested with:
+* Both `g++` and `clang`
+* `LLVM-18` libraries
 
-Running the build script with no arguments prints a help message.
-
-You can also use `make` to run the build script instead of running it directly:
+## Run the Compiler
 
 ```shell
-make miscrc
+./miscrc examples/FizzBuzz.miscr
 ```
 
-## Unit Testing
+The `miscrc` program is really just an LLVM frontend (that is, a MiSCR source
+code to LLVM IR translator). If clang is in PATH, then `miscrc` will invoke
+clang to compile the generated LLVM to native code. If clang is not in PATH or
+if the `--emit-llvm` option is provided, then the backend compilation is
+skipped. Clang must be version 15 or higher.
 
-MiSCR uses a dead-simple test infrastructure (only 50 lines of code!) found
-in `src/test/test.hpp`. Building and running tests is this simple:
-
-```shell
-./build.sh tests
-./tests
-```
-
-## Playground
-
-If you want to hack around with the components of the MiSCR compiler, try the
-playground! It will read input from stdin and pretty-print internal data
-structures such as token vectors and abstract syntax trees.
-
-## MiSCR Language Reference
+## MiSCR Language Walkthrough
 
 A MiSCR file (ending in `.miscr`) contains a list of declarations. A
 declaration is a module, a `data` type, or a function.

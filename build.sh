@@ -14,7 +14,7 @@ Options:
               subcommand will use all .cpp files in src/test.
 "
 
-CC="clang++"
+CC="g++"
 
 NOCOLOR="\x1B[0m"
 RED="\x1B[31m"
@@ -34,6 +34,22 @@ printExtraArgumentsMessage () {
   echo -en "${YELLOW}I'll $1, but you added extra arguments that I "
   echo -e "don't understand.\nI don't understand starting from $2.$NOCOLOR"
 }
+
+getLLVMConfigArgs () {
+  if [ $(which llvm-config-18) ]; then
+    echo -e "$BLUE~ Found llvm-config-18$NOCOLOR"
+    LLVM_CONFIG_ARGS=$(llvm-config-18 --cxxflags --ldflags --system-libs --libs core)
+  elif [ $(which llvm-config) ]; then
+    echo -e "$BLUE~ Found llvm-config$NOCOLOR"
+    LLVM_CONFIG_ARGS=$(llvm-config --cxxflags --ldflags --system-libs --libs core)
+  else
+    echo -e "${RED}Could not find llvm-config in PATH. I looked for:"
+    echo -e "  llvm-config-18\n  llvm-config$NOCOLOR"
+    echo -e "Try installing LLVM:\n  sudo apt install llvm-18"
+    exit 1
+  fi
+}
+
 
 ################################################################################
 
@@ -60,7 +76,7 @@ elif [ $1 = "clean" ]; then
 ### Subcommand: miscrc
 ###
 elif [ $1 = "miscrc" ]; then
-  LLVM_CONFIG_ARGS=$(llvm-config-14 --cxxflags --ldflags --system-libs --libs core)
+  getLLVMConfigArgs
   parrot $CC -o $DIR/miscrc $DIR/src/main/main.cpp -I$DIR/src/main \
     $LLVM_CONFIG_ARGS ${@:2}
 
@@ -69,17 +85,19 @@ elif [ $1 = "miscrc" ]; then
 ### Subcommand: playground
 ###
 elif [ $1 = "playground" ]; then
+  getLLVMConfigArgs
   if [ $# -gt 1 ]; then
     printExtraArgumentsMessage "build the playground" $2
   fi
-  LLVM_CONFIG_ARGS=$(llvm-config-14 --cxxflags --ldflags --system-libs --libs core)
-  parrot $CC -o $DIR/playground $DIR/src/play/main.cpp -I$DIR/src/main $LLVM_CONFIG_ARGS
+  parrot $CC -o $DIR/playground $DIR/src/play/main.cpp -I$DIR/src/main \
+    $LLVM_CONFIG_ARGS
 
 
 ########################################
 ### Subcommand: tests
 ###
 elif [ $1 = "tests" ]; then
+  getLLVMConfigArgs
 
   # validate test files (if given any)
   if [ $# -gt 1 ]; then
@@ -123,8 +141,7 @@ elif [ $1 = "tests" ]; then
 
   # compile testmain.cpp into tests
   parrot $CC -o $DIR/tests $DIR/src/test/testmain.cpp -I$DIR/src/test \
-    -I$DIR/src/main -I/usr/lib/llvm-14/include -std=c++14 \
-    -L/usr/lib/llvm-14/lib -lLLVM-14
+    -I$DIR/src/main $LLVM_CONFIG_ARGS
 
 
 ########################################

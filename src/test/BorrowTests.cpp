@@ -9,19 +9,19 @@ namespace BorrowTests {
 
   //==========================================================================//
 
-  void declsShouldPass(const char* declsText) {
+  std::optional<std::string> declsShouldPass(const char* declsText) {
     Lexer lexer(declsText);
-    if (!lexer.run()) throw std::runtime_error("Lexer error");
+    if (!lexer.run()) return "Lexer error";
     Parser parser(lexer.getTokens());
     DeclList* parsed = parser.decls0();
-    if (parsed == nullptr) throw std::runtime_error("Parser error");
+    if (parsed == nullptr) return "Parser error";
     Typer typer;
     typer.typeDeclList(parsed);
     if (typer.hasErrors()) {
       std::string errStr;
       for (auto err : typer.getErrors())
         errStr.append(err.render(declsText, lexer.getLocationTable()));
-      throw std::runtime_error(errStr);
+      return (errStr);
     }
     BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
     bc.checkDecls(parsed);
@@ -29,35 +29,37 @@ namespace BorrowTests {
       std::string errStr;
       for (auto err : bc.errors)
         errStr.append(err.render(declsText, lexer.getLocationTable()));
-      throw std::runtime_error(errStr);
+      return (errStr);
     }
+    SUCCESS
   }
 
-  void declsShouldFail(const char* declsText) {
+  std::optional<std::string> declsShouldFail(const char* declsText) {
     Lexer lexer(declsText);
-    if (!lexer.run()) throw std::runtime_error("Lexer error");
+    if (!lexer.run()) return "Lexer error";
     Parser parser(lexer.getTokens());
     DeclList* parsed = parser.decls0();
-    if (parsed == nullptr) throw std::runtime_error("Parser error");
+    if (parsed == nullptr) return "Parser error";
     Typer typer;
     typer.typeDeclList(parsed);
     if (typer.hasErrors()) {
       std::string errStr;
       for (auto err : typer.getErrors())
         errStr.append(err.render(declsText, lexer.getLocationTable()));
-      throw std::runtime_error(errStr);
+      return (errStr);
     }
     BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
     bc.checkDecls(parsed);
     if (bc.errors.empty()) {
-      throw std::runtime_error("Expected borrow checking to fail.");
+      return "Expected borrow checking to fail.";
     }
+    SUCCESS
   }
 
   //==========================================================================//
 
   TEST(malloc_then_free) {
-    declsShouldPass(
+    return declsShouldPass(
       "extern func malloc(size: i64): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
       "func foo(): unit = {\n"
@@ -68,7 +70,7 @@ namespace BorrowTests {
   }
 
   TEST(unfreed_oref) {
-    declsShouldFail(
+    return declsShouldFail(
       "extern func malloc(size: i64): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
       "func foo(): unit = {\n"
@@ -78,7 +80,7 @@ namespace BorrowTests {
   }
 
   TEST(double_freed_oref) {
-    declsShouldFail(
+    return declsShouldFail(
       "extern func malloc(size: i64): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
       "func foo(): unit = {\n"
@@ -90,14 +92,14 @@ namespace BorrowTests {
   }
 
   TEST(immediately_borrowed_malloc) {
-    declsShouldFail(
+    return declsShouldFail(
       "extern func malloc(size: i64): #i8;\n"
       "func foo(): &i8 = borrow malloc(10);"
     );
   }
 
   TEST(ref_then_deref) {
-    declsShouldPass(
+    return declsShouldPass(
       "extern func alloc(): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
       "func foo(): unit = {\n"
@@ -109,7 +111,7 @@ namespace BorrowTests {
   }
 
   TEST(double_free_with_derefs) {
-    declsShouldFail(
+    return declsShouldFail(
       "extern func alloc(): #i8;\n"
       "extern func free2(p1: #i8, p2: #i8): unit;\n"
       "func foo(): unit = {\n"
@@ -121,7 +123,7 @@ namespace BorrowTests {
   }
 
   TEST(let_is_not_a_use) {
-    declsShouldPass(
+    return declsShouldPass(
       "func foo(x: #i8): #i8 = {\n"
       "  let y = x;\n"
       "  x\n"
@@ -130,18 +132,19 @@ namespace BorrowTests {
   }
 
   TEST(ref_is_not_a_use) {
-    declsShouldFail("func foo(x: #i8): &#i8 = &x;");
-    declsShouldPass(
+    TRY(declsShouldFail("func foo(x: #i8): &#i8 = &x;"));
+    TRY(declsShouldPass(
       "func foo(x: #i8): #i8 = {\n"
       "  let y = &x;\n"
       "  let z = &x;\n"
       "  z!"
       "};"
-    );
+    ));
+    SUCCESS
   }
 
   TEST(sneaky_proj_deref_double_use) {
-    declsShouldFail(
+    return declsShouldFail(
       "data Thing(fst: #i8)\n"
       "extern func alloc(): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
@@ -154,7 +157,7 @@ namespace BorrowTests {
   }
 
   TEST(simple_move_and_replace) {
-    declsShouldPass(
+    return declsShouldPass(
       "extern func alloc(): #i8;\n"
       "extern func free(ptr: #i8): unit;\n"
       "func foo(x: &#i8): unit = {\n"
@@ -165,18 +168,18 @@ namespace BorrowTests {
   }
 
   TEST(unreplaced_move) {
-    declsShouldFail(
+    return declsShouldFail(
       "extern func free(ptr: #i8): unit;\n"
       "func foo(x: &#i8): unit = free(move x!);"
     );
   }
 
   TEST(overwriting_oref) {
-    declsShouldFail("func foo(x: &#i8, y: #i8): unit = { x := y };");
+    return declsShouldFail("func foo(x: &#i8, y: #i8): unit = { x := y };");
   }
 
   TEST(if_expr_inconsistent_frees) {
-    declsShouldFail(
+    return declsShouldFail(
       "extern func free(ptr: #i8): unit;\n"
       "func foo(x: #i8, c: bool): unit = if (c) free(x) else {};\n"
     );

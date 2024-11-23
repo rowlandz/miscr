@@ -116,8 +116,7 @@ int main(int argc, char** argv) {
     if (childPID == 0) {
       std::string outFile = outFileOpt.empty()
         ? outFileStem.str() : outFileOpt.getValue();
-      execlp("clang", "clang", "-mllvm", "-opaque-pointers",
-        "-o", outFile.c_str(), llFile.c_str(), nullptr);
+      execlp("clang", "clang", "-o", outFile.c_str(), llFile.c_str(), nullptr);
       llvm::errs() << "Could not find clang. LLVM was output to "
                    << llFile.c_str() << "\n";
       return -1;

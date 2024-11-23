@@ -25,7 +25,6 @@ public:
     b = new llvm::IRBuilder<>(llvmctx);
     mod = new llvm::Module("MyModule", llvmctx);
     mod->setTargetTriple("x86_64-pc-linux-gnu");
-    llvmctx.enableOpaquePointers();
 
     // Populates `dataTypes`
     for (llvm::StringRef typeName : ont.typeSpace.keys()) {
@@ -202,7 +201,7 @@ public:
       else
         b->CreateCondBr(condition, thenBlock, contBlock);
 
-      f->getBasicBlockList().push_back(thenBlock);
+      f->insert(f->end(), thenBlock);
       b->SetInsertPoint(thenBlock);
       llvm::Value* thenResult = genExp(e->getThenExp());
       b->CreateBr(contBlock);
@@ -210,14 +209,14 @@ public:
 
       llvm::Value* elseResult;
       if (e->getElseExp() != nullptr) {
-        f->getBasicBlockList().push_back(elseBlock);
+        f->insert(f->end(), elseBlock);
         b->SetInsertPoint(elseBlock);
         elseResult = genExp(e->getElseExp());
         b->CreateBr(contBlock);
         elseBlock = b->GetInsertBlock();
       }
 
-      f->getBasicBlockList().push_back(contBlock);
+      f->insert(f->end(), contBlock);
       b->SetInsertPoint(contBlock);
       llvm::Type* retTy = genType(e->getType());
       if (!retTy->isVoidTy()) {
@@ -301,17 +300,17 @@ public:
       auto contBlock = llvm::BasicBlock::Create(llvmctx, "whileCont");
       b->CreateBr(condBlock);
 
-      f->getBasicBlockList().push_back(condBlock);
+      f->insert(f->end(), condBlock);
       b->SetInsertPoint(condBlock);
       llvm::Value* condResult = genExp(e->getCond());
       b->CreateCondBr(condResult, bodyBlock, contBlock);
 
-      f->getBasicBlockList().push_back(bodyBlock);
+      f->insert(f->end(), bodyBlock);
       b->SetInsertPoint(bodyBlock);
       genExp(e->getBody());
       b->CreateBr(condBlock);
 
-      f->getBasicBlockList().push_back(contBlock);
+      f->insert(f->end(), contBlock);
       b->SetInsertPoint(contBlock);
       return nullptr;
     }

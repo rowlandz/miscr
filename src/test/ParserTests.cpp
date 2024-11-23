@@ -14,76 +14,82 @@ namespace ParserTests {
         || c == '_';
   }
 
-  std::pair<int, AST::ID> parseLine(const char* line) {
-    int indent = 0;
-    while (*line != '\0' && !isAlphaNumU(*line)) { indent++; line++; }
+  std::optional<std::string>
+  parseLine(const char* line, int& indent, AST::ID& parsedID) {
+    indent = 0;
+    while (*line != '\0' && !isAlphaNumU(*line)) { ++indent; ++line; }
     const char* beginToken = line;
-    while (isAlphaNumU(*line)) { line++; }
-    if (*line != '\0') throw std::runtime_error("Expected null char after token");
-    AST::ID ty = stringToASTID(std::string(beginToken));
-    return std::pair<int, AST::ID>(indent, ty);
+    while (isAlphaNumU(*line)) { ++line; }
+    if (*line != '\0') return "Expected null char after token";
+    parsedID = stringToASTID(std::string(beginToken));
+    SUCCESS
   }
 
   /// Checks that the `lines` starting with `currentLine` forms a tree with
   /// starting indentation `indent` that matches node `_n`. If successful,
   /// `currentLine` is updated to point immediately after the detected tree.
-  void expectMatch(
+  std::optional<std::string> expectMatch(
     AST* n,
     int indent,
     std::vector<const char*>& lines,
     int* currentLine
   ) {
-    if (*currentLine >= lines.size()) throw std::runtime_error("Ran out of lines!");
-    auto indAndTy = parseLine(lines[*currentLine]);
-    if (indAndTy.first != indent) throw std::runtime_error("Unexpected indent");
-    if (n == nullptr) throw std::runtime_error("Invalid node address");
-    if (n->id != indAndTy.second) {
-      std::string errMsg("Node types did not match on line ");
-      errMsg.append(std::to_string(*currentLine));
-      errMsg.append(". Expected ");
-      errMsg.append(AST::IDToString(indAndTy.second));
-      errMsg.append(" but got ");
-      errMsg.append(AST::IDToString(n->id));
-      errMsg.append(".\n");
-      throw std::runtime_error(errMsg);
+    if (*currentLine >= lines.size()) return "Ran out of lines!";
+    int expectedIndent;
+    AST::ID expectedID;
+    TRY(parseLine(lines[*currentLine], expectedIndent, expectedID));
+    if (expectedIndent != indent) return "Unexpected indent";
+    if (n == nullptr) return "Invalid node address";
+    if (n->id != expectedID) {
+      return "Node types did not match on line " + std::to_string(*currentLine)
+           + ". Expected " + AST::IDToString(expectedID) + " but got "
+           + AST::IDToString(n->id) + ".\n";
     }
     *currentLine = *currentLine + 1;
 
-    for (AST* subnode : n->getASTChildren())
-      expectMatch(subnode, indent+4, lines, currentLine);
+    for (AST* subnode : n->getASTChildren()) {
+      if (auto error = expectMatch(subnode, indent+4, lines, currentLine))
+        return error;
+    }
+
+    SUCCESS
   }
 
-  void expParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {
+  std::optional<std::string>
+  expParseTreeShouldBe(const char* text, std::vector<const char*> expected) {
     Lexer lexer(text);
     lexer.run();
     Parser parser(lexer.getTokens());
-    auto parsed = parser.exp();
-    if (parsed == nullptr) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
+    Exp* parsed = parser.exp();
+    if (parsed == nullptr)
+      return parser.getError().render(text, lexer.getLocationTable());
     int currentLine = 0;
-    expectMatch(parsed, 0, expectedNodes, &currentLine);
+    return expectMatch(parsed, 0, expected, &currentLine);
   }
 
-  void declParseTreeShouldBe(const char* text, std::vector<const char*> expectedNodes) {
+  std::optional<std::string>
+  declParseTreeShouldBe(const char* text, std::vector<const char*> expected) {
     Lexer lexer(text);
     lexer.run();
     Parser parser(lexer.getTokens());
-    auto parsed = parser.decl();
-    if (parsed == nullptr) throw std::runtime_error(parser.getError().render(text, lexer.getLocationTable()));
+    Decl* parsed = parser.decl();
+    if (parsed == nullptr)
+      return parser.getError().render(text, lexer.getLocationTable());
     int currentLine = 0;
-    expectMatch(parsed, 0, expectedNodes, &currentLine);
+    return expectMatch(parsed, 0, expected, &currentLine);
   }
 
   //==========================================================================//
 
   TEST(qident) {
-    expParseTreeShouldBe("global::MyModule::myfunc", {
+    return expParseTreeShouldBe("global::MyModule::myfunc", {
       "ENAME",
       "    NAME"
     });
   }
 
   TEST(arithmetic) {
-    expParseTreeShouldBe("1 + 1", {
+    return expParseTreeShouldBe("1 + 1", {
       "BINOP_EXP",
       "    INT_LIT",
       "    INT_LIT",
@@ -91,7 +97,7 @@ namespace ParserTests {
   }
 
   TEST(logical_binop_precedence) {
-    expParseTreeShouldBe("1 && 2 || 3 && 4", {
+    return expParseTreeShouldBe("1 && 2 || 3 && 4", {
       "BINOP_EXP",
       "    BINOP_EXP",
       "        INT_LIT",
@@ -103,7 +109,7 @@ namespace ParserTests {
   }
 
   TEST(block_expression) {
-    expParseTreeShouldBe("{ let x = 10; x; }", {
+    return expParseTreeShouldBe("{ let x = 10; x; }", {
       "BLOCK",
       "    EXPLIST",
       "        LET",
@@ -115,7 +121,9 @@ namespace ParserTests {
   }
 
   TEST(main_prints_hello_world) {
-    declParseTreeShouldBe("func main(): i32 = { println(\"Hello World\"); };", {
+    return declParseTreeShouldBe(
+      "func main(): i32 = { println(\"Hello World\"); };"
+    , {
       "FUNC",
       "    NAME",
       "    PARAMLIST",
@@ -130,7 +138,7 @@ namespace ParserTests {
   }
 
   TEST(empty_module) {
-    declParseTreeShouldBe("module M {}", {
+    return declParseTreeShouldBe("module M {}", {
       "MODULE",
       "    NAME",
       "    DECLLIST",
@@ -138,7 +146,7 @@ namespace ParserTests {
   }
 
   TEST(nested_decls) {
-    declParseTreeShouldBe(
+    return declParseTreeShouldBe(
       "module M {\n"
       "  extern func f(): unit;\n"
       "  module N {\n"
