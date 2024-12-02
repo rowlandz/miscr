@@ -5,6 +5,20 @@ powered by a borrow checker.
 
 ![images/miscr_example.png](images/miscr_example.png)
 
+C and C++ are well known to be unsafe languages. Therefore a number of
+"C/C++ replacement" languages have been gaining popularity in the last decade
+or so such as Rust, Zig, Carbon, and Nim. Of these, Rust is the most popular
+and has the most sophisticated tool for enforcing garbage-collector-free memory
+safety: the borrow checker. However a common complaint about Rust is that it's
+difficult to migrate projects from C++ which could require major code
+restructuring. It also has a high learning curve; the phrase "fighting the
+borrow checker" is often employed to describe the experience of a Rust newbie.
+
+The main research question of MiSCR is thus: _Is there a middle ground between
+the lawlessness of C++ and the strictness of Rust?_ A middle ground where the
+design patterns of C++ code can be preserved more or less unchanged while
+introducing Rust-inspired memory safety?
+
 ## Build the Compiler
 
 The MiSCR tools are written in C++ and use the LLVM libraries. Aside from that,
@@ -172,14 +186,10 @@ The analysis performed by the borrow checker is similar to things called
 
 ## Safety Properties:
 
-MISCR should guarantee the following safety properties:
+MiSCR should guarantee that every malloc-ed reference is freed exactly once.
 
-* Every malloc-d reference is freed exactly once
-
-MISCR does _not_ guarantee these:
-
-The absence of use-after-frees. There is no lifetime analysis, so borrowed
-references are just as unsafe as C pointers. e.g.,
+MiSCR does _not_ guarantee the absence of use-after-frees. There is no lifetime
+analysis (yet?), so borrowed references are just as unsafe as C pointers. e.g.,
 
     func main(): i32 = {
       let x: #i8 = C::malloc(10);

@@ -3,6 +3,7 @@
 HELPSTRING="Usage:
   build.sh                           display this help message
   build.sh miscrc [CCOPTS...]        build the MiSCR compiler
+  build.sh miscrc-static             build statically-linked miscrc
   build.sh playground                build the playground
   build.sh tests [TESTFILE.cpp...]   build unit tests
   build.sh clean                     delete previously built files
@@ -38,10 +39,10 @@ printExtraArgumentsMessage () {
 getLLVMConfigArgs () {
   if [ $(which llvm-config-18) ]; then
     echo -e "$BLUE~ Found llvm-config-18$NOCOLOR"
-    LLVM_CONFIG_ARGS=$(llvm-config-18 --cxxflags --ldflags --system-libs --libs core)
+    LLVM_CONFIG_ARGS=$(llvm-config-18 --cxxflags --ldflags --libs core)
   elif [ $(which llvm-config) ]; then
     echo -e "$BLUE~ Found llvm-config$NOCOLOR"
-    LLVM_CONFIG_ARGS=$(llvm-config --cxxflags --ldflags --system-libs --libs core)
+    LLVM_CONFIG_ARGS=$(llvm-config --cxxflags --ldflags --libs core)
   else
     echo -e "${RED}Could not find llvm-config in PATH. I looked for:"
     echo -e "  llvm-config-18\n  llvm-config$NOCOLOR"
@@ -65,6 +66,7 @@ elif [ $1 = "clean" ]; then
     printExtraArgumentsMessage clean $2
   fi
   if [ -f $DIR/miscrc ]; then parrot rm $DIR/miscrc; fi
+  if [ -f $DIR/miscrc-static ]; then parrot rm $DIR/miscrc-static; fi
   if [ -f $DIR/playground ]; then parrot rm $DIR/playground; fi
   if [ -f $DIR/tests ]; then parrot rm $DIR/tests; fi
   if [ -f $DIR/src/test/testmain.cpp ]; then
@@ -79,6 +81,16 @@ elif [ $1 = "miscrc" ]; then
   getLLVMConfigArgs
   parrot $CC -o $DIR/miscrc $DIR/src/main/main.cpp -I$DIR/src/main \
     $LLVM_CONFIG_ARGS ${@:2}
+
+
+########################################
+### Subcommand: miscrc-static
+###
+
+elif [ $1 = "miscrc-static" ]; then
+  LLVM_CONFIG_ARGS=$(llvm-config-18 --cxxflags --ldflags --link-static --libs core)
+  parrot $CC -static -o $DIR/miscrc-static $DIR/src/main/main.cpp \
+    -I$DIR/src/main $LLVM_CONFIG_ARGS -ltinfo -O1
 
 
 ########################################
