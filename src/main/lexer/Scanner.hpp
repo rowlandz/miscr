@@ -30,7 +30,8 @@
 template<typename S>
 class Scanner {
 public:
-  Scanner(llvm::StringRef text, S _initialState) : _locTable(text.data()) {
+  Scanner(llvm::StringRef text, S _initialState,
+          LocationTable* locationTable = nullptr) : _locTable(locationTable) {
     p1 = p2 = text.data();
     row = 1; col = 1;
     newlines = 0;
@@ -44,7 +45,10 @@ public:
     if (*p2 == '\n') {
       newlines++;
       lastNewline = p2;
-      if (((row + newlines) & 0x03) == 0) _locTable.add(row + newlines, p2 + 1);
+      if (((row + newlines) & 0x03) == 0) {
+        if (_locTable != nullptr)
+          _locTable->add(row + newlines, p2 + 1);
+      }
     }
     p2++;
     _state = newState;
@@ -119,9 +123,6 @@ public:
   /// current selection.
   Location selectionBeginLocation() { return Location(row, col, 1); }
 
-  /// @brief Returns the location table.
-  const LocationTable& locationTable() { return _locTable; }
-
 private:
   const char* p1;                // beginning of selection
   const char* p2;                // cursor position
@@ -132,7 +133,7 @@ private:
   S _state;                      // current state
   S initialState;                // initial state
   std::vector<Token> _tokens;    // token accumulator
-  LocationTable _locTable;       // location table that is built up during lexing.
+  LocationTable* _locTable;      // location table that is built up during lexing.
 };
 
 #endif

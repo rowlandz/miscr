@@ -8,11 +8,7 @@ namespace LexerTests {
   /// @brief Succeeds if @p text is lexed into @p expected.
   std::optional<std::string>
   tokensShouldBe(const char* text, std::vector<Token::Tag> expected) {
-    Lexer lexer(text);
-    if (!lexer.run()) {
-      return lexer.getError().render(text, lexer.getLocationTable());
-    }
-    std::vector<Token> observed = lexer.getTokens();
+    std::vector<Token> observed = Lexer(text).run();
     if (observed.size() != expected.size()) {
       return llvm::formatv("Got {0} tokens but expected {1}",
         observed.size(), expected.size());

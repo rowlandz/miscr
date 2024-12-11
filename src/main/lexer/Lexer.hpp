@@ -8,33 +8,30 @@
 /// @brief The MiSCR lexer. Converts a null-terminated string into a Token
 /// vector that is passed to the Parser.
 ///
-/// The run() method runs the lexer and returns a success indicator. If
-/// successful, getTokens() and getLocationTable() can be used to retrieve data.
-/// Otherwise, getError() will return an error message.
+/// The Lexer will always consume the entire input string without failing;
+/// ERROR tokens are omitted for characters that do not form a valid Token.
+///
+/// Lexer objects should only be used once, like this:
+///
+///     // ...
+///     std::vector<Token> tokens = Lexer(sourceText, locTable).run();
+///     // ...
 class Lexer {
 public:
 
   /// @brief Builds a lexer that will scan @p text.
-  Lexer(llvm::StringRef text) : tok(text, ST::BEGIN), err('^') {}
+  /// @param locationTable If non-null, then this location table will be
+  /// populated during lexing.
+  Lexer(llvm::StringRef text, LocationTable* locationTable = nullptr)
+    : tok(text, ST::BEGIN, locationTable) {}
 
-  /// @brief Runs the lexer. Returns `true` iff tokenization was successful.
-  bool run() {
-    while (tok.thereAreMoreChars()) {
-      if (!oneIteration()) return false;
-    }
-    if (!finalIteration()) return false;
+  /// @brief Runs the lexer.
+  std::vector<Token> run() {
+    while (tok.thereAreMoreChars()) { oneIteration(); }
+    finalIteration();
     tok.capture(Token::END);
-    return true;
+    return tok.tokens();
   }
-
-  /// @brief Returns the lexed tokens after a successful run.
-  const std::vector<Token>& getTokens() { return tok.tokens(); }
-
-  /// @brief Returns the location table after a successful run.
-  const LocationTable& getLocationTable() { return tok.locationTable(); }
-
-  /// @brief Returns the lexer error after a failed run.
-  LocatedError getError() { return err; }
 
 private:
 
@@ -68,11 +65,10 @@ private:
   };
 
   Scanner<ST> tok;
-  LocatedError err;
 
   /// @brief Either scans a single char or scans no chars and resets the state
   /// to ST::BEGIN.
-  bool oneIteration() {
+  void oneIteration() {
     char c = tok.currentChar();
     switch (tok.state()) {
     
@@ -114,10 +110,7 @@ private:
       else if (c == ']') tok.stepAndCapture(Token::RBRACKET);
       else if (c == ',') tok.stepAndCapture(Token::COMMA);
       else if (c == ';') tok.stepAndCapture(Token::SEMICOLON);
-      else {
-        err << "Illegal start of token.\n" << tok.selectionBeginLocation();
-        return false;
-      }
+      else               tok.stepAndCapture(Token::ERROR);
       break;
 
     case ST::COLON:
@@ -144,11 +137,7 @@ private:
 
     case ST::DOT_DOT:
       if (c == '.') tok.stepAndCapture(Token::ELLIPSIS);
-      else {
-        err << "Unrecognized token (did you mean ... ?)\n"
-            << tok.selectionLocation();
-        return false;
-      }
+      else tok.capture(Token::ERROR);
       break;
 
     case ST::EQUAL:
@@ -230,20 +219,13 @@ private:
 
     case ST::PIPE:
       if (c == '|') tok.stepAndCapture(Token::OP_OR);
-      else {
-        err << "Unrecognized token (did you mean || ?)\n"
-            << tok.selectionLocation();
-        return false;
-      }
+      else tok.capture(Token::ERROR);
       break;
 
     case ST::STRING:
       if (c == '"') tok.stepAndCapture(Token::LIT_STRING);
       else if (c == '\\') tok.step(ST::STRING_BSLASH);
-      else if (c == '\n') {
-        err << "Missing end quote.\n" << tok.selectionLocation();
-        return false;
-      }
+      else if (c == '\n') tok.capture(Token::ERROR);
       else tok.step(ST::STRING);
       break;
 
@@ -252,12 +234,10 @@ private:
       break;
 
     }
-    return true;
   }
 
-  /// @brief Called when end of file is reached. Captures one last token if
-  /// necessary or produces an error for and unclosed comment or string.
-  bool finalIteration() {
+  /// @brief Called when end of file is reached. Maybe captures one last token.
+  void finalIteration() {
     switch (tok.state()) {
     case ST::ANGLE_L: tok.capture(Token::OP_LT); break;
     case ST::ANGLE_R: tok.capture(Token::OP_GT); break;
@@ -273,35 +253,23 @@ private:
     case ST::LINE_COMMENT_L: tok.capture(Token::DOC_COMMENT_L); break;
     case ST::LINE_COMMENT_R: tok.capture(Token::DOC_COMMENT_R); break;
 
-    case ST::DOT_DOT:
-      err << "Unrecognized token (did you mean ... ?)\n"
-          << tok.selectionLocation();
-      return false;
-
     case ST::FSLASH_FSLASH:
     case ST::LINE_COMMENT: /* discard non-doc comments */ break;
 
+    case ST::DOT_DOT:
     case ST::FSLASH_STAR:
     case ST::FSLASH_STAR_STAR:
     case ST::MULTILINE_COMMENT:
     case ST::MULTILINE_COMMENT_STAR:
     case ST::MULTILINE_DOC_COMMENT:
     case ST::MULTILINE_DOC_COMMENT_STAR:
-      err << "Unclosed comment.\n" << tok.selectionLocation();
-      return false;
-    
     case ST::PIPE:
-      err << "Unrecognized token (did you mean || ?)\n"
-          << tok.selectionLocation();
-      return false;
-
     case ST::STRING:
     case ST::STRING_BSLASH:
-      err << "Missing end quote.\n" << tok.selectionLocation();
-      return false;
+      tok.capture(Token::ERROR);
+      break;
     
     }
-    return true;
   }
 
   /// @brief If @p s is a keyword, returns the corresponding token tag,

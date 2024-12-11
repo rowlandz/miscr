@@ -57,24 +57,24 @@ namespace ParserTests {
 
   std::optional<std::string>
   expParseTreeShouldBe(const char* text, std::vector<const char*> expected) {
-    Lexer lexer(text);
-    lexer.run();
-    Parser parser(lexer.getTokens());
+    LocationTable LT(text);
+    auto tokens = Lexer(text, &LT).run();
+    Parser parser(tokens);
     Exp* parsed = parser.exp();
     if (parsed == nullptr)
-      return parser.getError().render(text, lexer.getLocationTable());
+      return parser.getError().render(text, LT);
     int currentLine = 0;
     return expectMatch(parsed, 0, expected, &currentLine);
   }
 
   std::optional<std::string>
   declParseTreeShouldBe(const char* text, std::vector<const char*> expected) {
-    Lexer lexer(text);
-    lexer.run();
-    Parser parser(lexer.getTokens());
+    LocationTable LT(text);
+    auto tokens = Lexer(text, &LT).run();
+    Parser parser(tokens);
     Decl* parsed = parser.decl();
     if (parsed == nullptr)
-      return parser.getError().render(text, lexer.getLocationTable());
+      return parser.getError().render(text, LT);
     int currentLine = 0;
     return expectMatch(parsed, 0, expected, &currentLine);
   }

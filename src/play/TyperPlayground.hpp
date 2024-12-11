@@ -45,33 +45,27 @@ next_line:
   usrInput += line; usrInput += "\n";
 
 check_input:
-  Lexer lexer(usrInput.c_str());
-  if (lexer.run()) {
-    Parser parser(lexer.getTokens());
-    AST* parsed = parse_function1(parser, grammarElement);
-    if (parsed != nullptr) {
+  LocationTable LT(usrInput.c_str());
+  auto tokens = Lexer(usrInput.c_str(), &LT).run();
+  Parser parser(tokens);
+  AST* parsed = parse_function1(parser, grammarElement);
+  if (parsed != nullptr) {
 
-      Typer typer;
-      type_function(typer, parsed, grammarElement);
-      for (auto err : typer.getErrors()) {
-        std::cout << err.render(usrInput.c_str(), lexer.getLocationTable());
-      }
-      if (typer.getErrors().size() == 0) {
-        std::vector<bool> indents;
-        print_parse_tree(parsed, indents);
-      }
+    Typer typer;
+    type_function(typer, parsed, grammarElement);
+    for (auto err : typer.getErrors()) {
+      std::cout << err.render(usrInput.c_str(), LT);
+    }
+    if (typer.getErrors().size() == 0) {
+      std::vector<bool> indents;
+      print_parse_tree(parsed, indents);
+    }
 
-      parsed->deleteRecursive();
-      goto next_input;
-    } else if (line.size() == 0) {
-      llvm::outs()
-        << parser.getError().render(usrInput.c_str(), lexer.getLocationTable())
-        << "\n";
-      goto next_input;
-    } else goto next_line;
+    parsed->deleteRecursive();
+    goto next_input;
   } else if (line.size() == 0) {
     llvm::outs()
-      << lexer.getError().render(usrInput.c_str(), lexer.getLocationTable())
+      << parser.getError().render(usrInput.c_str(), LT)
       << "\n";
     goto next_input;
   } else goto next_line;

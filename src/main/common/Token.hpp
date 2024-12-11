@@ -4,13 +4,15 @@
 #include "common/Location.hpp"
 
 /// @brief A lexical "unit of meaning" such as an operator, keyword, or
-/// parenthesis. The Lexer turns source code into a sequence of these and the 
-/// Parser turns that sequence into an AST.
+/// parenthesis. The Lexer turns a string of source code into a vector of these.
 class Token {
 public:
 
   /// @brief The type of token.
   enum Tag : unsigned char {
+
+    // error token
+    ERROR,
 
     // keywords
     KW_BOOL, KW_BORROW, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_f32, KW_f64,
@@ -50,10 +52,11 @@ public:
   const char* tagAsString() const { return tagToString(tag); }
 
   /// @brief Returns the token as it appears in the source code.
-  std::string asString() const { return std::string(ptr, loc.sz); }
+  llvm::StringRef asStringRef() const { return llvm::StringRef(ptr, loc.sz); }
 
   static const char* tagToString(Tag tag) {
     switch (tag) {
+    case ERROR:           return "ERROR";
     case IDENT:           return "IDENT";
     case KW_UNIT:         return "KW_UNIT";
     case KW_BOOL:         return "KW_BOOL";

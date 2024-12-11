@@ -11,9 +11,9 @@ namespace TyperTests {
 
   std::optional<std::string>
   expShouldHaveType(const char* expText, const char* expectedTy) {
-    Lexer lexer(expText);
-    if (!lexer.run()) return "Lexer error";
-    Parser parser(lexer.getTokens());
+    LocationTable LT(expText);
+    auto tokens = Lexer(expText, &LT).run();
+    Parser parser(tokens);
     Exp* parsed = parser.exp();
     if (parsed == nullptr) "Parser error";
     Typer typer;
@@ -21,7 +21,7 @@ namespace TyperTests {
     if (typer.hasErrors()) {
       std::string errStr;
       for (auto err : typer.getErrors())
-        errStr.append(err.render(expText, lexer.getLocationTable()));
+        errStr.append(err.render(expText, LT));
       return errStr;
     }
     std::string infTyStr = parsed->getType()->asString();
@@ -31,9 +31,8 @@ namespace TyperTests {
   }
 
   std::optional<std::string> expShouldFailTyper(const char* expText) {
-    Lexer lexer(expText);
-    if (!lexer.run()) return "Lexer error";
-    Parser parser(lexer.getTokens());
+    auto tokens = Lexer(expText).run();
+    Parser parser(tokens);
     Exp* parsed = parser.exp();
     if (parsed == nullptr) return "Parser error";
     Typer typer;
@@ -44,9 +43,9 @@ namespace TyperTests {
   }
 
   std::optional<std::string> declShouldPass(const char* declText) {
-    Lexer lexer(declText);
-    if (!lexer.run()) return "Lexer error";
-    Parser parser(lexer.getTokens());
+    LocationTable LT(declText);
+    auto tokens = Lexer(declText, &LT).run();
+    Parser parser(tokens);
     Decl* parsed = parser.decl();
     if (parsed == nullptr) return "Parser error";
     Typer typer;
@@ -54,16 +53,15 @@ namespace TyperTests {
     if (typer.hasErrors()) {
       std::string errStr;
       for (auto err : typer.getErrors())
-        errStr.append(err.render(declText, lexer.getLocationTable()));
+        errStr.append(err.render(declText, LT));
       return errStr;
     }
     SUCCESS
   }
 
   std::optional<std::string> declShouldFail(const char* declText) {
-    Lexer lexer(declText);
-    if (!lexer.run()) return "Lexer error";
-    Parser parser(lexer.getTokens());
+    auto tokens = Lexer(declText).run();
+    Parser parser(tokens);
     Decl* parsed = parser.decl();
     if (parsed == nullptr) return "Parser error";
     Typer typer;

@@ -49,15 +49,11 @@ int main(int argc, char** argv) {
   llvm::StringRef srcCode = maybeSrcCode.get()->getBuffer();
   
   // lex
-  Lexer lexer(srcCode);
-  const LocationTable& locTab = lexer.getLocationTable();
-  if (!lexer.run()) {
-    llvm::errs() << lexer.getError().render(srcCode.data(), locTab);
-    return 1;
-  }
+  LocationTable locTab(srcCode.data());
+  std::vector<Token> tokens = Lexer(srcCode, &locTab).run();
 
   // parse
-  Parser parser(lexer.getTokens());
+  Parser parser(tokens);
   DeclList* decls = parser.decls0();
   if (decls == nullptr) {
     llvm::errs() << parser.getError().render(srcCode.data(), locTab);

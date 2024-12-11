@@ -10,9 +10,9 @@ namespace BorrowTests {
   //==========================================================================//
 
   std::optional<std::string> declsShouldPass(const char* declsText) {
-    Lexer lexer(declsText);
-    if (!lexer.run()) return "Lexer error";
-    Parser parser(lexer.getTokens());
+    LocationTable LT(declsText);
+    auto tokens = Lexer(declsText, &LT).run();
+    Parser parser(tokens);
     DeclList* parsed = parser.decls0();
     if (parsed == nullptr) return "Parser error";
     Typer typer;
@@ -20,7 +20,7 @@ namespace BorrowTests {
     if (typer.hasErrors()) {
       std::string errStr;
       for (auto err : typer.getErrors())
-        errStr.append(err.render(declsText, lexer.getLocationTable()));
+        errStr.append(err.render(declsText, LT));
       return (errStr);
     }
     BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
@@ -28,16 +28,16 @@ namespace BorrowTests {
     if (!bc.errors.empty()) {
       std::string errStr;
       for (auto err : bc.errors)
-        errStr.append(err.render(declsText, lexer.getLocationTable()));
+        errStr.append(err.render(declsText, LT));
       return (errStr);
     }
     SUCCESS
   }
 
   std::optional<std::string> declsShouldFail(const char* declsText) {
-    Lexer lexer(declsText);
-    if (!lexer.run()) return "Lexer error";
-    Parser parser(lexer.getTokens());
+    LocationTable LT(declsText);
+    auto tokens = Lexer(declsText, &LT).run();
+    Parser parser(tokens);
     DeclList* parsed = parser.decls0();
     if (parsed == nullptr) return "Parser error";
     Typer typer;
@@ -45,7 +45,7 @@ namespace BorrowTests {
     if (typer.hasErrors()) {
       std::string errStr;
       for (auto err : typer.getErrors())
-        errStr.append(err.render(declsText, lexer.getLocationTable()));
+        errStr.append(err.render(declsText, LT));
       return (errStr);
     }
     BorrowChecker bc(typer.getTypeContext(), typer.getOntology());

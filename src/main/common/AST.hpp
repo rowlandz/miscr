@@ -81,7 +81,7 @@ public:
 class Name : public AST {
   std::string s;
 public:
-  Name(Location loc, std::string s) : AST(NAME, loc), s(s) {}
+  Name(Location loc, llvm::StringRef s) : AST(NAME, loc), s(s) {}
   static Name* downcast(AST* ast)
     { return ast->id == NAME ? static_cast<Name*>(ast) : nullptr; }
   llvm::StringRef asStringRef() const { return s; }

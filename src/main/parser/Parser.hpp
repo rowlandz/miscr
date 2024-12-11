@@ -81,7 +81,7 @@ public:
   /// @brief Parses an identifier (i.e., an unqualified name).
   Name* ident() {
     if (p->tag == Token::IDENT) {
-      Name* ret = new Name(p->loc, p->asString());
+      Name* ret = new Name(p->loc, p->asStringRef());
       ++p;
       return ret;
     }
@@ -91,7 +91,7 @@ public:
   /// @brief Same as ident() except the result is returned as an `std::string`.
   /// An empty string is returned on epsilon error.
   std::string namePart() {
-    if (p->tag == Token::IDENT) return (p++)->asString();
+    if (p->tag == Token::IDENT) return (p++)->asStringRef().str();
     error = EPSILON_ERR;
     return "";
   }

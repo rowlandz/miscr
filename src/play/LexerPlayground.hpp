@@ -20,7 +20,7 @@ void print_tokens_verbose(const std::vector<Token>& tokens) {
       token.loc.col,
       token.loc.sz,
       token.tagAsString(),
-      token.asString().data());
+      token.asStringRef().data());
   }
 }
 
@@ -34,16 +34,11 @@ void play_with_lexer(bool verbose) {
     assert(maybeLine.has_value() && "Could not read line from stdin");
     llvm::StringRef line = maybeLine.value();
 
-    Lexer lexer(line.data());
-    if (!lexer.run()) {
-      llvm::outs() <<
-        lexer.getError().render(line.data(), lexer.getLocationTable()) << "\n";
-      continue;
-    }
+    auto tokens = Lexer(line.data()).run();
     if (verbose)
-      print_tokens_verbose(lexer.getTokens());
+      print_tokens_verbose(tokens);
     else
-      print_tokens(lexer.getTokens());
+      print_tokens(tokens);
   }
 }
 

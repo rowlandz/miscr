@@ -33,24 +33,18 @@ next_line:
   usrInput += line; usrInput += "\n";
 
 check_input:
-  Lexer lexer(usrInput.c_str());
-  if (lexer.run()) {
-    Parser parser(lexer.getTokens());
-    AST* parsed = parse_function(parser, grammarElement);
-    if (parsed != nullptr) {
-      std::vector<bool> indents;
-      print_parse_tree(parsed, indents);
-      parsed->deleteRecursive();
-      goto next_input;
-    } else if (line.size() == 0) {
-      llvm::outs()
-        << parser.getError().render(usrInput.c_str(), lexer.getLocationTable())
-        << "\n";
-      goto next_input;
-    } else goto next_line;
+  LocationTable LT(usrInput.c_str());
+  auto tokens = Lexer(usrInput.c_str(), &LT).run();
+  Parser parser(tokens);
+  AST* parsed = parse_function(parser, grammarElement);
+  if (parsed != nullptr) {
+    std::vector<bool> indents;
+    print_parse_tree(parsed, indents);
+    parsed->deleteRecursive();
+    goto next_input;
   } else if (line.size() == 0) {
     llvm::outs()
-      << lexer.getError().render(usrInput.c_str(), lexer.getLocationTable())
+      << parser.getError().render(usrInput.c_str(), LT)
       << "\n";
     goto next_input;
   } else goto next_line;
