@@ -302,6 +302,7 @@ private:
       if (s == "proc") return Token::KW_PROC;
       if (s == "then") return Token::KW_THEN;
       if (s == "true") return Token::KW_TRUE;
+      if (s == "uniq") return Token::KW_UNIQ;
       if (s == "unit") return Token::KW_UNIT;
       return Token::IDENT;
     case 5:

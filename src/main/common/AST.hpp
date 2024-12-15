@@ -146,18 +146,18 @@ public:
   Name* getName() const { return name; }
 };
 
-/// @brief A borrowed or owned reference type expression.
+/// @brief A borrowed or unique reference type expression.
 class RefTypeExp : public TypeExp {
   TypeExp* pointeeType;
-  bool owned;
+  bool unique;
 public:
-  RefTypeExp(Location loc, TypeExp* pointeeType, bool owned)
-    : TypeExp(REF_TEXP, loc), pointeeType(pointeeType), owned(owned) {}
+  RefTypeExp(Location loc, TypeExp* pointeeType, bool unique)
+    : TypeExp(REF_TEXP, loc), pointeeType(pointeeType), unique(unique) {}
   static RefTypeExp* downcast(AST* ast)
     { return ast->id == REF_TEXP ? static_cast<RefTypeExp*>(ast) : nullptr; }
   TypeExp* getPointeeType() const { return pointeeType; }
-  bool isBorrowed() const { return !owned; }
-  bool isOwned() const { return owned; }
+  bool isBorrowed() const { return !unique; }
+  bool isUnique() const { return unique; }
 };
 
 //============================================================================//

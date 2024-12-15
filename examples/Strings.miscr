@@ -3,12 +3,12 @@ module C {
   extern func write(fd: i32, buf: &i8, count: i64): i64;
   extern func strcpy(dest: &i8, src: &i8): unit;
   extern func strlen(s: &i8): i64;
-  extern func malloc(size: i64): #i8;
-  extern func realloc(ptr: #i8, size: i64): #i8;
-  extern func free(ptr: #i8): unit;
+  extern func malloc(size: i64): &uniq i8;
+  extern func realloc(ptr: &uniq i8, size: i64): &uniq i8;
+  extern func free(ptr: &uniq i8): unit;
 }
 
-data String(ptr: #i8, len: i64)
+data String(ptr: &uniq i8, len: i64)
 
 module String {
 
@@ -24,7 +24,7 @@ module String {
   func append(s1: &String, s2: &String): unit = {
     let s1len: i64 = s1->len;
     let newLen: i64 = s1len + s2->len;
-    let newPtr: #i8 = C::realloc(move s1->ptr, newLen + 1);
+    let newPtr: &uniq i8 = C::realloc(move s1->ptr, newLen + 1);
     C::strcpy((borrow newPtr)[s1len], borrow s2->ptr);
     s1[.ptr] := newPtr;
     s1[.len] := newLen;

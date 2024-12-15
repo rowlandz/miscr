@@ -31,8 +31,8 @@ class TypeContext {
   /// @brief Stores all borrowed reference types, indexed by their inner type.
   llvm::DenseMap<Type*, RefType*> brefTypes;
 
-  /// @brief Stores all owned reference types, indexed by their inner type.
-  llvm::DenseMap<Type*, RefType*> orefTypes;
+  /// @brief Stores all unique reference types, indexed by their inner type.
+  llvm::DenseMap<Type*, RefType*> uniqRefTypes;
 
   /// @brief Stores all NameType objects indexed by their names.
   llvm::StringMap<NameType*> nameTypes;
@@ -65,15 +65,15 @@ public:
     return ret;
   }
 
-  RefType* getOrefType(Type* inner) {
-    if (RefType* ret = orefTypes.lookup(inner)) return ret;
+  RefType* getUniqRefType(Type* inner) {
+    if (RefType* ret = uniqRefTypes.lookup(inner)) return ret;
     RefType* ret = new RefType(inner, true);
-    orefTypes[inner] = ret;
+    uniqRefTypes[inner] = ret;
     return ret;
   }
 
   RefType* getRefType(Type* inner, bool isOwned)
-    { return isOwned ? getOrefType(inner) : getBrefType(inner); }
+    { return isOwned ? getUniqRefType(inner) : getBrefType(inner); }
 
   NameType* getNameType(llvm::StringRef name) {
     if (NameType* ret = nameTypes.lookup(name)) return ret;
@@ -95,8 +95,8 @@ public:
       return getNameType(nte->getName()->asStringRef());
     }
     if (auto rte = RefTypeExp::downcast(texp)) {
-      if (rte->isOwned())
-        return getOrefType(getTypeFromTypeExp(rte->getPointeeType()));
+      if (rte->isUnique())
+        return getUniqRefType(getTypeFromTypeExp(rte->getPointeeType()));
       else
         return getBrefType(getTypeFromTypeExp(rte->getPointeeType()));
     }
@@ -119,11 +119,11 @@ public:
   /// TypeContext are deleted.
   void clear() {
     for (auto ty : brefTypes) { delete ty.second; }
-    for (auto ty : orefTypes) { delete ty.second; }
+    for (auto ty : uniqRefTypes) { delete ty.second; }
     for (auto name : nameTypes.keys()) { delete nameTypes[name]; }
     for (auto ty : typeVars) { delete ty; }
     brefTypes.clear();
-    orefTypes.clear();
+    uniqRefTypes.clear();
     nameTypes.clear();
     typeVars.clear();
   }

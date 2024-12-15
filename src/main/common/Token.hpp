@@ -18,7 +18,7 @@ public:
     KW_BOOL, KW_BORROW, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_f32, KW_f64,
     KW_FALSE, KW_FUNC, KW_i8, KW_i16, KW_i32, KW_i64, KW_IF, KW_LET, KW_MATCH,
     KW_MODULE, KW_MOVE, KW_OF, KW_PROC, KW_RETURN, KW_STR, KW_THEN, KW_TRUE,
-    KW_UNIT, KW_WHILE,
+    KW_UNIQ, KW_UNIT, KW_WHILE,
 
     // operators
     OP_ADD, OP_DIV, OP_EQ, OP_GE, OP_GT, OP_LE, OP_LT, OP_MOD, OP_MUL, OP_NE,
@@ -58,7 +58,6 @@ public:
     switch (tag) {
     case ERROR:           return "ERROR";
     case IDENT:           return "IDENT";
-    case KW_UNIT:         return "KW_UNIT";
     case KW_BOOL:         return "KW_BOOL";
     case KW_BORROW:       return "KW_BORROW";
     case KW_CASE:         return "KW_CASE";
@@ -77,6 +76,9 @@ public:
     case KW_RETURN:       return "KW_RETURN";
     case KW_THEN:         return "KW_THEN";
     case KW_TRUE:         return "KW_TRUE";
+    case KW_UNIQ:         return "KW_UNIQ";
+    case KW_UNIT:         return "KW_UNIT";
+    case KW_WHILE:        return "KW_WHILE";
     case KW_f32:          return "KW_f32";
     case KW_f64:          return "KW_f64";
     case KW_i8:           return "KW_i8";
@@ -84,7 +86,6 @@ public:
     case KW_i32:          return "KW_i32";
     case KW_i64:          return "KW_i64";
     case KW_STR:          return "KW_STR";
-    case KW_WHILE:        return "KW_WHILE";
     case OP_GE:           return "OP_GE";
     case OP_GT:           return "OP_GT";
     case OP_LE:           return "OP_LE";

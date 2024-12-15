@@ -125,7 +125,7 @@ public:
 
     else if (auto e = BorrowExp::downcast(_e)) {
       TypeVar* innerTy = tc.getFreshTypeVar();
-      expectTypeToBe(e->getRefExp(), tc.getOrefType(innerTy));
+      expectTypeToBe(e->getRefExp(), tc.getUniqRefType(innerTy));
       e->setType(tc.getBrefType(innerTy));
     }
 
@@ -195,7 +195,7 @@ public:
     }
 
     else if (auto e = MoveExp::downcast(_e)) {
-      Type* retTy = tc.getOrefType(tc.getFreshTypeVar());
+      Type* retTy = tc.getUniqRefType(tc.getFreshTypeVar());
       expectTypeToBe(e->getRefExp(), retTy);
       e->setType(retTy);
     }

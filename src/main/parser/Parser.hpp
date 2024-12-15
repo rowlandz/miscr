@@ -457,11 +457,10 @@ public:
 
   TypeExp* typeExp() {
     Token begin = *p;
-    if (p->tag == Token::AMP || p->tag == Token::HASH) {
-      bool owned = p->tag == Token::HASH;
-      ++p;
+    if (chomp(Token::AMP)) {
+      bool uniq = chomp(Token::KW_UNIQ);
       TypeExp* n1 = typeExp(); ARREST_IF_ERROR
-      return new RefTypeExp(hereFrom(begin), n1, owned);
+      return new RefTypeExp(hereFrom(begin), n1, uniq);
     } else {
       return typeExpLv0();
     }

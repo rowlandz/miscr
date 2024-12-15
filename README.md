@@ -1,9 +1,9 @@
 # Minimalist Safe C Replacement (MiSCR)
 
-An aspiring replacement for C/C++ with a minimalist design and pointer safety
-powered by a borrow checker.
+The _happy medium_ between C/C++ and Rust.
 
-![images/miscr_example.png](images/miscr_example.png)
+![images/miscr_example_1.png](images/miscr_example_1.png)
+![images/miscr_example_2.png](images/miscr_example_2.png)
 
 C and C++ are well known to be unsafe languages. Therefore a number of
 "C/C++ replacement" languages have been gaining popularity in the last decade
@@ -15,7 +15,7 @@ restructuring. It also has a high learning curve; the phrase "fighting the
 borrow checker" is often employed to describe the experience of a Rust newbie.
 
 The main research question of MiSCR is thus: _Is there a middle ground between
-the lawlessness of C++ and the strictness of Rust?_ A middle ground where the
+the lawlessness of C++ and the strictness of Rust?_ A happy medium where the
 design patterns of C++ code can be preserved more or less unchanged while
 introducing Rust-inspired memory safety?
 
@@ -74,7 +74,7 @@ Decls can be accessed via a path relative to the "current scope" (e.g.,
 ### References
 
 There are two types of references: borrowed references (denoted with `&`) and
-owned references (denoted with `#`).
+unique references (denoted with `&uniq`).
 
 Let's look at borrowed references first:
 
@@ -90,20 +90,19 @@ Let's look at borrowed references first:
     // field access through reference
     let age: i32 = bobRef->age;
 
-Owned references point to heap-allocated memory that must eventually be freed.
+Unique references point to heap-allocated memory that must eventually be freed.
 The borrow checker tracks _ownership_ of owned references similar to Rust.
-Like Rust, an owned reference cannot be used twice:
+Like Rust, a unique reference cannot be used twice:
 
-    let buf: #i8 = C::malloc(20);
+    let buf: &uniq i8 = C::malloc(20);
     C::free(buf);
     C::free(buf);            // ERROR: double use.
 
 _Unlike_ Rust, the only things that count as a _use_ are passing the value to
-a function or returning it, so MiSCR lets you do things that Rust would complain
-about:
+a function or returning it, so MiSCR is slightly more lenient than Rust:
 
-    let x: #i8 = C::malloc(20);
-    let y: #i8 = x;          // This doesn't use x,
+    let x: &uniq i8 = C::malloc(20);
+    let y: &uniq i8 = x;     // This doesn't use x,
     C::free(x);              // so x is still usable here.
 
 On the second line, ownership of `x` is not transfered to `y`. Instead, `y`
@@ -114,10 +113,11 @@ internal identifier that refers to the value returned by `C::malloc`.)
     let p = StrPair(s, s);       // allowed, this doesn't use s
     myfunction(p);               // error: s is used twice
 
-If you need to pass a reference to a function without using it, you can `borrow`
-the reference instead. `borrow` has the type `#T -> &T` for any type `T`.
+If you need to pass a unique reference to a function without using it, you can
+`borrow` the reference instead. `borrow` has the type `&uniq T -> &T` for any
+type `T`.
 
-    let x: #i8 = C::malloc(10);
+    let x: &uniq i8 = C::malloc(10);
     myfunction(borrow x);
     C::free(x);
 
@@ -133,7 +133,7 @@ scope. The snippet below illustrates how this can lead to double frees; the
       C::free(x);
     };
 
-    func helper(xRef: &#i8): unit = {
+    func helper(xRef: &&uniq i8): unit = {
       C::free(xRef!);   // ERROR
     };
 
@@ -149,7 +149,7 @@ oref is _replaced_ before the scope ends:
       s[.len] := 5;
     };
 
-The `move` expression has the type `#T -> #T` for any type `T`.
+The `move` expression has the type `&uniq T -> &uniq T` for any type `T`.
 
 ### Data Structures
 
@@ -192,7 +192,7 @@ MiSCR does _not_ guarantee the absence of use-after-frees. There is no lifetime
 analysis (yet?), so borrowed references are just as unsafe as C pointers. e.g.,
 
     func main(): i32 = {
-      let x: #i8 = C::malloc(10);
+      let x: &uniq i8 = C::malloc(10);
       let y: &i8 = borrow x;
       C::free(x);
       C::write(0, y, 10);   // SEGFAULT
