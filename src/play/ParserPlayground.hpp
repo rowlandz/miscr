@@ -5,7 +5,6 @@
 #include <llvm/LineEditor/LineEditor.h>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
-#include "printers.hpp"
 
 AST* parse_function(Parser& p, llvm::StringRef whatToParse) {
   if (whatToParse == "decl") return p.decl();
@@ -38,8 +37,7 @@ check_input:
   Parser parser(tokens);
   AST* parsed = parse_function(parser, grammarElement);
   if (parsed != nullptr) {
-    std::vector<bool> indents;
-    print_parse_tree(parsed, indents);
+    parsed->dump();
     parsed->deleteRecursive();
     goto next_input;
   } else if (line.size() == 0) {

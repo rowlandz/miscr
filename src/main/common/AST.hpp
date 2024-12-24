@@ -6,6 +6,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Twine.h>
+#include <llvm/Support/FormatVariadic.h>
 #include "common/Location.hpp"
 #include "common/Type.hpp"
 
@@ -72,6 +73,15 @@ public:
     for (AST* child : getASTChildren()) child->deleteRecursive();
     delete this;
   }
+
+  /// @brief Pretty-prints this syntax tree for debug purposes.
+  void dump() { std::vector<bool> indents; dump(indents); };
+
+  /// @brief Pretty-prints this syntax tree for debugging purposes.
+  /// @param indents Should be nonempty if this tree is being printed as part
+  /// of a larger tree. One entry for each 4-space indent. The value of the
+  /// entry should be true iff this is the _last_ sub-tree of its parent.
+  void dump(std::vector<bool>& indents);
 };
 
 /// @brief A qualified or unqualified name. Unqualified names are also called
@@ -831,6 +841,57 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "PARAMLIST")           return AST::ID::PARAMLIST;
 
   else llvm_unreachable(("Invalid AST::ID string: " + str).c_str());
+}
+
+void AST::dump(std::vector<bool>& indents) {
+
+  // print location
+  llvm::outs() << llvm::formatv("ln{0,3}, col{1,3}, sz{2,3}   ",
+    location.row, location.col, location.sz);
+
+  // print indents and ID
+  if (indents.size() > 0) {
+    for (auto i = 0; i < indents.size() - 1; i++)
+      { llvm::outs() << (indents[i] ? "│" : " ") << "   "; }
+    llvm::outs() << (indents.back() ? "├" : "└") << "── ";
+  }
+  llvm::outs() << getIDAsString();
+
+  // print optional extra information depending on the ID
+  if (auto name = Name::downcast(this))
+    llvm::outs() << " (" << name->asStringRef() << ")";
+  if (auto funcDecl = FunctionDecl::downcast(this))
+    { if (funcDecl->isVariadic()) llvm::outs() << " (variadic)"; }
+  if (auto primTexp = PrimitiveTypeExp::downcast(this))
+    llvm::outs() << " (" << primTexp->getKindAsString() << ")";
+  if (auto exp = Exp::downcast(this)) {
+    if (auto intLit = IntLit::downcast(this))
+      llvm::outs() << " (" << intLit->asStringRef() << ")";
+    else if (auto binopExp = BinopExp::downcast(this))
+      llvm::outs() << " (" << binopExp->getBinopAsEnumString() << ")";
+    else if (auto unopExp = UnopExp::downcast(this))
+      llvm::outs() << " (" << unopExp->getUnopAsEnumString() << ")";
+    else if (auto projectExp = ProjectExp::downcast(this))
+      llvm::outs() << " (" << projectExp->getKindAsEnumString() << ")";
+    if (Type* ty = exp->getType()) llvm::outs() << " : " << ty->asString();
+  }
+
+  // recursively print child trees
+  llvm::outs() << "\n";
+  auto children = getASTChildren();
+  if (children.size() == 1) {
+    indents.push_back(false);
+    children[0]->dump(indents);
+    indents.pop_back();
+  } else if (children.size() >= 2) {
+    indents.push_back(true);
+    for (auto child = children.begin(); child < children.end()-1; ++child)
+      { (*child)->dump(indents); }
+    indents.pop_back();
+    indents.push_back(false);
+    children.back()->dump(indents);
+    indents.pop_back();
+  }
 }
 
 #endif

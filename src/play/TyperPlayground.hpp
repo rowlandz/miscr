@@ -5,7 +5,6 @@
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
 #include "typer/Typer.hpp"
-#include "printers.hpp"
 
 AST* parse_function1(Parser& p, llvm::StringRef whatToParse) {
   if (whatToParse == "decl") return p.decl();
@@ -57,8 +56,7 @@ check_input:
       std::cout << err.render(usrInput.c_str(), LT);
     }
     if (typer.getErrors().size() == 0) {
-      std::vector<bool> indents;
-      print_parse_tree(parsed, indents);
+      parsed->dump();
     }
 
     parsed->deleteRecursive();
