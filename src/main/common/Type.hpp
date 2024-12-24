@@ -73,8 +73,8 @@ class RefType : public Type {
   friend class TypeContext;
 public:
 
-  /// @brief True iff this is an owned reference.
-  const bool isOwned;
+  /// @brief True iff this is an unique reference.
+  const bool unique;
 
   /// @brief Reference that points to _what_.
   Type* const inner;
@@ -83,8 +83,8 @@ public:
     { return ty->id == ID::REF ? static_cast<RefType*>(ty) : nullptr; }
 
 private:
-  RefType(Type* inner, bool isOwned)
-    : Type(ID::REF), isOwned(isOwned), inner(inner) {}
+  RefType(Type* inner, bool unique)
+    : Type(ID::REF), unique(unique), inner(inner) {}
   ~RefType() {}
 };
 
@@ -139,10 +139,7 @@ std::string Type::asString() {
     }
   }
   if (auto ty = RefType::downcast(this)) {
-    if (ty->isOwned)
-      return "#" + ty->inner->asString();
-    else
-      return "&" + ty->inner->asString();
+    return (ty->unique ? "uniq &" : "&") + ty->inner->asString();
   }
   if (auto ty = TypeVar::downcast(this)) {
     return "$var" + std::to_string(ty->id);

@@ -8,7 +8,7 @@
 #include "borrowchecker/AccessPath.hpp"
 #include "borrowchecker/BorrowState.hpp"
 
-/// @brief The borrow checker. Responsible for ensuring that owned refs are
+/// @brief The borrow checker. Responsible for ensuring that unique refs are
 /// used once and moved refs are replaced.
 class BorrowChecker {
 public:
@@ -67,7 +67,7 @@ public:
     // produce errors for any remaining unused paths
     for (auto unused : block.getUnusedPaths())
       errors.push_back(LocatedError()
-        << "Owned reference " << unused.first->asString()
+        << "Unique reference " << unused.first->asString()
         << " is never used.\n" << unused.second
       );
 
@@ -108,7 +108,7 @@ public:
       for (auto owner : looseExtensionsOf(ret, e->getRefExp()->getType())) {
         if (LocationPair locs = bs->getUsedPaths().lookup(owner)) {
           errors.push_back(LocatedError()
-            << "Owned reference " << owner->asString() << " created here:\n"
+            << "Unique reference " << owner->asString() << " created here:\n"
             << locs.fst << "is already used here:\n" << locs.snd
             << "so it cannot be borrowed later:\n"
             << e->getRefExp()->getLocation()
@@ -292,7 +292,7 @@ private:
 
   /// @brief Returns all _loose extensions_ of @p path. A loose extension is
   /// an AP that has @p path as a prefix and where all dereferences occurring
-  /// after @p path dereference _owned_ refs (not borrowed refs).
+  /// after @p path dereference _unique_ refs.
   ///
   /// When a new value is introduced into a scope, the loose extensions of that
   /// value are precisely the additional access paths that must be used before
@@ -320,7 +320,7 @@ private:
       return {};
     }
     if (auto ty = RefType::downcast(t)) {
-      if (ty->isOwned) {
+      if (ty->unique) {
         llvm::SmallVector<AccessPath*> ret = { path };
         ret.append(looseExtensionsOf(apm.getDeref(path), ty->inner));
         return ret;

@@ -125,8 +125,8 @@ public:
 
     else if (auto e = BorrowExp::downcast(_e)) {
       TypeVar* innerTy = tc.getFreshTypeVar();
-      expectTypeToBe(e->getRefExp(), tc.getUniqRefType(innerTy));
-      e->setType(tc.getBrefType(innerTy));
+      expectTypeToBe(e->getRefExp(), tc.getRefType(innerTy, true));
+      e->setType(tc.getRefType(innerTy, false));
     }
 
     else if (auto e = CallExp::downcast(_e)) {
@@ -141,7 +141,7 @@ public:
 
     else if (auto e = DerefExp::downcast(_e)) {
       TypeVar* retTy = tc.getFreshTypeVar();
-      expectTypeToBe(e->getOf(), tc.getBrefType(retTy));
+      expectTypeToBe(e->getOf(), tc.getRefType(retTy, false));
       e->setType(retTy);
     }
 
@@ -170,7 +170,7 @@ public:
     }
 
     else if (auto e = IndexExp::downcast(_e)) {
-      Type* refTy = tc.getBrefType(tc.getFreshTypeVar());
+      Type* refTy = tc.getRefType(tc.getFreshTypeVar(), false);
       Type* baseTy = expectTypeToBe(e->getBase(), refTy);
       expectTypeToBe(e->getIndex(), tc.getNumeric());
       e->setType(baseTy);
@@ -195,7 +195,7 @@ public:
     }
 
     else if (auto e = MoveExp::downcast(_e)) {
-      Type* retTy = tc.getUniqRefType(tc.getFreshTypeVar());
+      Type* retTy = tc.getRefType(tc.getFreshTypeVar(), true);
       expectTypeToBe(e->getRefExp(), retTy);
       e->setType(retTy);
     }
@@ -206,19 +206,19 @@ public:
 
     else if (auto e = RefExp::downcast(_e)) {
       Type* initializerTy = unifyExp(e->getInitializer());
-      e->setType(tc.getBrefType(initializerTy));
+      e->setType(tc.getRefType(initializerTy, false));
     }
 
     else if (auto e = StoreExp::downcast(_e)) {
       TypeVar* innTy = tc.getFreshTypeVar();
-      RefType* lhsTy = tc.getBrefType(innTy);
+      RefType* lhsTy = tc.getRefType(innTy, false);
       expectTypeToBe(e->getLHS(), lhsTy);
       expectTypeToBe(e->getRHS(), innTy);
       e->setType(tc.getUnit());
     }
 
     else if (auto e = StringLit::downcast(_e)) {
-      e->setType(tc.getBrefType(tc.getI8()));
+      e->setType(tc.getRefType(tc.getI8(), false));
     }
 
     else if (auto e = UnopExp::downcast(_e)) {
@@ -295,7 +295,7 @@ public:
     
     // unify the base expression
     expectTypeToBe(e->getBase(), kind == ProjectExp::DOT ?
-      static_cast<Type*>(dataTVar) : tc.getBrefType(dataTVar));
+      static_cast<Type*>(dataTVar) : tc.getRefType(dataTVar, false));
     
     // lookup the data type decl from the inferred type of base
     Type* dataType = tvarBindings.lookup(find(dataTVar));
@@ -327,7 +327,7 @@ public:
     Type* fieldTy = tc.getTypeFromTypeExp(fieldTExp);
 
     // set the type of e
-    e->setType(kind==ProjectExp::BRACKETS ? tc.getBrefType(fieldTy) : fieldTy);
+    e->setType(kind==ProjectExp::BRACKETS ? tc.getRefType(fieldTy) : fieldTy);
   }
 
 private:
@@ -417,10 +417,10 @@ private:
     { return n1 == n2 ? n1 : nullptr; }
 
   Type* unifyH(RefType* r1, RefType* r2) {
-    if (r1->isOwned != r2->isOwned) return nullptr;
+    if (r1->unique != r2->unique) return nullptr;
     Type* unifiedInner = unify(r1->inner, r2->inner);
     if (unifiedInner == nullptr) return nullptr;
-    return tc.getRefType(unifiedInner, r1->isOwned);
+    return tc.getRefType(unifiedInner, r1->unique);
   }
 
   Type* unifyH(TypeVar* v1, TypeVar* v2) {
@@ -480,7 +480,7 @@ private:
       return t ? t : w;
     }
     if (auto refTy = RefType::downcast(ty)) {
-      return tc.getRefType(softResolveType(refTy->inner), refTy->isOwned);
+      return tc.getRefType(softResolveType(refTy->inner), refTy->unique);
     }
     if (Constraint::downcast(ty)) return ty;
     if (NameType::downcast(ty)) return ty;

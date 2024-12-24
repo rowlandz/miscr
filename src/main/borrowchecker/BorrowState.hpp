@@ -82,7 +82,7 @@ public:
     }
     else if (LocationPair locs = usedPaths.lookup(owner)) {
       errors.push_back(LocatedError()
-        << "Owned reference " << owner->asString()
+        << "Unique reference " << owner->asString()
         << " is already used here:\n" << locs.snd
         << "so it cannot be used later:\n" << loc
       );
@@ -90,7 +90,7 @@ public:
     }
     else {
       errors.push_back(LocatedError()
-        << "Cannot use owned reference " << owner->asString()
+        << "Cannot use unique reference " << owner->asString()
         << " created outside this scope.\n" << loc
       );
       return false;
@@ -104,20 +104,20 @@ public:
   bool move(AccessPath* path, Location moveLoc) {
     if (Location creatLoc = unusedPaths.lookup(path)) {
       errors.push_back(LocatedError()
-        << "Owned reference " << path->asString() << " created here:\n"
+        << "Unique reference " << path->asString() << " created here:\n"
         << creatLoc << "cannot be moved in the same scope:\n" << moveLoc
       );
       return false;
     }
     if (LocationPair locs = usedPaths.lookup(path)) {
       errors.push_back(LocatedError()
-        << "Owned reference " << path->asString() << " created here:\n"
+        << "Unique reference " << path->asString() << " created here:\n"
         << locs.fst << "cannot be moved in the same scope.\n" << moveLoc
       );
     }
     if (Location prevMoveLoc = movedPaths.lookup(path)) {
       errors.push_back(LocatedError()
-        << "Owned reference " << path->asString()
+        << "Unique reference " << path->asString()
         << " was already moved here:\n" << prevMoveLoc
         << "so it cannot be moved later:\n" << moveLoc
       );
@@ -138,7 +138,7 @@ public:
       return true;
     }
     errors.push_back(LocatedError()
-      << "Owned reference " << path->asString()
+      << "Unique reference " << path->asString()
       << " becomes inaccessible after store.\n" << loc
     );
     return false;
@@ -158,7 +158,7 @@ public:
       LocationPair use2 = other.usedPaths.lookup(path.first);
       if (static_cast<bool>(use1) != static_cast<bool>(use2))
         errors.push_back(LocatedError()
-          << "Owned reference " << path.first->asString() << " created here:\n"
+          << "Unique reference " << path.first->asString() << " created here:\n"
           << path.second << "is not used in both branches of this expression:\n"
           << mergeLoc
         );
@@ -169,7 +169,7 @@ public:
       Location move2 = other.movedPaths.lookup(path.first);
       if (static_cast<bool>(move1) != static_cast<bool>(move2))
         errors.push_back(LocatedError()
-          << "Owned reference " << path.first->asString() << " moved here:\n"
+          << "Unique reference " << path.first->asString() << " moved here:\n"
           << path.second << "is not replaced by both branches:\n" << mergeLoc
         );
     }
@@ -179,7 +179,7 @@ public:
       LocationPair unmove2 = other.unmovedPaths.lookup(path.first);
       if (static_cast<bool>(unmove1) != static_cast<bool>(unmove2))
         errors.push_back(LocatedError()
-          << "Owned reference " << path.first->asString() << " moved here:\n"
+          << "Unique reference " << path.first->asString() << " moved here:\n"
           << path.second.fst << "is treated inconsistently by two branches:\n"
           << mergeLoc
         );

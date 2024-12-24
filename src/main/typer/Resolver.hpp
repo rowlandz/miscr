@@ -54,7 +54,7 @@ public:
       return t;
     }
     if (auto refTy = RefType::downcast(ty)) {
-      return tc.getRefType(resolveType(refTy->inner), refTy->isOwned);
+      return tc.getRefType(resolveType(refTy->inner), refTy->unique);
     }
     if (Constraint::downcast(ty)) return ty;
     if (NameType::downcast(ty)) return ty;

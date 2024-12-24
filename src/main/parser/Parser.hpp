@@ -457,11 +457,17 @@ public:
 
   TypeExp* typeExp() {
     Token begin = *p;
+    bool uniq = chomp(Token::KW_UNIQ);
     if (chomp(Token::AMP)) {
-      bool uniq = chomp(Token::KW_UNIQ);
-      TypeExp* n1 = typeExp(); ARREST_IF_ERROR
-      return new RefTypeExp(hereFrom(begin), n1, uniq);
+      TypeExp* inner = typeExp(); ARREST_IF_ERROR
+      return new RefTypeExp(hereFrom(begin), inner, uniq);
     } else {
+      if (uniq) {
+        errTryingToParse = "unique reference type expression";
+        expectedTokens = "&";
+        error = ARRESTING_ERR;
+        return nullptr;
+      }
       return typeExpLv0();
     }
   }

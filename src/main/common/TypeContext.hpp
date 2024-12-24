@@ -28,8 +28,8 @@ class TypeContext {
   /// @brief Counter for generating fresh type variables.
   int firstUnusedTypeVar = 1;
 
-  /// @brief Stores all borrowed reference types, indexed by their inner type.
-  llvm::DenseMap<Type*, RefType*> brefTypes;
+  /// @brief Stores all non-uniq reference types, indexed by their inner type.
+  llvm::DenseMap<Type*, RefType*> refTypes;
 
   /// @brief Stores all unique reference types, indexed by their inner type.
   llvm::DenseMap<Type*, RefType*> uniqRefTypes;
@@ -58,22 +58,13 @@ public:
   Constraint* getDecimal() { return &decimal; }
   Constraint* getNumeric() { return &numeric; }
 
-  RefType* getBrefType(Type* inner) {
-    if (RefType* ret = brefTypes.lookup(inner)) return ret;
-    RefType* ret = new RefType(inner, false);
-    brefTypes[inner] = ret;
+  RefType* getRefType(Type* inner, bool unique = false) {
+    auto map = unique ? &uniqRefTypes : &refTypes;
+    if (RefType* ret = map->lookup(inner)) return ret;
+    RefType* ret = new RefType(inner, unique);
+    (*map)[inner] = ret;
     return ret;
   }
-
-  RefType* getUniqRefType(Type* inner) {
-    if (RefType* ret = uniqRefTypes.lookup(inner)) return ret;
-    RefType* ret = new RefType(inner, true);
-    uniqRefTypes[inner] = ret;
-    return ret;
-  }
-
-  RefType* getRefType(Type* inner, bool isOwned)
-    { return isOwned ? getUniqRefType(inner) : getBrefType(inner); }
 
   NameType* getNameType(llvm::StringRef name) {
     if (NameType* ret = nameTypes.lookup(name)) return ret;
@@ -95,10 +86,8 @@ public:
       return getNameType(nte->getName()->asStringRef());
     }
     if (auto rte = RefTypeExp::downcast(texp)) {
-      if (rte->isUnique())
-        return getUniqRefType(getTypeFromTypeExp(rte->getPointeeType()));
-      else
-        return getBrefType(getTypeFromTypeExp(rte->getPointeeType()));
+      Type* inner = getTypeFromTypeExp(rte->getPointeeType());
+      return getRefType(inner, rte->isUnique());
     }
     if (auto pte = PrimitiveTypeExp::downcast(texp)) {
       switch (pte->kind) {
@@ -118,11 +107,11 @@ public:
   /// @brief Factory-resets this TypeContext. All Type objects created by this
   /// TypeContext are deleted.
   void clear() {
-    for (auto ty : brefTypes) { delete ty.second; }
+    for (auto ty : refTypes) { delete ty.second; }
     for (auto ty : uniqRefTypes) { delete ty.second; }
     for (auto name : nameTypes.keys()) { delete nameTypes[name]; }
     for (auto ty : typeVars) { delete ty; }
-    brefTypes.clear();
+    refTypes.clear();
     uniqRefTypes.clear();
     nameTypes.clear();
     typeVars.clear();

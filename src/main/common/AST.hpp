@@ -166,7 +166,6 @@ public:
   static RefTypeExp* downcast(AST* ast)
     { return ast->id == REF_TEXP ? static_cast<RefTypeExp*>(ast) : nullptr; }
   TypeExp* getPointeeType() const { return pointeeType; }
-  bool isBorrowed() const { return !unique; }
   bool isUnique() const { return unique; }
 };
 
