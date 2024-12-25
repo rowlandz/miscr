@@ -20,7 +20,7 @@ public:
       checkFunctionDecl(funcDecl);
     else if (auto modDecl = ModuleDecl::downcast(d))
       checkModuleDecl(modDecl);
-    else if (DataDecl::downcast(d))
+    else if (StructDecl::downcast(d))
       {}
     else
       llvm_unreachable("BorrowChecker::checkDecl(): unrecognized decl form.");
@@ -82,7 +82,7 @@ public:
   /// @brief Main borrow checking function for expressions. Recursively
   /// traverses @p _e to perform a symbolic evaluation using access paths as
   /// the symbolic values.
-  /// @return If @p _e has a reference or `data` type, the access path for
+  /// @return If @p _e has a reference or struct type, the access path for
   /// the expression is returned, otherwise nullptr.
   AccessPath* check(Exp* _e) {
 
@@ -118,33 +118,32 @@ public:
       return ret;
     }
     else if (auto e = CallExp::downcast(_e)) {
-      if (e->isConstr()) {
-        AccessPath* ret = apm.getRoot(freshInternalVar());
-        DataDecl* dataDecl = ont.getType(e->getFunction()->asStringRef());
-        llvm::ArrayRef<Exp*> args = e->getArguments()->asArrayRef();
-        auto fields = dataDecl->getFields()->asArrayRef();
-        assert(args.size() == fields.size());
-        for (int i = 0; i < args.size(); ++i) {
-          llvm::StringRef fieldName = fields[i].first->asStringRef();
-          AccessPath* argAP = check(args[i]);
-          if (argAP != nullptr) {
-            apm.aliasProject(ret, fieldName, false, argAP);
-          }
+      for (auto arg : e->getArguments()->asArrayRef()) {
+        AccessPath* argAP = check(arg);
+        for (AccessPath* ext : looseExtensionsOf(argAP, arg->getType())) {
+          bs->use(ext, arg->getLocation());
         }
-        return ret;
-      } else {
-        for (auto arg : e->getArguments()->asArrayRef()) {
-          AccessPath* argAP = check(arg);
-          for (AccessPath* ext : looseExtensionsOf(argAP, arg->getType())) {
-            bs->use(ext, arg->getLocation());
-          }
-        }
-        AccessPath* ret = apm.getRoot(freshInternalVar());
-        for (auto looseExt : looseExtensionsOf(ret, e->getType())) {
-          bs->intro(looseExt, e->getLocation());
-        }
-        return ret;
       }
+      AccessPath* ret = apm.getRoot(freshInternalVar());
+      for (auto looseExt : looseExtensionsOf(ret, e->getType())) {
+        bs->intro(looseExt, e->getLocation());
+      }
+      return ret;
+    }
+    else if (auto e = ConstrExp::downcast(_e)) {
+      AccessPath* ret = apm.getRoot(freshInternalVar());
+      StructDecl* structDecl = ont.getType(e->getStruct()->asStringRef());
+      llvm::ArrayRef<Exp*> args = e->getFields()->asArrayRef();
+      auto fields = structDecl->getFields()->asArrayRef();
+      assert(args.size() == fields.size());
+      for (int i = 0; i < args.size(); ++i) {
+        llvm::StringRef fieldName = fields[i].first->asStringRef();
+        AccessPath* argAP = check(args[i]);
+        if (argAP != nullptr) {
+          apm.aliasProject(ret, fieldName, false, argAP);
+        }
+      }
+      return ret;
     }
     else if (DecimalLit::downcast(_e)) {
       return nullptr;
@@ -307,8 +306,8 @@ private:
     }
     if (auto ty = NameType::downcast(t)) {
       llvm::SmallVector<AccessPath*> ret;
-      DataDecl* dataDecl = ont.getType(ty->asString);
-      for (auto field : dataDecl->getFields()->asArrayRef()) {
+      StructDecl* structDecl = ont.getType(ty->asString);
+      for (auto field : structDecl->getFields()->asArrayRef()) {
         llvm::StringRef fName = field.first->asStringRef();
         Type* fTy = tc.getTypeFromTypeExp(field.second);
         // TODO: a recursive type would cause a stack overflow.

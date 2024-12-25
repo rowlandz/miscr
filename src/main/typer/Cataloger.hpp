@@ -32,10 +32,10 @@ public:
       }
       run(mod->getDecls(), fqn);
     }
-    else if (auto data = DataDecl::downcast(decl)) {
-      llvm::StringRef relName = data->getName()->asStringRef();
+    else if (auto structDecl = StructDecl::downcast(decl)) {
+      llvm::StringRef relName = structDecl->getName()->asStringRef();
       std::string fqn = (scope + "::" + relName).str();
-      if (auto prevDef = ont.getDecl(fqn, Ontology::Space::FUNCTION_OR_TYPE)) {
+      if (auto prevDef = ont.getDecl(fqn, Ontology::Space::TYPE)) {
         errors.push_back(LocatedError()
           << "Data type is already defined.\n"
           << decl->getName()->getLocation()
@@ -43,13 +43,13 @@ public:
           << prevDef->getName()->getLocation()
         );
       } else {
-        ont.record(fqn, data);
+        ont.record(fqn, structDecl);
       }
     }
     else if (auto func = FunctionDecl::downcast(decl)) {
       llvm::StringRef relName = func->getName()->asStringRef();
       std::string fqn = (scope + "::" + relName).str();
-      if (auto prevDef = ont.getFunctionOrConstructor(fqn)) {
+      if (auto prevDef = ont.getFunction(fqn)) {
         errors.push_back(LocatedError()
           << "Function is already defined.\n" << decl->getName()->getLocation()
           << "Previous definition was here:\n"

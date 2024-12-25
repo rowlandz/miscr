@@ -14,9 +14,8 @@ public:
   llvm::Module* mod;
   const Ontology& ont;
 
-  /// @brief Maps fully qualified names of `data` decls to their LLVM struct
-  /// types.
-  llvm::StringMap<llvm::StructType*> dataTypes;
+  /// @brief Maps fully qualified names of structs to their LLVM struct types.
+  llvm::StringMap<llvm::StructType*> structTypes;
 
   /// Maps variable names to their LLVM values
   ScopeStack<llvm::Value*> varValues;
@@ -26,15 +25,15 @@ public:
     mod = new llvm::Module("MyModule", llvmctx);
     mod->setTargetTriple("x86_64-pc-linux-gnu");
 
-    // Populates `dataTypes`
+    // Populates `structTypes`
     for (llvm::StringRef typeName : ont.typeSpace.keys()) {
       std::vector<llvm::Type*> fieldTys;
-      DataDecl* dataDecl = ont.getType(typeName);
-      for (auto field : dataDecl->getFields()->asArrayRef())
+      StructDecl* structDecl = ont.getType(typeName);
+      for (auto field : structDecl->getFields()->asArrayRef())
         fieldTys.push_back(genType(field.second));
       auto st = llvm::StructType::get(llvmctx, fieldTys);
       st->setName(typeName);
-      dataTypes[typeName] = st;
+      structTypes[typeName] = st;
     }
   }
 
@@ -50,7 +49,7 @@ public:
       }
     }
     if (auto nameTy = NameType::downcast(ty)) {
-      return dataTypes[nameTy->asString];
+      return structTypes[nameTy->asString];
     }
     if (auto primTy = PrimitiveType::downcast(ty)) {
       switch (primTy->kind) {
@@ -87,7 +86,7 @@ public:
       }
     }
     if (auto texp = NameTypeExp::downcast(_texp)) {
-      return dataTypes[texp->getName()->asStringRef()];
+      return structTypes[texp->getName()->asStringRef()];
     }
     if (auto texp = RefTypeExp::downcast(_texp)) {
       return llvm::PointerType::get(llvmctx, 0);
@@ -159,27 +158,29 @@ public:
     }
     else if (auto e = CallExp::downcast(_exp)) {
       std::vector<llvm::Value*> args;
-      for (Exp* arg : e->getArguments()->asArrayRef()) {
-        args.push_back(genExp(arg));
-      }
+      for (Exp* arg : e->getArguments()->asArrayRef())
+        { args.push_back(genExp(arg)); }
 
-      if (e->isConstr()) {
-        llvm::StructType* st = dataTypes[e->getFunction()->asStringRef()];
-        llvm::Value* mem = b->CreateAlloca(st);
-        unsigned int fieldIdx = 0;
-        for (auto argV : args) {
-          llvm::Value* fieldAddr = b->CreateGEP(st, mem,
-            { b->getInt64(0), b->getInt32(fieldIdx) });
-          b->CreateStore(argV, fieldAddr);
-          ++fieldIdx;
-        }
-        return b->CreateLoad(st, mem);
-      } else {
-        llvm::StringRef funName = ont.mapName(e->getFunction()->asStringRef());
-        llvm::Function* callee = mod->getFunction(funName);
-        llvm::FunctionType* calleeType = callee->getFunctionType();
-        return b->CreateCall(callee, args);
+      llvm::StringRef funName = ont.mapName(e->getFunction()->asStringRef());
+      llvm::Function* callee = mod->getFunction(funName);
+      llvm::FunctionType* calleeType = callee->getFunctionType();
+      return b->CreateCall(callee, args);
+    }
+    else if (auto e = ConstrExp::downcast(_exp)) {
+      std::vector<llvm::Value*> args;
+      for (Exp* arg : e->getFields()->asArrayRef())
+        { args.push_back(genExp(arg)); }
+      
+      llvm::StructType* st = structTypes[e->getStruct()->asStringRef()];
+      llvm::Value* mem = b->CreateAlloca(st);
+      unsigned int fieldIdx = 0;
+      for (auto argV : args) {
+        llvm::Value* fieldAddr = b->CreateGEP(st, mem,
+          { b->getInt64(0), b->getInt32(fieldIdx) });
+        b->CreateStore(argV, fieldAddr);
+        ++fieldIdx;
       }
+      return b->CreateLoad(st, mem);
     }
     else if (auto e = DerefExp::downcast(_exp)) {
       llvm::Value* ofExp = genExp(e->getOf());
@@ -249,24 +250,24 @@ public:
     }
     else if (auto e = ProjectExp::downcast(_exp)) {
       llvm::Value* baseV = genExp(e->getBase());
-      DataDecl* typeDecl = ont.getType(e->getTypeName());
+      StructDecl* structDecl = ont.getType(e->getTypeName());
       llvm::StringRef fieldName = e->getFieldName()->asStringRef();
       unsigned int fieldIndex = 0;
-      for (auto field : typeDecl->getFields()->asArrayRef()) {
+      for (auto field : structDecl->getFields()->asArrayRef()) {
         if (field.first->asStringRef() == fieldName) break;
         ++fieldIndex;
       }
-      assert(fieldIndex < typeDecl->getFields()->asArrayRef().size());
+      assert(fieldIndex < structDecl->getFields()->asArrayRef().size());
       switch (e->getKind()) {
       case ProjectExp::DOT:
         return b->CreateExtractValue(baseV, fieldIndex);
       case ProjectExp::BRACKETS:
-        return b->CreateGEP(dataTypes[e->getTypeName()], baseV,
+        return b->CreateGEP(structTypes[e->getTypeName()], baseV,
           { b->getInt64(0), b->getInt32(fieldIndex) });
       case ProjectExp::ARROW:
         return b->CreateLoad(
           genType(e->getType()),
-          b->CreateGEP(dataTypes[e->getTypeName()], baseV,
+          b->CreateGEP(structTypes[e->getTypeName()], baseV,
             { b->getInt64(0), b->getInt32(fieldIndex) })
         );
       }
@@ -364,7 +365,7 @@ public:
       genModule(mod);
     else if (auto func = FunctionDecl::downcast(decl))
       genFunc(func);
-    else if (decl->id == AST::ID::DATA)
+    else if (decl->id == AST::ID::STRUCT)
       {}
     else llvm_unreachable("Unsupported decl");
   }

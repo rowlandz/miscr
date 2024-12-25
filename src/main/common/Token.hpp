@@ -15,9 +15,9 @@ public:
     ERROR,
 
     // keywords
-    KW_BOOL, KW_BORROW, KW_CASE, KW_DATA, KW_ELSE, KW_EXTERN, KW_f32, KW_f64,
-    KW_FALSE, KW_FUNC, KW_i8, KW_i16, KW_i32, KW_i64, KW_IF, KW_LET, KW_MATCH,
-    KW_MODULE, KW_MOVE, KW_OF, KW_PROC, KW_RETURN, KW_STR, KW_THEN, KW_TRUE,
+    KW_BOOL, KW_BORROW, KW_CASE, KW_ELSE, KW_EXTERN, KW_f32, KW_f64, KW_FALSE,
+    KW_FUNC, KW_i8, KW_i16, KW_i32, KW_i64, KW_IF, KW_LET, KW_MATCH, KW_MODULE,
+    KW_MOVE, KW_OF, KW_PROC, KW_RETURN, KW_STR, KW_STRUCT, KW_THEN, KW_TRUE,
     KW_UNIQ, KW_UNIT, KW_WHILE,
 
     // operators
@@ -61,7 +61,6 @@ public:
     case KW_BOOL:         return "KW_BOOL";
     case KW_BORROW:       return "KW_BORROW";
     case KW_CASE:         return "KW_CASE";
-    case KW_DATA:         return "KW_DATA";
     case KW_ELSE:         return "KW_ELSE";
     case KW_EXTERN:       return "KW_EXTERN";
     case KW_FALSE:        return "KW_FALSE";
@@ -74,6 +73,7 @@ public:
     case KW_OF:           return "KW_OF";
     case KW_PROC:         return "KW_PROC";
     case KW_RETURN:       return "KW_RETURN";
+    case KW_STRUCT:       return "KW_STRUCT";
     case KW_THEN:         return "KW_THEN";
     case KW_TRUE:         return "KW_TRUE";
     case KW_UNIQ:         return "KW_UNIQ";

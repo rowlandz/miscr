@@ -15,7 +15,7 @@ namespace TyperTests {
     auto tokens = Lexer(expText, &LT).run();
     Parser parser(tokens);
     Exp* parsed = parser.exp();
-    if (parsed == nullptr) "Parser error";
+    if (parsed == nullptr) return "Parser error";
     Typer typer;
     typer.typeExp(parsed);
     if (typer.hasErrors()) {
@@ -138,10 +138,10 @@ namespace TyperTests {
     return expShouldHaveType("(\"hello\")[0]", "&i8");
   }
 
-  TEST(datatypes_and_field_access) {
+  TEST(structs_and_field_access) {
     return declShouldPass(
       "module Testing {"
-      "  data Person(name: &i8, age: i8)"
+      "  struct Person { name: &i8, age: i8 }"
       "  func blah(p: &Person): unit = {"
       "    let n1: &&i8 = p[.name];"
       "    let n2: &i8  = p!.name;"

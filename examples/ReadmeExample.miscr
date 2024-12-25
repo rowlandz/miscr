@@ -7,7 +7,7 @@ module C {
   extern func printf(format: &i8, ...): unit;
 }
 
-data Person(name: uniq &i8, age: i32)
+struct Person { name: uniq &i8, age: i32 }
 
 func appendSurname(person: &Person, surname: &i8): unit = {
   let oldNameLen = C::strlen(borrow person->name);
@@ -28,7 +28,7 @@ func main(): i32 = {
   let name: uniq &i8 = C::malloc(7);    // make a unique reference
   C::strcpy(borrow name, "Julius");     // use name without freeing it
 
-  let julius: &Person = &Person(name, 42);
+  let julius: &Person = &Person{ name, 42 };
   appendSurname(julius, " Caesar");
   C::printf("%s\n", borrow julius->name);
   // ~> Julius Caesar

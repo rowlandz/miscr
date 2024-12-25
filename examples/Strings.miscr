@@ -8,7 +8,7 @@ module C {
   extern func free(ptr: uniq &i8): unit;
 }
 
-data String(ptr: uniq &i8, len: i64)
+struct String { ptr: uniq &i8, len: i64 }
 
 module String {
 
@@ -16,7 +16,7 @@ module String {
     let len = C::strlen(cstr);
     let ptr = C::malloc(len + 1);
     C::strcpy(borrow ptr, cstr);
-    String(ptr, len)
+    String{ ptr, len }
   };
 
   func del(s: String): unit = C::free(s.ptr);

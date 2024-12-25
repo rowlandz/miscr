@@ -54,7 +54,7 @@ skipped. Clang must be version 15 or higher.
 ## MiSCR Language Walkthrough
 
 A MiSCR file (ending in `.miscr`) contains a list of declarations. A
-declaration is a module, a `data` type, or a function.
+declaration is a module, a `struct` type, or a function.
 
 ### Module System
 
@@ -62,10 +62,10 @@ A module contains a list of declarations.
 
 ```
 module CoolMath {
-  data Fraction(num: i32, den: i32)
+  struct Fraction{ num: i32, den: i32 }
 
   func mul(r1: Fraction, r2: Fraction): Fraction =
-    Fraction(r1.num * r2.num, r1.den * r2.den);
+    Fraction{ r1.num * r2.num, r1.den * r2.den };
 }
 ```
 
@@ -80,7 +80,7 @@ unique references (denoted with `uniq &`).
 Let's look at borrowed references first:
 
     // allocate new stack memory and initialize with value Person("Bob", 42)
-    let bobRef: &Person = &Person("Bob", 42);
+    let bobRef: &Person = &Person{ "Bob", 42 };
 
     // dereference operator
     let bob: Person = bob!;
@@ -111,7 +111,7 @@ becomes an _alias_ for `x`. (Actually, `x` and `y` are _both_ aliases for an
 internal identifier that refers to the value returned by `C::malloc`.)
 
     let s = C::malloc(6);
-    let p = StrPair(s, s);       // allowed, this doesn't use s
+    let p = StrPair{ s, s };     // allowed, this doesn't use s
     myfunction(p);               // error: s is used twice
 
 If you need to pass a unique reference to a function without using it, you can
@@ -154,11 +154,14 @@ The `move` expression has the type `uniq &T -> uniq &T` for any type `T`.
 
 ### Data Structures
 
-A simple C-like structure (i.e., a block of memory divided into fields).
+A simple struct:
 
-    data Person(name: &str, age: i32)
+    struct Person {
+      name: &i8,
+      age: i32,
+    }
 
-    let bob: Person = Person("Bob", 40);
+    let bob: Person = Person{ "Bob", 40 };
     let bobsage: i32 = bob.age;
 
 ## Access Paths and Borrow Checking

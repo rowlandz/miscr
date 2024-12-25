@@ -295,7 +295,6 @@ private:
     case 4:
       if (s == "bool") return Token::KW_BOOL;
       if (s == "case") return Token::KW_CASE;
-      if (s == "data") return Token::KW_DATA;
       if (s == "else") return Token::KW_ELSE;
       if (s == "func") return Token::KW_FUNC;
       if (s == "move") return Token::KW_MOVE;
@@ -315,6 +314,7 @@ private:
       if (s == "extern") return Token::KW_EXTERN;
       if (s == "module") return Token::KW_MODULE;
       if (s == "return") return Token::KW_RETURN;
+      if (s == "struct") return Token::KW_STRUCT;
       return Token::IDENT;
     default:
       return Token::IDENT;

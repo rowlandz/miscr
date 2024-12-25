@@ -22,8 +22,8 @@ public:
   void run(Decl* decl, llvm::StringRef scope = "global") {
     llvm::Twine fqn = scope + "::" + decl->getName()->asStringRef();
     decl->getName()->set(fqn);
-    if (auto dataDecl = DataDecl::downcast(decl)) {
-      canonicalizeNonDecl(scope, dataDecl->getFields());
+    if (auto structDecl = StructDecl::downcast(decl)) {
+      canonicalizeNonDecl(scope, structDecl->getFields());
     }
     else if (auto funcDecl = FunctionDecl::downcast(decl)) {
       canonicalizeNonDecl(scope, funcDecl->getParameters());
@@ -51,8 +51,13 @@ private:
       canonicalize(scope, nameTExp->getName(), Ontology::Space::TYPE);
     }
     else if (auto callExp = CallExp::downcast(ast)) {
-      canonicalizeCallExp(scope, callExp);
+      canonicalizeCallExpFunction(scope, callExp->getFunction());
       for (auto arg : callExp->getArguments()->asArrayRef())
+        canonicalizeNonDecl(scope, arg);
+    }
+    else if (auto constrExp = ConstrExp::downcast(ast)) {
+      canonicalizeConstrExpStruct(scope, constrExp->getStruct());
+      for (auto arg : constrExp->getFields()->asArrayRef())
         canonicalizeNonDecl(scope, arg);
     }
     else {
@@ -60,25 +65,37 @@ private:
     }
   }
 
-  /// @brief Canonicalizes the function name in a call expression. Marks the
-  /// call as a constructor if it's a constructor.
-  void canonicalizeCallExp(llvm::StringRef scope, CallExp* callExp) {
-    Name* functionName = callExp->getFunction();
+  /// @brief Canonicalizes the function name in a call expression.
+  /// @param scope fully-qualified name of the (lowest) module in which the
+  /// call expression appears.
+  void canonicalizeCallExpFunction(llvm::StringRef scope, Name* functionName) {
     while (!scope.empty()) {
       std::string fqn = (scope + "::" + functionName->asStringRef()).str();
       if (auto d = ont.getFunction(fqn)) {
         functionName->set(fqn);
         return;
       }
-      if (auto d = ont.getType(fqn)) {
-        functionName->set(fqn);
-        callExp->markAsConstr();
+      scope = getQualifier(scope);
+    }
+    errors.push_back(LocatedError()
+      << "Function not found.\n" << functionName->getLocation()
+    );
+  }
+
+  /// @brief Canonicalizes the struct name in a constructor invocation.
+  /// @param scope fully-qualified name of the (lowest) module in which the
+  /// ConstrExp appears.
+  void canonicalizeConstrExpStruct(llvm::StringRef scope, Name* structName) {
+    while (!scope.empty()) {
+      std::string fqn = (scope + "::" + structName->asStringRef()).str();
+      if (ont.getType(fqn) != nullptr) {
+        structName->set(fqn);
         return;
       }
       scope = getQualifier(scope);
     }
     errors.push_back(LocatedError()
-      << "Function or data type not found.\n" << functionName->getLocation()
+      << "Data type not found.\n" << structName->getLocation()
     );
   }
 

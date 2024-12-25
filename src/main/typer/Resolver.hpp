@@ -37,7 +37,7 @@ public:
       e->setType(resolveType(e->getType()));
       for (AST* child : ast->getASTChildren()) resolveAST(child);
     }
-    else if (DataDecl::downcast(ast))
+    else if (StructDecl::downcast(ast))
       { /* do nothing */ } 
     else if (FunctionDecl* func = FunctionDecl::downcast(ast))
       { if (func->getBody() != nullptr) resolveAST(func->getBody()); }

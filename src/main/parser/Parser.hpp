@@ -155,15 +155,19 @@ public:
     return ret;
   }
 
-  /// @brief Parses a Name or CallExp. Combining these into a single parser
-  /// function avoids backtracking.
-  Exp* nameOrCallExp() {
+  /// @brief Parses a Name, CallExp, or ConstrExp. Combining these into a
+  /// single function avoids backtracking over names.
+  Exp* nameOrCallOrConstr() {
     Token begin = *p;
     Name* n = name(); RETURN_IF_ERROR
     if (chomp(Token::LPAREN)) {
       ExpList* argList = expListWotc0();
       CHOMP_ELSE_ARREST(Token::RPAREN, ")", "function call")
       return new CallExp(hereFrom(begin), n, argList);
+    } else if (chomp(Token::LBRACE)) {
+      ExpList* argList = expListWotc0();
+      CHOMP_ELSE_ARREST(Token::RBRACE, "}", "constructor expression")
+      return new ConstrExp(hereFrom(begin), n, argList);
     } else {
       return new NameExp(n);
     }
@@ -179,7 +183,7 @@ public:
 
   Exp* expLv0() {
     Exp* ret;
-    ret = nameOrCallExp(); CONTINUE_ON_EPSILON(ret)
+    ret = nameOrCallOrConstr(); CONTINUE_ON_EPSILON(ret)
     ret = boolLit(); CONTINUE_ON_EPSILON(ret)
     ret = intLit(); CONTINUE_ON_EPSILON(ret)
     ret = decimalLit(); CONTINUE_ON_EPSILON(ret)
@@ -505,14 +509,14 @@ public:
     }
   }
 
-  DataDecl* dataDecl() {
+  StructDecl* structDecl() {
     Token begin = *p;
-    if (!chomp(Token::KW_DATA)) EPSILON
+    if (!chomp(Token::KW_STRUCT)) EPSILON
     Name* name = ident(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::LPAREN, "(", "data")
+    CHOMP_ELSE_ARREST(Token::LBRACE, "{", "struct")
     ParamList* fields = paramListWotc0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::RPAREN, ")", "data")
-    return new DataDecl(hereFrom(begin), name, fields);
+    CHOMP_ELSE_ARREST(Token::RBRACE, "}", "struct")
+    return new StructDecl(hereFrom(begin), name, fields);
   }
 
   FunctionDecl* functionDecl() {
@@ -556,9 +560,9 @@ public:
 
   Decl* decl() {
     Decl* ret;
-    ret = dataDecl(); CONTINUE_ON_EPSILON(ret)
     ret = functionDecl(); CONTINUE_ON_EPSILON(ret)
     ret = module_(); CONTINUE_ON_EPSILON(ret)
+    ret = structDecl(); CONTINUE_ON_EPSILON(ret)
     EPSILON
   }
 

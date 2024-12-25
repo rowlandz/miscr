@@ -8,27 +8,26 @@
 /// the AST.
 ///
 /// There are three distinct "spaces" of fully-qualified names (type space,
-/// function space, and module space). The type space and function space must
-/// be disjoint since every data type also has a constructor function of the
-/// same name. However, either can overlap with the module space.
+/// function space, and module space). The parser can always tell when a symbol
+/// is being used as a type, function, or module, so these spaces can overlap.
 class Ontology {
 
 public:
 
   // TODO: make private
-  llvm::StringMap<DataDecl*> typeSpace;
+  llvm::StringMap<StructDecl*> typeSpace;
   llvm::StringMap<FunctionDecl*> functionSpace;
   llvm::StringMap<ModuleDecl*> moduleSpace;
 
   llvm::StringMap<std::string> mappedFuncNames;
 
-  enum struct Space { FUNCTION, MODULE, TYPE, FUNCTION_OR_TYPE };
+  enum struct Space { FUNCTION, MODULE, TYPE };
 
   /// @brief The fully-qualified name of the "main" entry point procedure.
   /// Empty if no entry point has been found.
   std::string entryPoint;
 
-  void record(llvm::StringRef fqn, DataDecl* decl)
+  void record(llvm::StringRef fqn, StructDecl* decl)
     { typeSpace[fqn] = decl; }
   void record(llvm::StringRef fqn, ModuleDecl* decl)
     { moduleSpace[fqn] = decl; }
@@ -47,16 +46,13 @@ public:
     case Space::FUNCTION: return functionSpace.lookup(name);
     case Space::MODULE: return moduleSpace.lookup(name);
     case Space::TYPE: return typeSpace.lookup(name);
-    case Space::FUNCTION_OR_TYPE:
-      if (auto ret = functionSpace.lookup(name)) return ret;
-      return typeSpace.lookup(name);
     }
     llvm_unreachable("Ontology::getDecl() unhandled switch case");
     return nullptr;
   }
 
   /// @brief Finds a data type in the type space. Returns nullptr if not found. 
-  DataDecl* getType(llvm::StringRef name) const {
+  StructDecl* getType(llvm::StringRef name) const {
     return typeSpace.lookup(name);
   }
 
@@ -64,16 +60,6 @@ public:
   /// Returns `Addr::none()` if not found.
   FunctionDecl* getFunction(llvm::StringRef name) const {
     return functionSpace.lookup(name);
-  }
-
-  /// @brief Looks for a `FunctionDecl` in the function space or a `DataDecl`
-  /// in the type space corresponding to `name`.
-  Decl* getFunctionOrConstructor(llvm::StringRef name) const {
-    auto res1 = functionSpace.lookup(name);
-    if (res1 != nullptr) return res1;
-    auto res2 = typeSpace.lookup(name);
-    if (res2 != nullptr) return res2;
-    return nullptr;
   }
 
   /// @brief Looks for a module in the module space with the given name.

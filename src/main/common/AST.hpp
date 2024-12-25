@@ -31,12 +31,12 @@ public:
   enum ID : unsigned char {
 
     // expressions and statements
-    ASCRIP, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, DEC_LIT, DEREF, ENAME,
-    IF, INDEX, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN, STORE, STRING_LIT,
-    UNOP_EXP, WHILE,
+    ASCRIP, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF,
+    ENAME, IF, INDEX, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN, STORE,
+    STRING_LIT, UNOP_EXP, WHILE,
 
     // declarations
-    DATA, FUNC, MODULE,
+    FUNC, MODULE, STRUCT,
 
     // type expressions
     NAME_TEXP, PRIMITIVE_TEXP, REF_TEXP,
@@ -183,9 +183,9 @@ public:
   static Exp* downcast(AST* ast) {
     switch (ast->id) {
     case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case BORROW:
-    case CALL: case DEC_LIT: case DEREF: case ENAME: case IF: case INDEX:
-    case INT_LIT: case LET: case MOVE: case PROJECT: case REF_EXP: case RETURN:
-    case STORE: case STRING_LIT: case UNOP_EXP: case WHILE:
+    case CALL: case CONSTR: case DEC_LIT: case DEREF: case ENAME: case IF:
+    case INDEX: case INT_LIT: case LET: case MOVE: case PROJECT: case REF_EXP:
+    case RETURN: case STORE: case STRING_LIT: case UNOP_EXP: case WHILE:
       return static_cast<Exp*>(ast);
     default: return nullptr;
     }
@@ -407,21 +407,30 @@ public:
   ExpList* getStatements() const { return statements; }
 };
 
-/// @brief A function call or constructor invocation. The canonicalizer
-/// distinguishes the two using markAsConstr().
+/// @brief A function call.
 class CallExp : public Exp {
-  bool _isConstr;
   Name* function;
   ExpList* arguments;
 public:
-  CallExp(Location loc, Name* function, ExpList* arguments) : Exp(CALL, loc),
-    _isConstr(false), function(function), arguments(arguments) {}
+  CallExp(Location loc, Name* function, ExpList* arguments)
+    : Exp(CALL, loc), function(function), arguments(arguments) {}
   static CallExp* downcast(AST* ast)
-    { return (ast->id == CALL) ? static_cast<CallExp*>(ast) : nullptr; }
+    { return ast->id == CALL ? static_cast<CallExp*>(ast) : nullptr; }
   Name* getFunction() const { return function; }
   ExpList* getArguments() const { return arguments; }
-  void markAsConstr() { _isConstr = true; }
-  bool isConstr() { return _isConstr; }
+};
+
+/// @brief A struct constructor invocation.
+class ConstrExp : public Exp {
+  Name* struct_;
+  ExpList* fields;
+public:
+  ConstrExp(Location loc, Name* struct_, ExpList* fields)
+    : Exp(CONSTR, loc), struct_(struct_), fields(fields) {}
+  static ConstrExp* downcast(AST* ast)
+    { return ast->id == CONSTR ? static_cast<ConstrExp*>(ast) : nullptr; }
+  Name* getStruct() const { return struct_; }
+  ExpList* getFields() const { return fields; }
 };
 
 /// @brief A type ascription expression.
@@ -498,14 +507,14 @@ public:
   Exp* getOf() const { return of; }
 };
 
-/// @brief An expression that accesses a field of a `data` value.
+/// @brief An expression that accesses a field of a struct.
 ///
 /// There are three syntaxes for projection with slightly different meanings:
-///   - `base.field`   -- converts the data value to the field value
-///   - `base[.field]` -- converts a _reference_ to a data value into a
-///                       _reference_ to the field value
-///   - `base->field`  -- converts a _reference_ to a data value into the field
-///                       value
+///   - `base.field`   -- converts the struct to the value of the field
+///   - `base[.field]` -- converts a _reference_ to a struct value into a
+///                       _reference_ to the value of the field
+///   - `base->field`  -- converts a _reference_ to a struct into the value of
+///                       the field
 ///
 /// The arrow kind is equivalent to `base[.field]!` and `base!.field`.
 class ProjectExp : public Exp {
@@ -518,7 +527,7 @@ private:
   Exp* base;
   Name* fieldName;
   Kind kind;
-  std::string typeName;   // name of the datatype being indexed
+  std::string typeName;   // name of the struct being indexed
 
 public:
   ProjectExp(Location loc, Exp* base, Name* fieldName, Kind kind)
@@ -529,10 +538,10 @@ public:
   Name* getFieldName() const { return fieldName; }
   Kind getKind() const { return kind; }
 
-  /// @brief Used in the unifier to set the name of the data decl.
+  /// @brief Used in the unifier to set the name of the struct.
   void setTypeName(llvm::StringRef name) { typeName = name.str(); }
 
-  /// @brief Returns the fully-qualified name of the data type being projected.
+  /// @brief Returns the fully-qualified name of the struct being projected.
   /// This is only valid after the type checker sets this value. 
   llvm::StringRef getTypeName() const { return typeName; }
 
@@ -620,8 +629,8 @@ public:
   DeclList* getDecls() const { return decls; }
 };
 
-/// @brief A list of parameters in a function signature, or a list of
-/// fields in a data type.
+/// @brief A list of parameters in a function signature, or a list of fields in
+/// a struct.
 class ParamList : public AST {
   llvm::SmallVector<std::pair<Name*, TypeExp*>, 4> params;
 public:
@@ -669,14 +678,14 @@ public:
   bool hasBody() const { return body != nullptr; }
 };
 
-/// @brief A data type declaration.
-class DataDecl : public Decl {
+/// @brief A struct declaration.
+class StructDecl : public Decl {
   ParamList* fields;
 public:
-  DataDecl(Location loc, Name* name, ParamList* fields)
-    : Decl(DATA, loc, name), fields(fields) {}
-  static DataDecl* downcast(AST* ast)
-    { return ast->id == DATA ? static_cast<DataDecl*>(ast) : nullptr; }
+  StructDecl(Location loc, Name* name, ParamList* fields)
+    : Decl(STRUCT, loc, name), fields(fields) {}
+  static StructDecl* downcast(AST* ast)
+    { return ast->id == STRUCT ? static_cast<StructDecl*>(ast) : nullptr; }
   ParamList* getFields() const { return fields; }
 };
 
@@ -693,8 +702,8 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     return { ast->getRefExp() };
   if (auto ast = CallExp::downcast(this))
     return { ast->getFunction(), ast->getArguments() };
-  if (auto ast = DataDecl::downcast(this))
-    return { ast->getName(), ast->getFields() };
+  if (auto ast = ConstrExp::downcast(this))
+    return { ast->getStruct(), ast->getFields() };
   if (auto ast = DeclList::downcast(this)) {
     llvm::SmallVector<AST*> ret;
     ret.reserve(ast->asArrayRef().size());
@@ -755,6 +764,8 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     return { ast->getReturnee() };
   if (auto ast = StoreExp::downcast(this))
     return { ast->getLHS(), ast->getRHS() };
+  if (auto ast = StructDecl::downcast(this))
+    return { ast->getName(), ast->getFields() };
   if (auto ast = UnopExp::downcast(this))
     return { ast->getInner() };
   if (auto ast = WhileExp::downcast(this))
@@ -770,6 +781,7 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::BORROW:             return "BORROW";
   case AST::ID::BOOL_LIT:           return "BOOL_LIT";
   case AST::ID::CALL:               return "CALL";
+  case AST::ID::CONSTR:             return "CONSTR";
   case AST::ID::DEC_LIT:            return "DEC_LIT";
   case AST::ID::DEREF:              return "DEREF";
   case AST::ID::ENAME:              return "ENAME";
@@ -786,9 +798,9 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::UNOP_EXP:           return "UNOP_EXP";
   case AST::ID::WHILE:              return "WHILE";
 
-  case AST::ID::DATA:               return "DATA";
   case AST::ID::FUNC:               return "FUNC";
   case AST::ID::MODULE:             return "MODULE";
+  case AST::ID::STRUCT:             return "STRUCT";
 
   case AST::ID::NAME_TEXP:          return "NAME_TEXP";
   case AST::ID::PRIMITIVE_TEXP:     return "PRIMITIVE_TEXP";
@@ -810,6 +822,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "BORROW")              return AST::ID::BORROW;
   else if (str == "BOOL_LIT")            return AST::ID::BOOL_LIT;
   else if (str == "CALL")                return AST::ID::CALL;
+  else if (str == "CONSTR")              return AST::ID::CONSTR;
   else if (str == "DEC_LIT")             return AST::ID::DEC_LIT;
   else if (str == "DEREF")               return AST::ID::DEREF;
   else if (str == "ENAME")               return AST::ID::ENAME;
@@ -826,9 +839,9 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "UNOP_EXP")            return AST::ID::UNOP_EXP;
   else if (str == "WHILE")               return AST::ID::WHILE;
 
-  else if (str == "DATA")                return AST::ID::DATA;
   else if (str == "FUNC")                return AST::ID::FUNC;
   else if (str == "MODULE")              return AST::ID::MODULE;
+  else if (str == "STRUCT")              return AST::ID::STRUCT;
   
   else if (str == "NAME_TEXP")           return AST::ID::NAME_TEXP;
   else if (str == "PRIMITIVE_TEXP")      return AST::ID::PRIMITIVE_TEXP;

@@ -145,11 +145,11 @@ namespace BorrowTests {
 
   TEST(sneaky_proj_deref_double_use) {
     return declsShouldFail(
-      "data Thing(fst: uniq &i8)\n"
+      "struct Thing { fst: uniq &i8 }\n"
       "extern func alloc(): uniq &i8;\n"
       "extern func free(ptr: uniq &i8): unit;\n"
       "func foo(): unit = {\n"
-      "  let p = &Thing(alloc());\n"
+      "  let p = &Thing{ alloc() };\n"
       "  free(p!.fst);\n"
       "  free(p[.fst]!);\n"
       "};"

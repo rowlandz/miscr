@@ -58,7 +58,7 @@ public:
   void unifyDecl(Decl* _decl) {
     if (auto func = FunctionDecl::downcast(_decl)) unifyFunc(func);
     else if (auto mod = ModuleDecl::downcast(_decl)) unifyModule(mod);
-    else if (_decl->id == AST::ID::DATA) {}
+    else if (StructDecl::downcast(_decl)) {}
     else llvm_unreachable("Didn't recognize decl");
   }
 
@@ -131,6 +131,10 @@ public:
 
     else if (auto e = CallExp::downcast(_e)) {
       unifyCallExp(e);
+    }
+
+    else if (auto e = ConstrExp::downcast(_e)) {
+      unifyConstrExp(e);
     }
 
     else if (auto e = DecimalLit::downcast(_e)) {
@@ -248,7 +252,7 @@ public:
     return _e->getType();
   }
 
-  /// @brief Unifies a function call or constructor call expression.
+  /// @brief Unifies a function call expression.
   void unifyCallExp(CallExp* e) {
     llvm::StringRef calleeName = e->getFunction()->asStringRef();
     llvm::ArrayRef<Exp*> args = e->getArguments()->asArrayRef();
@@ -256,16 +260,10 @@ public:
     bool variadic;
 
     // get params, variadic, and set return type
-    Decl* calleeDecl = ont.getFunctionOrConstructor(calleeName);
-    if (auto callee = FunctionDecl::downcast(calleeDecl)) {
-      params = callee->getParameters()->asArrayRef();
-      variadic = callee->isVariadic();
-      e->setType(tc.getTypeFromTypeExp(callee->getReturnType()));
-    } else if (auto callee = DataDecl::downcast(calleeDecl)) {
-      params = callee->getFields()->asArrayRef();
-      variadic = false;
-      e->setType(tc.getNameType(callee->getName()->asStringRef()));
-    }
+    FunctionDecl* calleeDecl = ont.getFunction(calleeName);
+    params = calleeDecl->getParameters()->asArrayRef();
+    variadic = calleeDecl->isVariadic();
+    e->setType(tc.getTypeFromTypeExp(calleeDecl->getReturnType()));
 
     // check for arity mismatch
     if (!variadic && args.size() != params.size())
@@ -285,6 +283,32 @@ public:
     for (int i = 0; i < args.size(); ++i) {
       if (i >= params.size()) unifyExp(args[i]);
       else expectTypeToBe(args[i], tc.getTypeFromTypeExp(params[i].second));
+    }
+  }
+
+  /// @brief Unifies a struct constructor expression.
+  void unifyConstrExp(ConstrExp* e) {
+    llvm::StringRef calleeName = e->getStruct()->asStringRef();
+    llvm::ArrayRef<Exp*> args = e->getFields()->asArrayRef();
+    llvm::ArrayRef<std::pair<Name*, TypeExp*>> fields;
+
+    // get params and set return type
+    StructDecl* calleeDecl = ont.getType(calleeName);
+    fields = calleeDecl->getFields()->asArrayRef();
+    e->setType(tc.getNameType(calleeDecl->getName()->asStringRef()));
+
+    // check for arity mismatch
+    if (args.size() != fields.size())
+      errors.push_back(LocatedError()
+        << "Arity mismatch for constructor " << calleeName << ". Expected "
+        << std::to_string(fields.size()) << " fields but got "
+        << std::to_string(args.size()) << ".\n" << e->getLocation()
+      );
+
+    // unify arguments
+    for (int i = 0; i < args.size(); ++i) {
+      if (i >= fields.size()) unifyExp(args[i]);
+      else expectTypeToBe(args[i], tc.getTypeFromTypeExp(fields[i].second));
     }
   }
 
@@ -308,7 +332,7 @@ public:
       e->setType(tc.getFreshTypeVar());
       return;
     }
-    DataDecl* dd = ont.getType(nameType->asString);
+    StructDecl* dd = ont.getType(nameType->asString);
     
     // set the data type name in e (for convenience)
     e->setTypeName(dd->getName()->asStringRef());
