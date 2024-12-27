@@ -20,7 +20,7 @@ func appendSurname(person: &Person, surname: &i8): unit = {
 
   C::strcpy((borrow newNameBuf)[oldNameLen], surname);
 
-  person[.name] := newNameBuf;          // compiler makes sure that
+  person->name = newNameBuf;            // compiler makes sure that
                                         // moved refs are put back
 };
 
@@ -28,13 +28,13 @@ func main(): i32 = {
   let name: uniq &i8 = C::malloc(7);    // make a unique reference
   C::strcpy(borrow name, "Julius");     // use name without freeing it
 
-  let julius: &Person = &Person{ name, 42 };
-  appendSurname(julius, " Caesar");
-  C::printf("%s\n", borrow julius->name);
+  let julius: Person = Person{ name, 42 };
+  appendSurname(&julius, " Caesar");
+  C::printf("%s\n", borrow julius.name);
   // ~> Julius Caesar
 
-  C::free(julius->name);                // free the reference
-  // C::free(julius->name);             // ERROR: compiler ensures all
+  C::free(julius.name);                 // free the reference
+  // C::free(julius.name);              // ERROR: compiler ensures all
                                         // unique refs are freed once
   // C::free(name);                     // ERROR: even with aliasing
   

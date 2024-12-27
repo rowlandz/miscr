@@ -17,8 +17,8 @@ public:
   /// @brief Maps fully qualified names of structs to their LLVM struct types.
   llvm::StringMap<llvm::StructType*> structTypes;
 
-  /// Maps variable names to their LLVM values
-  ScopeStack<llvm::Value*> varValues;
+  /// @brief Maps local variable names to their (stack) addresses.
+  ScopeStack<llvm::AllocaInst*> varAddresses;
 
   Codegen(const Ontology& ont) : ont(ont) {
     b = new llvm::IRBuilder<>(llvmctx);
@@ -94,17 +94,44 @@ public:
     llvm_unreachable("genType(TypeExp*) case unimplemented");
   }
 
-  /// Adds the parameters to the topmost scope in the scope stack. Also sets
-  /// argument names in the LLVM IR.
-  void addParamsToScope(llvm::Function* f, ParamList* paramList) {
+  /// @brief Initializes stack memory for function arguments. The insertion
+  /// point of `b` must be the beginning of @p f.
+  /// @param f
+  /// @param params
+  void initializeFunctionArguments(llvm::Function* f, ParamList* paramList) {
     auto params = paramList->asArrayRef();
     unsigned int i = 0;
     for (llvm::Argument &arg : f->args()) {
-      auto paramName = params[i].first->asStringRef();
-      varValues.add(paramName, &arg);
-      arg.setName(paramName);
+      llvm::StringRef paramName = params[i].first->asStringRef();
+      llvm::AllocaInst* memCell = b->CreateAlloca(arg.getType());
+      b->CreateStore(&arg, memCell);
+      varAddresses.add(paramName, memCell);
+      memCell->setName(paramName);
       ++i;
     }
+  }
+
+  /// @brief Generates LLVM IR that computes @p lvalue. Returns the _address_
+  /// of the computed value rather than the value itself.
+  llvm::Value* genExpByReference(Exp* lvalue) {
+    assert(lvalue->isLvalue() && "expected lvalue");
+    if (auto e = DerefExp::downcast(lvalue)) {
+      return genExp(e->getOf());
+    }
+    if (auto e = NameExp::downcast(lvalue)) {
+      llvm::AllocaInst* variableAddress =
+        varAddresses.getOrElse(e->getName()->asStringRef(), nullptr);
+      assert(variableAddress && "variable not found");
+      return variableAddress;
+    }
+    if (auto e = ProjectExp::downcast(lvalue)) {
+      if (e->getKind() == ProjectExp::ARROW) {
+        return genProjectExp(e->getBase(), e->getFieldName(),
+          ProjectExp::Kind::BRACKETS, e->getTypeName());
+      }
+    }
+    llvm_unreachable("Codegen::genExpByReference() fallthrough");
+    return nullptr;
   }
 
   /// @brief Generates LLVM IR that performs the computation `_exp`.
@@ -139,8 +166,17 @@ public:
       default: llvm_unreachable("Unsupported binary operator");
       }
     }
+    else if (auto e = AddrOfExp::downcast(_exp)) {
+      return genExpByReference(e->getOf());
+    }
     else if (auto e = AscripExp::downcast(_exp)) {
       return genExp(e->getAscriptee());
+    }
+    else if (auto e = AssignExp::downcast(_exp)) {
+      llvm::Value* lhsAddr = genExpByReference(e->getLHS());
+      llvm::Value* rhs = genExp(e->getRHS());
+      b->CreateStore(rhs, lhsAddr);
+      return nullptr;
     }
     else if (auto e = BlockExp::downcast(_exp)) {
       llvm::ArrayRef<Exp*> stmtList = e->getStatements()->asArrayRef();
@@ -188,8 +224,11 @@ public:
       return b->CreateLoad(tyToLoad, ofExp);
     }
     else if (auto e = NameExp::downcast(_exp)) {
-      Name* name = e->getName();
-      return varValues.getOrElse(name->asStringRef(), nullptr);
+      llvm::AllocaInst* variableAddress =
+        varAddresses.getOrElse(e->getName()->asStringRef(), nullptr);
+      assert(variableAddress && "Unbound variable");
+      llvm::Type* varType = genType(e->getType());
+      return b->CreateLoad(varType, variableAddress);
     }
     else if (auto e = IfExp::downcast(_exp)) {
       llvm::Function* f = b->GetInsertBlock()->getParent();
@@ -241,48 +280,18 @@ public:
     else if (auto e = LetExp::downcast(_exp)) {
       llvm::Value* v = genExp(e->getDefinition());
       llvm::StringRef boundIdentName = e->getBoundIdent()->asStringRef();
-      v->setName(boundIdentName);
-      varValues.add(boundIdentName, v);
+      llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
+      b->CreateStore(v, memCell);
+      varAddresses.add(boundIdentName, memCell);
+      memCell->setName(boundIdentName);
       return nullptr;
     }
     else if (auto e = MoveExp::downcast(_exp)) {
       return genExp(e->getRefExp());
     }
     else if (auto e = ProjectExp::downcast(_exp)) {
-      llvm::Value* baseV = genExp(e->getBase());
-      StructDecl* structDecl = ont.getType(e->getTypeName());
-      llvm::StringRef fieldName = e->getFieldName()->asStringRef();
-      unsigned int fieldIndex = 0;
-      for (auto field : structDecl->getFields()->asArrayRef()) {
-        if (field.first->asStringRef() == fieldName) break;
-        ++fieldIndex;
-      }
-      assert(fieldIndex < structDecl->getFields()->asArrayRef().size());
-      switch (e->getKind()) {
-      case ProjectExp::DOT:
-        return b->CreateExtractValue(baseV, fieldIndex);
-      case ProjectExp::BRACKETS:
-        return b->CreateGEP(structTypes[e->getTypeName()], baseV,
-          { b->getInt64(0), b->getInt32(fieldIndex) });
-      case ProjectExp::ARROW:
-        return b->CreateLoad(
-          genType(e->getType()),
-          b->CreateGEP(structTypes[e->getTypeName()], baseV,
-            { b->getInt64(0), b->getInt32(fieldIndex) })
-        );
-      }
-    }
-    else if (auto e = RefExp::downcast(_exp)) {
-      llvm::Value* v = genExp(e->getInitializer());
-      llvm::AllocaInst* memCell = b->CreateAlloca(v->getType());
-      b->CreateStore(v, memCell);
-      return memCell;
-    }
-    else if (auto e = StoreExp::downcast(_exp)) {
-      llvm::Value* lhs = genExp(e->getLHS());
-      llvm::Value* rhs = genExp(e->getRHS());
-      b->CreateStore(rhs, lhs);
-      return rhs;
+      return genProjectExp(e->getBase(), e->getFieldName(), e->getKind(),
+        e->getTypeName());
     }
     else if (auto e = StringLit::downcast(_exp)) {
       return b->CreateGlobalString(e->processEscapes());
@@ -319,6 +328,38 @@ public:
     return nullptr;
   }
 
+  /// @brief Generates code for ProjectExp.
+  llvm::Value* genProjectExp(Exp* base, Name* field, ProjectExp::Kind kind,
+                             llvm::StringRef typeName) {
+    llvm::Value* baseV = genExp(base);
+    StructDecl* structDecl = ont.getType(typeName);
+    unsigned int fieldIndex = 0;
+    llvm::Type* fieldType;
+    for (auto f : structDecl->getFields()->asArrayRef()) {
+      if (f.first->asStringRef() == field->asStringRef()) {
+        fieldType = genType(f.second);
+        break;
+      }
+      ++fieldIndex;
+    }
+    assert(fieldIndex < structDecl->getFields()->asArrayRef().size());
+    switch (kind) {
+    case ProjectExp::DOT:
+      return b->CreateExtractValue(baseV, fieldIndex);
+    case ProjectExp::BRACKETS:
+      return b->CreateGEP(structTypes[typeName], baseV,
+        { b->getInt64(0), b->getInt32(fieldIndex) });
+    case ProjectExp::ARROW:
+      return b->CreateLoad(
+        fieldType,
+        b->CreateGEP(structTypes[typeName], baseV,
+          { b->getInt64(0), b->getInt32(fieldIndex) })
+      );
+    }
+    llvm_unreachable("Codegen::genProjectExp() switch case fallthrough");
+    return nullptr;
+  }
+
   /// Codegens a `func` or external function
   llvm::Function* genFunc(FunctionDecl* funDecl) {
     // Make the function type
@@ -338,9 +379,9 @@ public:
       mod
     );
     if (funDecl->hasBody()) {
-      varValues.push();
-      addParamsToScope(f, funDecl->getParameters());
+      varAddresses.push();
       b->SetInsertPoint(llvm::BasicBlock::Create(llvmctx, "entry", f));
+      initializeFunctionArguments(f, funDecl->getParameters());
       llvm::Value* retVal = genExp(funDecl->getBody());
       // TODO: this is gross
       if (auto primRT = PrimitiveTypeExp::downcast(funDecl->getReturnType())) {
@@ -351,7 +392,7 @@ public:
       } else {
         b->CreateRet(retVal);
       }
-      varValues.pop();
+      varAddresses.pop();
     }
     return f;
   }

@@ -115,7 +115,6 @@ private:
 
     case ST::COLON:
       if (c == ':') tok.stepAndCapture(Token::COLON_COLON);
-      else if (c == '=') tok.stepAndCapture(Token::COLON_EQUAL);
       else tok.capture(Token::COLON);
       break;
 

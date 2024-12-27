@@ -103,9 +103,11 @@ namespace BorrowTests {
       "extern func alloc(): uniq &i8;\n"
       "extern func free(ptr: uniq &i8): unit;\n"
       "func foo(): unit = {\n"
-      "  let x = &&alloc();\n"
-      "  let y = x!;\n"
-      "  free(y!);\n"
+      "  let x = alloc();\n"
+      "  let y = &x;\n"
+      "  let z = &y;\n"
+      "  let w = z!;\n"
+      "  free(w!);\n"
       "};"
     );
   }
@@ -115,9 +117,10 @@ namespace BorrowTests {
       "extern func alloc(): uniq &i8;\n"
       "extern func free2(p1: uniq &i8, p2: uniq &i8): unit;\n"
       "func foo(): unit = {\n"
-      "  let x = &&alloc();\n"
-      "  let y = x!;\n"
-      "  free2(y!, x!!);\n"
+      "  let x = alloc();\n"
+      "  let y = &x;\n"
+      "  let z = &y;\n"
+      "  free2(y!, z!!);\n"
       "};"
     );
   }
@@ -149,9 +152,10 @@ namespace BorrowTests {
       "extern func alloc(): uniq &i8;\n"
       "extern func free(ptr: uniq &i8): unit;\n"
       "func foo(): unit = {\n"
-      "  let p = &Thing{ alloc() };\n"
-      "  free(p!.fst);\n"
-      "  free(p[.fst]!);\n"
+      "  let p = Thing{ alloc() };\n"
+      "  let q = &p;\n"
+      "  free(q!.fst);\n"
+      "  free(q[.fst]!);\n"
       "};"
     );
   }
@@ -162,7 +166,7 @@ namespace BorrowTests {
       "extern func free(ptr: uniq &i8): unit;\n"
       "func foo(x: &uniq &i8): unit = {\n"
       "  free(move x!);\n"
-      "  x := alloc();\n"
+      "  x! = alloc();\n"
       "};"
     );
   }
@@ -176,7 +180,7 @@ namespace BorrowTests {
 
   TEST(overwriting_unique_ref) {
     return declsShouldFail(
-      "func foo(x: &uniq &i8, y: uniq &i8): unit = { x := y };");
+      "func foo(x: &uniq &i8, y: uniq &i8): unit = { x! = y };");
   }
 
   TEST(if_expr_inconsistent_frees) {

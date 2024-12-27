@@ -103,15 +103,24 @@ namespace TyperTests {
   }
 
   TEST(references) {
-    return expShouldHaveType("&42", "&numeric");
+    return expShouldHaveType("{ let x = 0; &x }", "&numeric");
   }
 
   TEST(deref_expression) {
-    return expShouldHaveType("(&0)!", "numeric");
+    return expShouldHaveType("{ let x = 0; (&x)! }", "numeric");
   }
 
-  TEST(store_expression) {
-    return expShouldHaveType("{ let x = &0; x := x! + 42 }", "unit");
+  TEST(assign_expression) {
+    return expShouldHaveType("{ let x: i32 = 0; x = x + 42 }", "unit");
+  }
+
+  TEST(assign_to_rvalue_should_fail) {
+    return declShouldFail(
+      "func testing(): unit = {"
+      "  let x: i32 = 0;"
+      "  x + 1 = 1;"
+      "};"
+    );
   }
 
   TEST(decls_and_call_expressions) {
@@ -129,7 +138,7 @@ namespace TyperTests {
     return declShouldPass(
       "module Testing {"
       "  extern func f(x: &i32): unit;"
-      "  func h(): unit = f(&42);"
+      "  func h(): unit = { let x = 42; f(&x); };"
       "}"
     );
   }

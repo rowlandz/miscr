@@ -223,7 +223,7 @@ public:
     Token begin = *p;
     if (chomp(Token::AMP)) {
       Exp* e = expLv2(); ARREST_IF_ERROR
-      return new RefExp(hereFrom(begin), e);
+      return new AddrOfExp(hereFrom(begin), e);
     } else if (chomp(Token::OP_SUB)) {
       Exp* e = expLv2(); ARREST_IF_ERROR
       return new UnopExp(hereFrom(begin), UnopExp::NEG, e);
@@ -329,9 +329,9 @@ public:
   Exp* expLv10() {
     Token begin = *p;
     Exp* lhs = expLv9(); RETURN_IF_ERROR
-    while (chomp(Token::COLON_EQUAL)) {
+    while (chomp(Token::EQUAL)) {
       Exp* rhs = expLv9(); ARREST_IF_ERROR
-      lhs = new StoreExp(hereFrom(begin), lhs, rhs);
+      lhs = new AssignExp(hereFrom(begin), lhs, rhs);
     }
     return lhs;
   }

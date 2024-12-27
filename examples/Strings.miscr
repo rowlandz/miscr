@@ -26,8 +26,8 @@ module String {
     let newLen: i64 = s1len + s2->len;
     let newPtr: uniq &i8 = C::realloc(move s1->ptr, newLen + 1);
     C::strcpy((borrow newPtr)[s1len], borrow s2->ptr);
-    s1[.ptr] := newPtr;
-    s1[.len] := newLen;
+    s1->ptr = newPtr;
+    s1->len = newLen;
   };
 
   func print(s: &String): unit = {
@@ -38,15 +38,15 @@ module String {
 }
 
 func main(): i32 = {
-  let hello = &String::new("hello ");
-  let world = &String::new("world\n");
+  let hello = String::new("hello ");
+  let world = String::new("world\n");
 
-  String::append(hello, hello);
-  String::append(hello, world);
-  String::print(hello);
+  String::append(&hello, &hello);
+  String::append(&hello, &world);
+  String::print(&hello);
 
-  String::del(hello!);
-  String::del(world!);
+  String::del(hello);
+  String::del(world);
 
   0
 };

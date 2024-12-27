@@ -74,49 +74,43 @@ Decls can be accessed via a path relative to the "current scope" (e.g.,
 
 ### References
 
-There are two types of references: borrowed references (denoted with `&`) and
-unique references (denoted with `uniq &`).
+References are denoted with `&` and behave like C pointers or Rust references:
 
-Let's look at borrowed references first:
+Let's look at references first:
 
-    // allocate new stack memory and initialize with value Person("Bob", 42)
-    let bobRef: &Person = &Person{ "Bob", 42 };
+    struct Person { name: &i8, age: i32 }
 
-    // dereference operator
-    let bob: Person = bob!;
+    let bob: Person = Person{ "Bob", 42 };
 
-    // address offset calculation
-    let ageRef: &i32 = bobRef[.age];
+    let bobRef: &Person = &bob;          // address-of operator
+    let alsoBob: Person = bobRef!;       // dereference operator
 
-    // field access through reference
-    let age: i32 = bobRef->age;
+    let age: i32 = bob.age;              // field access
+    let ageRef: &i32 = bobRef[.age];     // address offset calculation
+    let age: i32 = bobRef->age;          // field access through reference
 
-Unique references point to heap-allocated memory that must eventually be freed.
-The borrow checker tracks _ownership_ of owned references similar to Rust.
-Like Rust, a unique reference cannot be used twice:
+_Unique_ references, denoted with `uniq &`, point to heap-allocated memory that
+must eventually be freed. The borrow checker ensures that every unique ref is
+used exactly once:
 
     let buf: uniq &i8 = C::malloc(20);
     C::free(buf);
     C::free(buf);            // ERROR: double use.
 
-_Unlike_ Rust, the only things that count as a _use_ are passing the value to
-a function or returning it, so MiSCR is slightly more lenient than Rust:
+The MiSCR borrow checker is slightly more lenient than Rust because
+`let`-binding and struct introduction do not count as uses:
 
     let x: uniq &i8 = C::malloc(20);
     let y: uniq &i8 = x;     // This doesn't use x,
     C::free(x);              // so x is still usable here.
-
-On the second line, ownership of `x` is not transfered to `y`. Instead, `y`
-becomes an _alias_ for `x`. (Actually, `x` and `y` are _both_ aliases for an
-internal identifier that refers to the value returned by `C::malloc`.)
 
     let s = C::malloc(6);
     let p = StrPair{ s, s };     // allowed, this doesn't use s
     myfunction(p);               // error: s is used twice
 
 If you need to pass a unique reference to a function without using it, you can
-`borrow` the reference instead. `borrow` has the type `uniq &T -> &T` for any
-type `T`.
+`borrow` the reference instead. Borrowing a unique reference is like making a
+copy of it. The copy cannot be freed, only the unique original.
 
     let x: uniq &i8 = C::malloc(10);
     myfunction(borrow x);
@@ -139,15 +133,15 @@ scope. The snippet below illustrates how this can lead to double frees; the
     };
 
 But sometimes using an externally created unique reference is necessary. In
-such cases, MiSCR allows an oref to be _moved_ into the current scope as long
-as the moved unique reference is _replaced_ before the scope ends:
+such cases, MiSCR allows a unique reference to be _moved_ into the current scope
+as long as the moved unique reference is _replaced_ before the scope ends:
 
     func replaceWithHello(s: &String): unit = {
       C::free(move s->ptr);     // OK, but s->ptr must be replaced later
       let newPtr = C::malloc(6);
       C::strcpy(borrow newPtr, "hello");
-      s[.ptr] := newPtr;        // replacing s->ptr
-      s[.len] := 5;
+      s->ptr = newPtr;          // replacing s->ptr
+      s->len = 5;
     };
 
 The `move` expression has the type `uniq &T -> uniq &T` for any type `T`.

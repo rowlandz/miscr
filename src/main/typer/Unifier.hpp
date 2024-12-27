@@ -8,7 +8,7 @@
 #include "common/ScopeStack.hpp"
 #include "common/TypeContext.hpp"
 
-/// @brief Third of four type checking phases. Performs Hindley-Milner type
+/// @brief Third of five type checking phases. Performs Hindley-Milner type
 /// inference and unification. Sets the `type` field of all Exp.
 ///
 /// The heart of unification is a variation of the union-find algorithm over
@@ -79,10 +79,21 @@ public:
   Type* unifyExp(Exp* _e) {
     AST::ID id = _e->id;
 
-    if (auto e = AscripExp::downcast(_e)) {
+    if (auto e = AddrOfExp::downcast(_e)) {
+      Type* ofTy = unifyExp(e->getOf());
+      e->setType(tc.getRefType(ofTy, false));
+    }
+
+    else if (auto e = AscripExp::downcast(_e)) {
       Type* ty = tc.getTypeFromTypeExp(e->getAscripter());
       expectTypeToBe(e->getAscriptee(), ty);
       e->setType(ty);
+    }
+
+    else if (auto e = AssignExp::downcast(_e)) {
+      Type* lhsTy = unifyExp(e->getLHS());
+      expectTypeToBe(e->getRHS(), lhsTy);
+      e->setType(tc.getUnit());
     }
 
     else if (auto e = BinopExp::downcast(_e)) {
@@ -206,19 +217,6 @@ public:
 
     else if (auto e = ProjectExp::downcast(_e)) {
       unifyProjectExp(e);
-    }
-
-    else if (auto e = RefExp::downcast(_e)) {
-      Type* initializerTy = unifyExp(e->getInitializer());
-      e->setType(tc.getRefType(initializerTy, false));
-    }
-
-    else if (auto e = StoreExp::downcast(_e)) {
-      TypeVar* innTy = tc.getFreshTypeVar();
-      RefType* lhsTy = tc.getRefType(innTy, false);
-      expectTypeToBe(e->getLHS(), lhsTy);
-      expectTypeToBe(e->getRHS(), innTy);
-      e->setType(tc.getUnit());
     }
 
     else if (auto e = StringLit::downcast(_e)) {

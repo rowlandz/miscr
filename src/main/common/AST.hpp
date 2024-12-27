@@ -31,8 +31,8 @@ public:
   enum ID : unsigned char {
 
     // expressions and statements
-    ASCRIP, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, CONSTR, DEC_LIT, DEREF,
-    ENAME, IF, INDEX, INT_LIT, LET, MOVE, PROJECT, REF_EXP, RETURN, STORE,
+    ADDR_OF, ASCRIP, ASSIGN, BINOP_EXP, BLOCK, BORROW, BOOL_LIT, CALL, CONSTR,
+    DEC_LIT, DEREF, ENAME, IF, INDEX, INT_LIT, LET, MOVE, PROJECT, RETURN,
     STRING_LIT, UNOP_EXP, WHILE,
 
     // declarations
@@ -177,21 +177,24 @@ public:
 class Exp : public AST {
 protected:
   Type* type;
-  Exp(ID id, Location loc) : AST(id, loc), type(nullptr) {}
+  bool lvalue;
+  Exp(ID id, Location loc) : AST(id, loc), type(nullptr), lvalue(false) {}
   ~Exp() {}
 public:
   static Exp* downcast(AST* ast) {
     switch (ast->id) {
-    case ASCRIP: case BINOP_EXP: case BLOCK: case BOOL_LIT: case BORROW:
-    case CALL: case CONSTR: case DEC_LIT: case DEREF: case ENAME: case IF:
-    case INDEX: case INT_LIT: case LET: case MOVE: case PROJECT: case REF_EXP:
-    case RETURN: case STORE: case STRING_LIT: case UNOP_EXP: case WHILE:
-      return static_cast<Exp*>(ast);
+    case ADDR_OF: case ASCRIP: case ASSIGN: case BINOP_EXP: case BLOCK:
+    case BOOL_LIT: case BORROW: case CALL: case CONSTR: case DEC_LIT:
+    case DEREF: case ENAME: case IF: case INDEX: case INT_LIT: case LET:
+    case MOVE: case PROJECT: case RETURN: case STRING_LIT: case UNOP_EXP:
+    case WHILE: return static_cast<Exp*>(ast);
     default: return nullptr;
     }
   }
   Type* getType() const { return type; }
   void setType(Type* type) { this->type = type; }
+  bool isLvalue() const { return lvalue; }
+  void markLvalue() { lvalue = true; }
 };
 
 /// @brief A list of expressions (e.g., arguments in a function call or
@@ -472,29 +475,28 @@ public:
   Exp* getReturnee() const { return returnee; }
 };
 
-/// @brief A store statement (e.g., `x := 42`).
-class StoreExp : public Exp {
+/// @brief An assignment statement (e.g., `x = 42`)
+class AssignExp : public Exp {
   Exp* lhs;
   Exp* rhs;
 public:
-  StoreExp(Location loc, Exp* lhs, Exp* rhs)
-    : Exp(STORE, loc), lhs(lhs), rhs(rhs) {}
-  static StoreExp* downcast(AST* ast)
-    { return ast->id == STORE ? static_cast<StoreExp*>(ast) : nullptr; }
+  AssignExp(Location loc, Exp* lhs, Exp* rhs)
+    : Exp(ASSIGN, loc), lhs(lhs), rhs(rhs) {}
+  static AssignExp* downcast(AST* ast)
+    { return ast->id == ASSIGN ? static_cast<AssignExp*>(ast) : nullptr; }
   Exp* getLHS() const { return lhs; }
   Exp* getRHS() const { return rhs; }
 };
 
-/// @brief An expression that allocates and initializes stack memory and returns
-/// a reference to that memory (e.g., `&myexp`).
-class RefExp : public Exp {
-  Exp* initializer;
+/// @brief An expression that returns the address of an lvalue (e.g., `&myexp`).
+class AddrOfExp : public Exp {
+  Exp* of;
 public:
-  RefExp(Location loc, Exp* initializer)
-    : Exp(REF_EXP, loc), initializer(initializer) {}
-  static RefExp* downcast(AST* ast)
-    { return (ast->id == REF_EXP) ? static_cast<RefExp*>(ast) : nullptr; }
-  Exp* getInitializer() const { return initializer; }
+  AddrOfExp(Location loc, Exp* of)
+    : Exp(ADDR_OF, loc), of(of) {}
+  static AddrOfExp* downcast(AST* ast)
+    { return ast->id == ADDR_OF ? static_cast<AddrOfExp*>(ast) : nullptr; }
+  Exp* getOf() const { return of; }
 };
 
 /// @brief A dereference expression.
@@ -582,8 +584,8 @@ public:
   Exp* getRefExp() const { return refExp; }
 };
 
-/// @brief An "operator" of type `&#T -> #T` that extracts an owned reference
-/// from behind a borrow.
+/// @brief An "operator" of type `uniq &T -> uniq &T` that extracts a unique
+/// reference from behind another reference.
 class MoveExp : public Exp {
   Exp* refExp;
 public:
@@ -692,10 +694,14 @@ public:
 //============================================================================//
 
 llvm::SmallVector<AST*> AST::getASTChildren() {
-  if (auto ast = BinopExp::downcast(this))
-    return { ast->getLHS(), ast->getRHS() };
+  if (auto ast = AddrOfExp::downcast(this))
+    return { ast->getOf() };
   if (auto ast = AscripExp::downcast(this))
     return { ast->getAscriptee(), ast->getAscripter() };
+  if (auto ast = AssignExp::downcast(this))
+    return { ast->getLHS(), ast->getRHS() };
+  if (auto ast = BinopExp::downcast(this))
+    return { ast->getLHS(), ast->getRHS() };
   if (auto ast = BlockExp::downcast(this))
     return { ast->getStatements() };
   if (auto ast = BorrowExp::downcast(this))
@@ -756,14 +762,10 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
   }
   if (auto ast = ProjectExp::downcast(this))
     return { ast->getBase(), ast->getFieldName() };
-  if (auto ast = RefExp::downcast(this))
-    return { ast->getInitializer() };
   if (auto ast = RefTypeExp::downcast(this))
     return { ast->getPointeeType() };
   if (auto ast = ReturnExp::downcast(this))
     return { ast->getReturnee() };
-  if (auto ast = StoreExp::downcast(this))
-    return { ast->getLHS(), ast->getRHS() };
   if (auto ast = StructDecl::downcast(this))
     return { ast->getName(), ast->getFields() };
   if (auto ast = UnopExp::downcast(this))
@@ -775,7 +777,9 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
 
 const char* AST::IDToString(AST::ID id) {
   switch (id) {
+  case AST::ID::ADDR_OF:            return "ADDR_OF";
   case AST::ID::ASCRIP:             return "ASCRIP";
+  case AST::ID::ASSIGN:             return "ASSIGN";
   case AST::ID::BINOP_EXP:          return "BINOP_EXP";
   case AST::ID::BLOCK:              return "BLOCK";
   case AST::ID::BORROW:             return "BORROW";
@@ -791,9 +795,7 @@ const char* AST::IDToString(AST::ID id) {
   case AST::ID::LET:                return "LET";
   case AST::ID::MOVE:               return "MOVE";
   case AST::ID::PROJECT:            return "PROJECT";
-  case AST::ID::REF_EXP:            return "REF_EXP";
   case AST::ID::RETURN:             return "RETURN";
-  case AST::ID::STORE:              return "STORE";
   case AST::ID::STRING_LIT:         return "STRING_LIT";
   case AST::ID::UNOP_EXP:           return "UNOP_EXP";
   case AST::ID::WHILE:              return "WHILE";
@@ -816,7 +818,9 @@ const char* AST::IDToString(AST::ID id) {
 }
 
 AST::ID stringToASTID(const std::string& str) {
-       if (str == "ASCRIP")              return AST::ID::ASCRIP;
+       if (str == "ADDR_OF")             return AST::ID::ADDR_OF;
+  else if (str == "ASCRIP")              return AST::ID::ASCRIP;
+  else if (str == "ASSIGN")              return AST::ID::ASSIGN;
   else if (str == "BINOP_EXP")           return AST::ID::BINOP_EXP;
   else if (str == "BLOCK")               return AST::ID::BLOCK;
   else if (str == "BORROW")              return AST::ID::BORROW;
@@ -832,9 +836,7 @@ AST::ID stringToASTID(const std::string& str) {
   else if (str == "LET")                 return AST::ID::LET;
   else if (str == "MOVE")                return AST::ID::MOVE;
   else if (str == "PROJECT")             return AST::ID::PROJECT;
-  else if (str == "REF_EXP")             return AST::ID::REF_EXP;
   else if (str == "RETURN")              return AST::ID::RETURN;
-  else if (str == "STORE")               return AST::ID::STORE;
   else if (str == "STRING_LIT")          return AST::ID::STRING_LIT;
   else if (str == "UNOP_EXP")            return AST::ID::UNOP_EXP;
   else if (str == "WHILE")               return AST::ID::WHILE;

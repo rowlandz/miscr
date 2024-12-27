@@ -86,8 +86,27 @@ public:
   /// the expression is returned, otherwise nullptr.
   AccessPath* check(Exp* _e) {
 
-    if (auto e = AscripExp::downcast(_e)) {
+    if (auto e = AddrOfExp::downcast(_e)) {
+      Exp* ofExp = e->getOf();
+      AccessPath* initAP = check(ofExp);
+      AccessPath* ret = apm.getRoot(freshInternalVar());
+      if (initAP != nullptr) apm.aliasDeref(ret, initAP);
+      return ret;
+    }
+    else if (auto e = AscripExp::downcast(_e)) {
       return check(e->getAscriptee());
+    }
+    else if (auto e = AssignExp::downcast(_e)) {
+      AccessPath* lhsAP = check(e->getLHS());
+      AccessPath* rhsAP = check(e->getRHS());
+      Type* rhsType = e->getRHS()->getType();
+      auto lhsLooseExts = looseExtensionsOf(lhsAP, rhsType);
+      auto rhsLooseExts = looseExtensionsOf(rhsAP, rhsType);
+      for (AccessPath* ext : rhsLooseExts)
+        bs->use(ext, e->getRHS()->getLocation());
+      for (AccessPath* ext : lhsLooseExts)
+        bs->unmove(ext, e->getLHS()->getLocation());
+      return nullptr;
     }
     else if (auto e = BinopExp::downcast(_e)) {
       check(e->getLHS());
@@ -226,25 +245,6 @@ public:
       case ProjectExp::ARROW:
         return apm.getProject(apm.getDeref(baseAP), field, false);
       }
-    }
-    else if (auto e = RefExp::downcast(_e)) {
-      Exp* initExp = e->getInitializer();
-      AccessPath* initAP = check(initExp);
-      AccessPath* ret = apm.getRoot(freshInternalVar());
-      if (initAP != nullptr) apm.aliasDeref(ret, initAP);
-      return ret;
-    }
-    else if (auto e = StoreExp::downcast(_e)) {
-      AccessPath* lhsAP = check(e->getLHS());
-      AccessPath* rhsAP = check(e->getRHS());
-      Type* rhsType = e->getRHS()->getType();
-      auto lhsLooseExts = looseExtensionsOf(apm.getDeref(lhsAP), rhsType);
-      auto rhsLooseExts = looseExtensionsOf(rhsAP, rhsType);
-      for (AccessPath* ext : rhsLooseExts)
-        bs->use(ext, e->getRHS()->getLocation());
-      for (AccessPath* ext : lhsLooseExts)
-        bs->unmove(ext, e->getLHS()->getLocation());
-      return nullptr;
     }
     else if (StringLit::downcast(_e)) {
       return nullptr;

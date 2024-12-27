@@ -5,7 +5,7 @@
 #include "common/AST.hpp"
 #include "common/TypeContext.hpp"
 
-/// @brief Fourth of four type checking phases. Scrubs AST of type variables.
+/// @brief Fifth of five type checking phases. Scrubs AST of type variables.
 class Resolver {
 
   const llvm::DenseMap<TypeVar*, TypeVar*>& tvarEquiv;

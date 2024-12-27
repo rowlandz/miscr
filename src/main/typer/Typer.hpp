@@ -4,15 +4,17 @@
 #include "typer/Cataloger.hpp"
 #include "typer/Canonicalizer.hpp"
 #include "typer/Unifier.hpp"
+#include "typer/LValueMarker.hpp"
 #include "typer/Resolver.hpp"
 
 /// @brief The MiSCR type checker and type inference engine.
 ///
-/// Type checking is divided into four sequential phases:
+/// Type checking is divided into five sequential phases:
 ///   1. Cataloger     -- Builds a map of decl names to their AST definitions
 ///   2. Canonicalizer -- Fully qualifies all names in the AST
 ///   3. Unifier       -- Hindley-Milner type unification
-///   4. Resolver      -- Scrubs type variables from the AST
+///   4. LValueMarker  -- Distinguishes lvalues from rvalues
+///   5. Resolver      -- Scrubs type variables from the AST
 class Typer {
   Ontology ont;
   TypeContext tc;
@@ -45,6 +47,8 @@ public:
   void typeExp(Exp* e) {
     Unifier(ont, tc, tvarEquiv, tvarBindings, errors).unifyExp(e);
     if (!errors.empty()) return;
+    LValueMarker(errors).run(e);
+    if (!errors.empty()) return;
     Resolver(tvarEquiv, tvarBindings, tc).resolveAST(e);
   }
 
@@ -56,6 +60,8 @@ public:
     if (!errors.empty()) return;
     Unifier(ont, tc, tvarEquiv, tvarBindings, errors).unifyDecl(d);
     if (!errors.empty()) return;
+    LValueMarker(errors).run(d);
+    if (!errors.empty()) return;
     Resolver(tvarEquiv, tvarBindings, tc).resolveAST(d);
   }
 
@@ -66,6 +72,8 @@ public:
     Canonicalizer(ont, errors).run(decls);
     if (!errors.empty()) return;
     Unifier(ont, tc, tvarEquiv, tvarBindings, errors).unifyDeclList(decls);
+    if (!errors.empty()) return;
+    LValueMarker(errors).run(decls);
     if (!errors.empty()) return;
     Resolver(tvarEquiv, tvarBindings, tc).resolveAST(decls);
   }

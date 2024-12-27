@@ -3,25 +3,25 @@
 extern func printf(format: &i8, ...): unit;
 
 func main(): i32 = {
-  let i: &i32 = &0;
-  let printNum: &bool = &true;
+  let i: i32 = 0;
+  let printNum: bool = true;
 
-  while (i! < 20) {
-    printNum := true;
-    if (i! % 3 == 0) {
+  while (i < 20) {
+    printNum = true;
+    if (i % 3 == 0) {
       printf("Fizz");
-      printNum := false;
+      printNum = false;
     };
-    if (i! % 5 == 0) {
+    if (i % 5 == 0) {
       printf("Buzz");
-      printNum := false;
+      printNum = false;
     };
-    if (printNum!) {
-      printf("%d", i!);
+    if (printNum) {
+      printf("%d", i);
     };
     printf("\n");
 
-    i := i! + 1;
+    i = i + 1;
   };
 
   0
