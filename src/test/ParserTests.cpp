@@ -111,13 +111,37 @@ namespace ParserTests {
   TEST(block_expression) {
     return expParseTreeShouldBe("{ let x = 10; x; }", {
       "BLOCK",
-      "    EXPLIST",
-      "        LET",
-      "            NAME",
-      "            INT_LIT",
-      "        ENAME",
-      "            NAME",
+      "    LET",
+      "        NAME",
+      "        INT_LIT",
+      "    ENAME",
+      "        NAME",
     });
+  }
+
+  TEST(no_semicolon_after_while) {
+    return expParseTreeShouldBe(
+      "{ let x = 1;\n"
+      "  while (x < 10) { \"blahblahblah\"; }\n"
+      "  printf(\"done\");\n"
+      "}",
+      { "BLOCK",
+        "    LET",
+        "        NAME",
+        "        INT_LIT",
+        "    WHILE",
+        "        BINOP_EXP",
+        "            ENAME",
+        "                NAME",
+        "            INT_LIT",
+        "        BLOCK",
+        "            STRING_LIT",
+        "    CALL",
+        "        NAME",
+        "        EXPLIST",
+        "            STRING_LIT",
+      }
+    );
   }
 
   TEST(main_prints_hello_world) {
@@ -129,11 +153,10 @@ namespace ParserTests {
       "    PARAMLIST",
       "    PRIMITIVE_TEXP",
       "    BLOCK",
-      "        EXPLIST",
-      "            CALL",
-      "                NAME",
-      "                EXPLIST",
-      "                    STRING_LIT",
+      "        CALL",
+      "            NAME",
+      "            EXPLIST",
+      "                STRING_LIT",
     });
   }
 

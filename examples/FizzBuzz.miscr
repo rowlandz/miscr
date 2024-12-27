@@ -2,7 +2,7 @@
 
 extern func printf(format: &i8, ...): unit;
 
-func main(): i32 = {
+func main(): i32 {
   let i: i32 = 0;
   let printNum: bool = true;
 
@@ -11,18 +11,18 @@ func main(): i32 = {
     if (i % 3 == 0) {
       printf("Fizz");
       printNum = false;
-    };
+    }
     if (i % 5 == 0) {
       printf("Buzz");
       printNum = false;
-    };
+    }
     if (printNum) {
       printf("%d", i);
-    };
+    }
     printf("\n");
 
     i = i + 1;
-  };
+  }
 
   0
-};
+}

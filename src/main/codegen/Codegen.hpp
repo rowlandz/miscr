@@ -187,9 +187,8 @@ private:
       return nullptr;
     }
     else if (auto e = BlockExp::downcast(exp)) {
-      llvm::ArrayRef<Exp*> stmtList = e->getStatements()->asArrayRef();
       llvm::Value* lastStmtVal = nullptr;
-      for (Exp* stmt : stmtList) {
+      for (Exp* stmt : e->getStatements()) {
         lastStmtVal = genExp(stmt);
       }
       return lastStmtVal;

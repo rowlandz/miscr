@@ -12,32 +12,32 @@ struct String { ptr: uniq &i8, len: i64 }
 
 module String {
 
-  func new(cstr: &i8): String = {
+  func new(cstr: &i8): String {
     let len = C::strlen(cstr);
     let ptr = C::malloc(len + 1);
     C::strcpy(borrow ptr, cstr);
     String{ ptr, len }
-  };
+  }
 
   func del(s: String): unit = C::free(s.ptr);
 
-  func append(s1: &String, s2: &String): unit = {
+  func append(s1: &String, s2: &String): unit {
     let s1len: i64 = s1->len;
     let newLen: i64 = s1len + s2->len;
     let newPtr: uniq &i8 = C::realloc(move s1->ptr, newLen + 1);
     C::strcpy((borrow newPtr)[s1len], borrow s2->ptr);
     s1->ptr = newPtr;
     s1->len = newLen;
-  };
+  }
 
-  func print(s: &String): unit = {
+  func print(s: &String): unit {
     C::write(0, borrow s->ptr, s->len);
     {}
-  };
+  }
 
 }
 
-func main(): i32 = {
+func main(): i32 {
   let hello = String::new("hello ");
   let world = String::new("world\n");
 
@@ -49,4 +49,4 @@ func main(): i32 = {
   String::del(world);
 
   0
-};
+}

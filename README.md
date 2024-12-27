@@ -122,27 +122,27 @@ Normally it is illegal to use a reference that was not created in the current
 scope. The snippet below illustrates how this can lead to double frees; the
 `main` scope, which creates `x`, does not expect `helper` to free it.
 
-    func main(): unit = {
+    func main(): unit {
       let x = C::malloc(10);
       helper(&x);
       C::free(x);
-    };
+    }
 
-    func helper(xRef: &uniq &i8): unit = {
+    func helper(xRef: &uniq &i8): unit {
       C::free(xRef!);   // ERROR
-    };
+    }
 
 But sometimes using an externally created unique reference is necessary. In
 such cases, MiSCR allows a unique reference to be _moved_ into the current scope
 as long as the moved unique reference is _replaced_ before the scope ends:
 
-    func replaceWithHello(s: &String): unit = {
+    func replaceWithHello(s: &String): unit {
       C::free(move s->ptr);     // OK, but s->ptr must be replaced later
       let newPtr = C::malloc(6);
       C::strcpy(borrow newPtr, "hello");
       s->ptr = newPtr;          // replacing s->ptr
       s->len = 5;
-    };
+    }
 
 The `move` expression has the type `uniq &T -> uniq &T` for any type `T`.
 
@@ -189,9 +189,9 @@ MiSCR should guarantee that every malloc-ed reference is freed exactly once.
 MiSCR does _not_ guarantee the absence of use-after-frees. There is no lifetime
 analysis (yet?), so borrowed references are just as unsafe as C pointers. e.g.,
 
-    func main(): i32 = {
+    func main(): i32 {
       let x: uniq &i8 = C::malloc(10);
       let y: &i8 = borrow x;
       C::free(x);
       C::write(0, y, 10);   // SEGFAULT
-    };
+    }

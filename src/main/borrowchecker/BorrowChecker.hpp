@@ -58,7 +58,7 @@ public:
     // TODO: make helper function to narrow the location for block exps
     Location loc;
     if (auto block = BlockExp::downcast(body))
-      loc = block->getStatements()->asArrayRef().back()->getLocation();
+      loc = block->getStatements().back()->getLocation();
     else
       loc = body->getLocation();
     for (AccessPath* ext : looseExtensionsOf(retAP, body->getType()))
@@ -115,7 +115,7 @@ public:
     }
     else if (auto e = BlockExp::downcast(_e)) {
       AccessPath* ret = nullptr;
-      for (auto stmt : e->getStatements()->asArrayRef())
+      for (auto stmt : e->getStatements())
         ret = check(stmt);
       return ret;
     }

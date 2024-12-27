@@ -122,10 +122,9 @@ public:
     }
 
     else if (auto e = BlockExp::downcast(_e)) {
-      llvm::ArrayRef<Exp*> stmtList = e->getStatements()->asArrayRef();
       Type* lastStmtTy = tc.getUnit();
       localVarTypes.push();
-      for (Exp* stmt : stmtList) lastStmtTy = unifyExp(stmt);
+      for (Exp* stmt : e->getStatements()) lastStmtTy = unifyExp(stmt);
       localVarTypes.pop();
       e->setType(lastStmtTy);
     }

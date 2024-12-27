@@ -402,12 +402,13 @@ public:
 
 /// @brief A block expression.
 class BlockExp : public Exp {
-  ExpList* statements;
+  llvm::SmallVector<Exp*> statements;
 public:
-  BlockExp(Location loc, ExpList* stmts) : Exp(BLOCK, loc), statements(stmts) {}
+  BlockExp(Location loc, llvm::SmallVector<Exp*> statements)
+    : Exp(BLOCK, loc), statements(statements) {}
   static BlockExp* downcast(AST* ast)
     { return ast->id == BLOCK ? static_cast<BlockExp*>(ast) : nullptr; }
-  ExpList* getStatements() const { return statements; }
+  const llvm::SmallVector<Exp*>& getStatements() const { return statements; }
 };
 
 /// @brief A function call.
@@ -702,8 +703,11 @@ llvm::SmallVector<AST*> AST::getASTChildren() {
     return { ast->getLHS(), ast->getRHS() };
   if (auto ast = BinopExp::downcast(this))
     return { ast->getLHS(), ast->getRHS() };
-  if (auto ast = BlockExp::downcast(this))
-    return { ast->getStatements() };
+  if (auto ast = BlockExp::downcast(this)) {
+    llvm::SmallVector<AST*> ret;
+    for (auto elem : ast->getStatements()) ret.push_back(elem);
+    return ret;
+  }
   if (auto ast = BorrowExp::downcast(this))
     return { ast->getRefExp() };
   if (auto ast = CallExp::downcast(this))

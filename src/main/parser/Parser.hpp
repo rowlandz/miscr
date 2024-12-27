@@ -173,14 +173,6 @@ public:
     }
   }
 
-  BlockExp* blockExp() {
-    Token begin = *p;
-    if (!chomp(Token::LBRACE)) EPSILON
-    ExpList* statements = stmts0(); ARREST_IF_ERROR
-    CHOMP_ELSE_ARREST(Token::RBRACE, "}", "block expression")
-    return new BlockExp(hereFrom(begin), statements);
-  }
-
   Exp* expLv0() {
     Exp* ret;
     ret = nameOrCallOrConstr(); CONTINUE_ON_EPSILON(ret)
@@ -379,7 +371,7 @@ public:
   //=== Statements
   //==========================================================================//
 
-  /// @brief Parses a statement.
+  /// @brief Parses a statement, not including any terminating semicolon.
   Exp* stmt() {
     Exp* ret;
     ret = letStmt(); CONTINUE_ON_EPSILON(ret)
@@ -388,24 +380,26 @@ public:
     EPSILON
   }
 
-  /// @brief Zero or more statements separated by semicolons.
-  /// Never epsilon fails.
-  ExpList* stmts0() {
+  /// @brief Zero or more statements. Never epsilon fails.
+  /// @details Certain statements (like `if` and `while`) do not take a
+  /// terminal semicolon.
+  BlockExp* blockExp() {
     Token begin = *p;
-    llvm::SmallVector<Exp*, 4> ss;
+    if (!chomp(Token::LBRACE)) EPSILON
+    llvm::SmallVector<Exp*> ss;
     Exp* s;
     for (;;) {
       s = stmt();
       if (error == ARRESTING_ERR) return nullptr;
-      if (error == EPSILON_ERR) {
-        error = NOERROR;
-        return new ExpList(hereFrom(begin), ss);
-      }
+      if (error == EPSILON_ERR) break;
       ss.push_back(s);
-      if (!chomp(Token::SEMICOLON)) {
-        return new ExpList(hereFrom(begin), ss);
+      if (!WhileExp::downcast(s) && !IfExp::downcast(s)) {
+        if (!chomp(Token::SEMICOLON)) break;
       }
     }
+    error = NOERROR;
+    CHOMP_ELSE_ARREST(Token::RBRACE, "}", "block expression")
+    return new BlockExp(hereFrom(begin), ss);
   }
 
   LetExp* letStmt() {
@@ -537,10 +531,14 @@ public:
     CHOMP_ELSE_ARREST(Token::COLON, ":", "function")
     TypeExp* retType = typeExp(); ARREST_IF_ERROR
     if (hasBody) {
-      CHOMP_ELSE_ARREST(Token::EQUAL, "=", "function")
-      Exp* body = exp(); ARREST_IF_ERROR
-      CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
-      return new FunctionDecl(hereFrom(begin), name, params, retType, body);
+      if (chomp(Token::EQUAL)) {
+        Exp* body = exp(); ARREST_IF_ERROR
+        CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
+        return new FunctionDecl(hereFrom(begin), name, params, retType, body);
+      } else {
+        Exp* body = blockExp(); ARREST_IF_ERROR
+        return new FunctionDecl(hereFrom(begin), name, params, retType, body);
+      }
     } else {
       CHOMP_ELSE_ARREST(Token::SEMICOLON, ";", "function")
       return new FunctionDecl(hereFrom(begin), name, params, retType, nullptr,
