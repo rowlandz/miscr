@@ -4,6 +4,7 @@
 //============================================================================//
 #include <unistd.h>
 #include <wait.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include "lexer/Lexer.hpp"
@@ -87,10 +88,14 @@ int main(int argc, char** argv) {
   }
 
   // LLVM IR code generation
-  Codegen codegen(typer.getOntology());
+  llvm::LLVMContext llvmContext;
+  llvm::Module llvmModule("MyModule", llvmContext);
+  llvmModule.setTargetTriple("x86_64-pc-linux-gnu");
+  llvmModule.setModuleIdentifier(inFileOpt);
+  llvmModule.setSourceFileName(inFileOpt);
+  Codegen codegen(typer.getOntology(), llvmModule);
   codegen.genDeclList(decls);
-  codegen.mod->setModuleIdentifier(inFileOpt);
-  codegen.mod->setSourceFileName(inFileOpt);
+  if (llvm::verifyModule(llvmModule, &llvm::errs())) return 1;
 
   // output LLVM IR to a file
   llvm::StringRef outFileStem = inFileOpt.getValue();
@@ -102,7 +107,7 @@ int main(int argc, char** argv) {
     outFileOpt.getValue() : (outFileStem + ".ll").str();
   std::error_code EC;
   llvm::raw_fd_ostream outDotLL(llFile, EC);
-  outDotLL << *codegen.mod;
+  outDotLL << llvmModule;
   outDotLL.flush();
   decls->deleteRecursive();
 
