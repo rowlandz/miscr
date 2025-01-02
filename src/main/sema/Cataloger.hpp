@@ -1,12 +1,12 @@
-#ifndef TYPER_CATALOGER
-#define TYPER_CATALOGER
+#ifndef SEMA_CATALOGER
+#define SEMA_CATALOGER
 
 #include "common/AST.hpp"
 #include "common/LocatedError.hpp"
 #include "common/Ontology.hpp"
 
-/// @brief First of five type checking phases. Populates an Ontology with the
-/// names of decls and pointers to their definitions in the AST.
+/// @brief First of five sema phases. Populates an Ontology with the names of
+/// decls and pointers to their definitions in the AST.
 class Cataloger {
   Ontology& ont;
   std::vector<LocatedError>& errors;
@@ -17,7 +17,7 @@ public:
   Cataloger(const Cataloger&) = delete;
 
   /// @brief Recursively catalogs a decl that appears in @p scope.
-  void run(Decl* decl, llvm::StringRef scope = "global") {
+  void run(Decl* decl, llvm::StringRef scope) {
     if (auto mod = ModuleDecl::downcast(decl)) {
       llvm::StringRef relName = mod->getName()->asStringRef();
       std::string fqn = (scope + "::" + relName).str();
@@ -77,7 +77,7 @@ public:
 
   /// @brief Catalogs the decls in a decl list. `scope` is the scope that the
   /// decls appear in.
-  void run(DeclList* declList, llvm::StringRef scope = "global")
+  void run(DeclList* declList, llvm::StringRef scope)
     { for (auto decl : declList->asArrayRef()) run(decl, scope); }
 
 };

@@ -1,5 +1,5 @@
-#ifndef TYPER_UNIFIER
-#define TYPER_UNIFIER
+#ifndef SEMA_UNIFIER
+#define SEMA_UNIFIER
 
 #include <cassert>
 #include "llvm/ADT/DenseMap.h"
@@ -8,14 +8,14 @@
 #include "common/ScopeStack.hpp"
 #include "common/TypeContext.hpp"
 
-/// @brief Third of five type checking phases. Performs Hindley-Milner type
-/// inference and unification. Sets the `type` field of all Exp.
+/// @brief Third of five sema phases. Performs Hindley-Milner type inference
+/// and unification. Sets the `type` field of all Exp.
 ///
 /// The heart of unification is a variation of the union-find algorithm over
 /// type variables (TypeVar). An expression like `x + y` requires the types
 /// of `x` and `y` to be equal (i.e., their types must be _unified_). This
 /// technique allows type information to seemingly "propagate backwards" (e.g.,
-/// the type checker infers that `1` in `1 + (2: i32)` must be an `i32`.
+/// the unifier infers that `1` in `1 + (2: i32)` must be an `i32`.
 ///
 /// The `union` operation of union-find has two complications resulting from
 /// the binding of type variables to actual types:
@@ -51,18 +51,6 @@ public:
       errors(errors) {}
 
   Unifier(const Unifier&) = delete;
-
-  void unifyDeclList(DeclList* declList)
-    { for (Decl* decl : declList->asArrayRef()) unifyDecl(decl); }
-
-  void unifyDecl(Decl* _decl) {
-    if (auto func = FunctionDecl::downcast(_decl)) unifyFunc(func);
-    else if (auto mod = ModuleDecl::downcast(_decl)) unifyModule(mod);
-    else if (StructDecl::downcast(_decl)) {}
-    else llvm_unreachable("Didn't recognize decl");
-  }
-
-  void unifyModule(ModuleDecl* mod) { unifyDeclList(mod->getDecls()); }
 
   void unifyFunc(FunctionDecl* func) {
     if (func->isExtern()) return;

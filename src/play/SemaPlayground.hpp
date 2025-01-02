@@ -1,10 +1,10 @@
-#ifndef TYPERPLAYGROUND
-#define TYPERPLAYGROUND
+#ifndef SEMAPLAYGROUND
+#define SEMAPLAYGROUND
 
 #include <iostream>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
-#include "typer/Typer.hpp"
+#include "sema/Sema.hpp"
 
 AST* parse_function1(Parser& p, llvm::StringRef whatToParse) {
   if (whatToParse == "decl") return p.decl();
@@ -13,19 +13,19 @@ AST* parse_function1(Parser& p, llvm::StringRef whatToParse) {
   exit(1);
 }
 
-void type_function(Typer& t, AST* _ast, const char* whatToType) {
+void type_function(Sema& sema, AST* _ast, const char* whatToType) {
   if (!strcmp(whatToType, "decl")) {
-    t.typeDecl(static_cast<Decl*>(_ast));
+    sema.run(static_cast<Decl*>(_ast), "global");
   }
   else if (!strcmp(whatToType, "exp")) {
-    t.typeExp(static_cast<Exp*>(_ast));
+    sema.analyzeExp(static_cast<Exp*>(_ast), "global");
   } else {
-    llvm::outs() << "I don't know how to type a " << whatToType << "\n";
+    llvm::outs() << "I don't know how to analyze a " << whatToType << "\n";
     exit(1);
   }
 }
 
-int play_with_typer(char* grammarElement) {
+int play_with_sema(char* grammarElement) {
   llvm::LineEditor lineEditor("");
 
   std::string usrInput;
@@ -50,12 +50,12 @@ check_input:
   AST* parsed = parse_function1(parser, grammarElement);
   if (parsed != nullptr) {
 
-    Typer typer;
-    type_function(typer, parsed, grammarElement);
-    for (auto err : typer.getErrors()) {
+    Sema sema;
+    type_function(sema, parsed, grammarElement);
+    for (auto err : sema.getErrors()) {
       std::cout << err.render(usrInput.c_str(), LT);
     }
-    if (typer.getErrors().size() == 0) {
+    if (sema.getErrors().size() == 0) {
       parsed->dump();
     }
 

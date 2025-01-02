@@ -1,13 +1,13 @@
-#ifndef TYPER_CANONICALIZER
-#define TYPER_CANONICALIZER
+#ifndef SEMA_CANONICALIZER
+#define SEMA_CANONICALIZER
 
 #include <llvm/ADT/Twine.h>
 #include "common/AST.hpp"
 #include "common/LocatedError.hpp"
 #include "common/Ontology.hpp"
 
-/// @brief Second of five type checking phases. Replaces all names in an AST
-/// with their fully qualified names.
+/// @brief Second of five sema phases. Replaces all names in an AST with their
+/// fully qualified names.
 class Canonicalizer {
   const Ontology& ont;
   std::vector<LocatedError>& errors;
@@ -17,29 +17,28 @@ public:
     : ont(ont), errors(errors) {}
   Canonicalizer(const Canonicalizer&) = delete;
 
-  /// @brief Recursively canonicalizes all the names in @p decl.
+  /// @brief Recursively canonicalizes all the names in @p structDecl.
   /// @param scope the scope in which @p decl appears
-  void run(Decl* decl, llvm::StringRef scope = "global") {
-    llvm::Twine fqn = scope + "::" + decl->getName()->asStringRef();
-    decl->getName()->set(fqn);
-    if (auto structDecl = StructDecl::downcast(decl)) {
-      canonicalizeNonDecl(scope, structDecl->getFields());
-    }
-    else if (auto funcDecl = FunctionDecl::downcast(decl)) {
-      canonicalizeNonDecl(scope, funcDecl->getParameters());
-      canonicalizeNonDecl(scope, funcDecl->getReturnType());
-      Exp* body = funcDecl->getBody();
-      if (body != nullptr) canonicalizeNonDecl(scope, body);
-    }
-    else if (auto moduleDecl = ModuleDecl::downcast(decl)) {
-      run(moduleDecl->getDecls(), decl->getName()->asStringRef());
-    }
+  void run(StructDecl* structDecl, llvm::StringRef scope) {
+    llvm::Twine fqn = scope + "::" + structDecl->getName()->asStringRef();
+    structDecl->getName()->set(fqn);
+    canonicalizeNonDecl(scope, structDecl->getFields());
   }
 
-  /// @brief Recursively canonicalizes all names in @p declList
-  /// @param scope the scope in which the decls in @p declList appear
-  void run(DeclList* declList, llvm::StringRef scope = "global")
-    { for (auto decl : declList->asArrayRef()) run(decl, scope); }
+  /// @brief Recursively canonicalizes all the names in @p funcDecl.
+  /// @param scope the scope in which @p decl appears
+  void run(FunctionDecl* funcDecl, llvm::StringRef scope) {
+    llvm::Twine fqn = scope + "::" + funcDecl->getName()->asStringRef();
+    funcDecl->getName()->set(fqn);
+    canonicalizeNonDecl(scope, funcDecl->getParameters());
+    canonicalizeNonDecl(scope, funcDecl->getReturnType());
+    Exp* body = funcDecl->getBody();
+    if (body != nullptr) canonicalizeNonDecl(scope, body);
+  }
+
+  /// @brief Recursively canonicalizes all names in @p e.
+  /// @param scope the scope in which @p e appears
+  void run(Exp* e, llvm::StringRef scope) { canonicalizeNonDecl(scope, e); }
 
 private:
 

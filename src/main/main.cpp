@@ -9,7 +9,7 @@
 #include <llvm/Support/MemoryBuffer.h>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
-#include "typer/Typer.hpp"
+#include "sema/Sema.hpp"
 #include "borrowchecker/BorrowChecker.hpp"
 #include "codegen/Codegen.hpp"
 
@@ -67,18 +67,18 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // type check
-  Typer typer;
-  typer.typeDeclList(decls);
-  if (typer.hasErrors()) {
-    for (LocatedError err : typer.getErrors())
+  // analyze (semantically)
+  Sema sema;
+  sema.run(decls, "global");
+  if (sema.hasErrors()) {
+    for (LocatedError err : sema.getErrors())
       llvm::errs() << err.render(srcCode.data(), locTab);
     return 1;
   }
 
   // borrow check
   if (!skipBorrowCheckingOpt) {
-    BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
+    BorrowChecker bc(sema.getTypeContext(), sema.getOntology());
     bc.checkDecls(decls);
     if (!bc.errors.empty()) {
       for (LocatedError err : bc.errors)
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
   llvmModule.setTargetTriple("x86_64-pc-linux-gnu");
   llvmModule.setModuleIdentifier(inFileOpt);
   llvmModule.setSourceFileName(inFileOpt);
-  Codegen codegen(typer.getOntology(), llvmModule);
+  Codegen codegen(sema.getOntology(), llvmModule);
   codegen.genDeclList(decls);
   if (llvm::verifyModule(llvmModule, &llvm::errs())) return 1;
 

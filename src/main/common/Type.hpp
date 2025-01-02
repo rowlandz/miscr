@@ -9,7 +9,7 @@ class TypeContext;
 /// @brief The base class of all MiSCR types and type constraints.
 ///
 /// Not to be confused with TypeExp which are syntax elements, Type is the
-/// representation of MiSCR types used by the type checker.
+/// representation of MiSCR types used by the semantic analyzer.
 ///
 /// Types are structurally uniqued and thus must be created by a TypeContext.
 ///

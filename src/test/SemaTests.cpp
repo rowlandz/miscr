@@ -1,11 +1,11 @@
 #include <vector>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
-#include "typer/Typer.hpp"
+#include "sema/Sema.hpp"
 #include "test.hpp"
 
-namespace TyperTests {
-  TESTGROUP("Typer Tests")
+namespace SemaTests {
+  TESTGROUP("Sema Tests")
 
   //==========================================================================//
 
@@ -16,11 +16,11 @@ namespace TyperTests {
     Parser parser(tokens);
     Exp* parsed = parser.exp();
     if (parsed == nullptr) return "Parser error";
-    Typer typer;
-    typer.typeExp(parsed);
-    if (typer.hasErrors()) {
+    Sema sema;
+    sema.analyzeExp(parsed, "global");
+    if (sema.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.getErrors())
+      for (auto err : sema.getErrors())
         errStr.append(err.render(expText, LT));
       return errStr;
     }
@@ -30,14 +30,14 @@ namespace TyperTests {
     SUCCESS
   }
 
-  std::optional<std::string> expShouldFailTyper(const char* expText) {
+  std::optional<std::string> expShouldFailSema(const char* expText) {
     auto tokens = Lexer(expText).run();
     Parser parser(tokens);
     Exp* parsed = parser.exp();
     if (parsed == nullptr) return "Parser error";
-    Typer typer;
-    typer.typeExp(parsed);
-    if (typer.hasNoErrors())
+    Sema sema;
+    sema.analyzeExp(parsed, "global");
+    if (sema.hasNoErrors())
       return "Expected failure, but it succeeded.";
     SUCCESS
   }
@@ -48,11 +48,11 @@ namespace TyperTests {
     Parser parser(tokens);
     Decl* parsed = parser.decl();
     if (parsed == nullptr) return "Parser error";
-    Typer typer;
-    typer.typeDecl(parsed);
-    if (typer.hasErrors()) {
+    Sema sema;
+    sema.run(parsed, "global");
+    if (sema.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.getErrors())
+      for (auto err : sema.getErrors())
         errStr.append(err.render(declText, LT));
       return errStr;
     }
@@ -64,9 +64,9 @@ namespace TyperTests {
     Parser parser(tokens);
     Decl* parsed = parser.decl();
     if (parsed == nullptr) return "Parser error";
-    Typer typer;
-    typer.typeDecl(parsed);
-    if (typer.hasNoErrors())
+    Sema sema;
+    sema.run(parsed, "global");
+    if (sema.hasNoErrors())
       return "Expected failure, but it succeeded.";
     SUCCESS
   }
@@ -99,7 +99,7 @@ namespace TyperTests {
   }
 
   TEST(unbound_identifier) {
-    return expShouldFailTyper("foobar");
+    return expShouldFailSema("foobar");
   }
 
   TEST(references) {

@@ -1,11 +1,11 @@
-#ifndef TYPER_LVALUEMARKER
-#define TYPER_LVALUEMARKER
+#ifndef SEMA_LVALUEMARKER
+#define SEMA_LVALUEMARKER
 
 #include "common/AST.hpp"
 #include "common/LocatedError.hpp"
 
-/// @brief Fourth of five type checking phases. Distinguishes between lvalue
-/// and rvalue expressions.
+/// @brief Fourth of five sema phases. Distinguishes between lvalue and rvalue
+/// expressions.
 ///
 /// An lvalue is an expression that for sure has an address. It is precisely
 /// one of the following expression forms:
@@ -24,20 +24,9 @@ class LValueMarker {
 public:
   LValueMarker(std::vector<LocatedError>& errors) : errors(errors) {}
 
-  /// @brief Recursively runs the lvalue marker over @p decls.
-  void run(DeclList* decls)
-    { for (auto decl : decls->asArrayRef()) run(decl); }
-
-  /// @brief Recursively runs the Lvalue marker over @p decl.
-  void run(Decl* decl) {
-    if (auto funcDecl = FunctionDecl::downcast(decl))
-      { if (funcDecl->getBody()) runNonDecl(funcDecl->getBody()); }
-    else if (auto moduleDecl = ModuleDecl::downcast(decl))
-      run(moduleDecl->getDecls());
-    else if (auto structDecl = StructDecl::downcast(decl))
-      {}
-    else llvm_unreachable("LValueMarker::run(Decl*) fallthrough");
-  }
+  /// @brief Recursively runs the Lvalue marker over @p funcDecl.
+  void run(FunctionDecl* funcDecl)
+    { if (funcDecl->getBody()) runNonDecl(funcDecl->getBody()); }
 
   /// @brief Recursively runs the lvalue marker over @p exp.
   void run(Exp* exp) { runNonDecl(exp); }

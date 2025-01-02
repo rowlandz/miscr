@@ -1,6 +1,6 @@
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.hpp"
-#include "typer/Typer.hpp"
+#include "sema/Sema.hpp"
 #include "borrowchecker/BorrowChecker.hpp"
 #include "test.hpp"
 
@@ -15,15 +15,15 @@ namespace BorrowTests {
     Parser parser(tokens);
     DeclList* parsed = parser.decls0();
     if (parsed == nullptr) return "Parser error";
-    Typer typer;
-    typer.typeDeclList(parsed);
-    if (typer.hasErrors()) {
+    Sema sema;
+    sema.run(parsed, "global");
+    if (sema.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.getErrors())
+      for (auto err : sema.getErrors())
         errStr.append(err.render(declsText, LT));
       return (errStr);
     }
-    BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
+    BorrowChecker bc(sema.getTypeContext(), sema.getOntology());
     bc.checkDecls(parsed);
     if (!bc.errors.empty()) {
       std::string errStr;
@@ -40,15 +40,15 @@ namespace BorrowTests {
     Parser parser(tokens);
     DeclList* parsed = parser.decls0();
     if (parsed == nullptr) return "Parser error";
-    Typer typer;
-    typer.typeDeclList(parsed);
-    if (typer.hasErrors()) {
+    Sema sema;
+    sema.run(parsed, "global");
+    if (sema.hasErrors()) {
       std::string errStr;
-      for (auto err : typer.getErrors())
+      for (auto err : sema.getErrors())
         errStr.append(err.render(declsText, LT));
       return (errStr);
     }
-    BorrowChecker bc(typer.getTypeContext(), typer.getOntology());
+    BorrowChecker bc(sema.getTypeContext(), sema.getOntology());
     bc.checkDecls(parsed);
     if (bc.errors.empty()) {
       return "Expected borrow checking to fail.";

@@ -545,7 +545,7 @@ public:
   void setTypeName(llvm::StringRef name) { typeName = name.str(); }
 
   /// @brief Returns the fully-qualified name of the struct being projected.
-  /// This is only valid after the type checker sets this value. 
+  /// This is only valid after the unifier sets this value.
   llvm::StringRef getTypeName() const { return typeName; }
 
   /// @brief Returns the kind as a string matching its name in the Kind enum.

@@ -1,11 +1,11 @@
-#ifndef TYPER_RESOLVER
-#define TYPER_RESOLVER
+#ifndef SEMA_RESOLVER
+#define SEMA_RESOLVER
 
 #include <llvm/ADT/DenseMap.h>
 #include "common/AST.hpp"
 #include "common/TypeContext.hpp"
 
-/// @brief Fifth of five type checking phases. Scrubs AST of type variables.
+/// @brief Fifth of five sema phases. Scrubs AST of type variables.
 class Resolver {
 
   const llvm::DenseMap<TypeVar*, TypeVar*>& tvarEquiv;
